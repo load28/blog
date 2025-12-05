@@ -1,0 +1,74 @@
+---
+title: 'Styled components with SSR'
+date: '2025-02-15'
+tags: ['next.js', 'ssr']
+series: 'react'
+seriesNumber: 3
+---
+
+React에서 스타일을 입히는 방법은 여러가지가 있습니다. 그 중에서 CSS-in-JS는 JavaScript를 사용하여 컴포넌트의 스타일을 정의하는 패턴입니다. styled-components나 emotion과 같은 라이브러리들이 이 패턴을 구현하고 있습니다. 이러한 라이브러리들은 클라이언트 사이드 렌더링에 최적화되어 있어, Next.js와 같은 SSR 환경에서 사용하기 위해서는 몇 가지 추가적인 설정이 필요합니다.
+
+### 스타일 수집
+
+서버 사이드 렌더링 시, 초기 HTML을 생성하는 시점에 모든 styled-components의 스타일을 수집하여 포함시켜야 합니다. 이를 위해 `ServerStyleSheet`를 사용합니다:
+
+여기서 사용된 `useServerInsertedHTML` 훅은 Next.js에서 제공하는 특별한 훅으로, SSR 과정에서 HTML을 주입할 수 있게 해줍니다. 이를 통해 서버에서 생성된 스타일이 초기 HTML 응답에 포함됩니다.
+
+```tsx
+export const StyledComponentRegistry = ({ children }: PropsWithChildren) => {
+  const [styleSheet] = useState(() => new ServerStyleSheet());
+
+  useServerInsertedHTML(() => {
+    const styles = styleSheet.getStyleElement();
+    styleSheet.instance.clearTag();
+    return <>{styles}</>;
+  });
+
+  if (typeof window !== 'undefined') return <>{children}</>;
+
+  return <StyleSheetManager sheet={styleSheet.instance}>{children}</StyleSheetManager>;
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body>
+        <StyledComponentRegistry>
+          {children}
+        </StyledComponentRegistry>
+      </body>
+    </html>
+  );
+}
+```
+
+### 클래스 이름 일관성 보장
+
+CSS-in-JS 라이브러리는 스타일마다 고유한 해시값을 클래스 이름으로 사용합니다. 서버 사이드 렌더링과 클라이언트 사이드 하이드레이션 과정에서 이 클래스 이름들이 일치해야 하는데, 이는 다음과 같은 방식으로 해결됩니다:
+
+1. Next.js의 컴파일러 설정을 통해 빌드 시점에 클래스 이름을 생성합니다.
+
+```javascript
+const nextConfig = {
+  compiler: {
+    styledComponents: {
+      // 개발 환경에서 디버깅을 위한 클래스명 사용
+      displayName: process.env.NODE_ENV === 'development',
+      // SSR 지원 활성화
+      ssr: true,
+      // 더 작은 번들 사이즈를 위한 설정
+      minify: true
+    }
+  }
+};
+```
+
+2. `ServerStyleSheet`가 서버 사이드에서 스타일을 수집하고, 이를 초기 HTML에 포함시킵니다.
+3. 클라이언트 사이드에서도 동일한 해시 알고리즘을 사용하여 같은 클래스 이름을 생성합니다.
+
+이러한 설정과 메커니즘들이 함께 작동하여 Styled-components 라이브러리가 Next.js의 SSR 환경에서 정상적으로 동작할 수 있게 합니다.
+

@@ -1,0 +1,104 @@
+---
+title: 'Dynamic import in Next.js'
+date: '2025-02-15'
+tags: ['react', 'next.js']
+series: 'react'
+seriesNumber: 1
+---
+
+# Dynamic import란
+Dynamic import를 이용하면 비동기적으로 데이터를 불러 올 수 있습니다.
+
+```ts
+const loader = async () => import('[path]');
+loader().then((data) = console.log(data));
+```
+
+자바스크립트 ES6에서는 손쉽게 `Dynamic import`를 지원하고 있습니다.
+코드에서 유의해야 할 점은 async/await을 이용해 import 문을 작성하고 있다는 점입니다.
+
+# Dynamic import with React
+리액트에서 `lazy` 함수와 `Dynamic import` 문법을 이용해서 컴포넌트를 별도의 청크파일로 분리하는 것이 가능합니다.
+
+```tsx
+const LazyComponent = lazy(() => import('./LazyComponent'));
+
+const WrapComponent = () => {
+  return(
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  )
+}
+```
+
+> Dynamic import 포스팅이므로 Suspense에 대해 별도로 기술하지 않습니다.
+
+### Rendering flow
+1. 초기 렌더링 완료
+2. 아직 `LazyComponent`가 로드 되지 않았으므로 `fallback ui`가 표출됨
+3. `Dynamic import`로 인해 별도의 청크파일을 요청(http)하고 응답 받음
+4. 응답 받은 컴포넌트를 하이드레이션을 진행하여 컴포넌트를 사용할 준비 완료
+5. 로딩 대신 `LazyComponent`를 렌더링함
+
+# Dynamic import with Next.js
+Next.js에서도 `lazy` 함수와 `Susepnse`를 이용해 `Dynamic import`를 사용 할 수 있습니다. 그러나 서버 컴포넌트에서는 기존의 방식대로 적용이 불가능합니다.
+그 이유는 `lazy` 함수는 클라이언트 컴포넌트에서만 사용 할 수 있기 때문입니다. 서버 컴포넌트에 사용하기 위해서는 클라이언트 컴포넌트로 한번 감싸서 사용해야합니다.
+
+```tsx
+// ClientLazyComponent.tsx
+'use client';
+const LazyComponent = lazy(() => import('./LazyComponent'));
+
+export const ClientComponent = () => {
+  return(
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  )
+}
+
+// ServerComponent.tsx
+'use server';
+export default function ServerPage() {
+  return (
+    <div>
+      <ClientComponent />
+    </div>
+  )
+}
+```
+
+### Dynamic function
+이처럼 서버 컴포넌트에서 `Dynamic import`를 직접 선언 할 수 없다는 불편함이 있어, Next.js는 `dynamic` 함수를 제공합니다.
+
+```tsx
+'use server';
+
+const LazyComponent = dynamic(() => import('[path]'), {
+  ssr: true,
+  loading: () => <div>Loading...</div>
+})
+
+export default function ServerPage() {
+  return (
+    <LazyComponent />
+  )
+}
+```
+
+이 함수의 특징은 서버/클라이언트 컴포넌트에서 모두 사용 할 수 있으며 별도의 `Suspense` 조차 선언 할 필요가 없다는 것입니다.
+
+# Lazy vs Dynamic
+두가지 방법으로 `Dynamic import`가 모두 가능하다면 어떤 것을 선택해야 할까요?
+
+### Dynamic function
+- 서버와 클라이언트 컴포넌트 모두에서 사용 가능
+- `ssr` 옵션을 통해 서버 사이드 렌더링 여부 제어 가능
+- 별도의 `Suspense` 없이도 loading UI 표시 가능
+
+### Lazy
+- `lazy` 함수를 이용하면 어떤 컴포넌트를 사용하든지 별도의 청크 파일을 요청하는 방식으로 동작
+
+**가장 큰 차이점은 SSR을 제외할 수 있는지 여부입니다. `lazy` 함수를 통해 'Dynamic import`하거나, 'Suspense`로 감싸서 로딩을 표출한다고 해도 최상위 컴포넌트가 서버 컴포넌트인 경우 SSR에 포함됩니다.
+그래서 SSR을 제외하고 싶다면 `dynamic` 함수를 이용해야 합니다. SSR에서 제외 함은 초기 HTML에 빈자리로 표시하고 클라이언트에서 온전히 대체함을 의미합니다.**

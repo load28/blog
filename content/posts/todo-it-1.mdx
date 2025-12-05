@@ -1,0 +1,217 @@
+---
+title: 'Todo app - create/edit'
+description: 'Exploring how to design and implement the create/edit todo modal in a Todo app using Next.js'
+date: '2024-09-21:20:00Z'
+tags: ['next.js', 'side-project']
+---
+
+Next.js를 이용해 Todo 앱을 개발하는 과정에서 생성 모달과 업데이트 모달을 어떻게 설계하고 구현했는지, 그리고 코드의 확장성을 어떻게 확보할 수 있었는지에 대해 다룹니다. 이 모달들은 날짜별로 Todo를 관리하며, 생성과 수정하는 UI/UX를 제공하는 것이 목적입니다.
+
+## 요구사항 정리
+
+- 생성 모달과 업데이트 모달의 UI는 동일하지만, 모달 타이틀과 버튼의 역할이 달라집니다.
+- 생성: "Create Todo" / "Add" 버튼
+- 업데이트: "Edit Todo" / "Edit" 버튼
+- 날짜 변경 시, 해당 날짜에 Todo가 있으면 업데이트 모달로, 없으면 생성 모달로 변경됩니다.
+- 생성 모달은 4개의 Todo 리스트를 기본으로 제공합니다.
+- 업데이트 모달은 기존 Todo 리스트를 불러옵니다.
+
+### 기술 요구사항
+
+- 생성 모달과 업데이트 모달의 코드가 서로 독립적이어야 합니다.
+- 중복된 코드를 줄이기 위해 공통 UI 컴포넌트를 재사용합니다.
+
+## 설계
+
+- SaveTodo 컴포넌트를 통해 생성/업데이트 모달을 관리합니다. 날짜별로 Todo 리스트를 조회해 모달을 결정합니다.
+- context를 사용해 날짜 상태를 전역에서 공유하며, 모달 간의 통신을 쉽게 만듭니다.
+- 모달에서 공통적으로 사용되는 UI 컴포넌트는 재사용 가능한 방식으로 설계해 코드 중복을 줄입니다.
+
+### SaveTodoModal 컴포넌트
+
+```typescript
+export function SaveTodoModal({ date }: PropsWithoutRef<{ date: string }>) {
+  const tzCtx = useTzContext();
+  const [cachedDate, setCachedDate] = useState<Date | null>(
+    dayjs(date).toDate()
+  );
+  const { data: todoMap } = useQuery({
+    queryKey: ["todos"],
+    queryFn: getTodos(tzCtx?.tz),
+  });
+  const todos = useMemo(
+    () =>
+      todoMap?.[dayjs(cachedDate).format("YYYY-MM-DD")]?.map(
+        (todo) => todo.description
+      ),
+    [todoMap, cachedDate]
+  );
+
+  return (
+    <>
+      <SaveTodoDataProvider
+        value={{ date: cachedDate, setDate: setCachedDate }}
+      >
+        {todos ? <EditTodoModal todos={todos} /> : <CreateTodoModal />}
+      </SaveTodoDataProvider>
+    </>
+  );
+}
+```
+
+설명:
+SaveTodoModal은 Todo 데이터를 날짜별로 관리하는 상위 컴포넌트입니다. 현재 날짜에 Todo가 있으면 EditTodoModal을, 없으면 CreateTodoModal을 렌더링합니다.
+
+### CreateTodoModal 컴포넌트
+
+```typescript
+export const CreateTodoModal = () => {
+  const ctx = useSaveTodoDataContext();
+  const modalCtx = useModalControlContext();
+  const [todos, setTodos] = useState<string[]>(
+    Array.from({ length: 4 }, () => "")
+  );
+
+  return (
+    <>
+      {ctx && (
+        <Modal
+          opened={modalCtx?.opened || false}
+          onClose={() => {
+            modalCtx?.close();
+          }}
+          title="Create todo"
+          styles={{
+            title: {
+              fontWeight: 700,
+            },
+          }}
+        >
+          <Stack pt={"md"} pb={"md"} pl={"sm"} pr={"sm"} gap={"xl"}>
+            <Stack gap={"xl"}>
+              <SaveTodo.Date date={ctx.date} setDate={ctx.setDate} />
+              <SaveTodo.Todos todos={todos} setTodos={setTodos} />
+            </Stack>
+            <Button mt={"md"} color="blue.5">
+              Add
+            </Button>
+          </Stack>
+        </Modal>
+      )}
+    </>
+  );
+};
+```
+
+설명:
+CreateTodoModal은 새 Todo를 생성할 수 있는 모달입니다. 기본적으로 4개의 빈 Todo 리스트를 가지고 있으며, 날짜 변경 및 Todo 리스트 수정 기능을 제공합니다.
+
+### EditTodoModal 컴포넌트
+
+```typescript
+export function EditTodoModal({ todos }: PropsWithoutRef<{ todos: string[] }>) {
+  const ctx = useSaveTodoDataContext();
+  const modalCtx = useModalControlContext();
+  const [cacheTodos, setCacheTodos] = useState<string[]>(todos);
+
+  return (
+    <>
+      {ctx && (
+        <Modal
+          opened={modalCtx?.opened || false}
+          onClose={() => {
+            modalCtx?.close();
+          }}
+          title="Edit todo"
+          styles={{
+            title: {
+              fontWeight: 700,
+            },
+          }}
+        >
+          <Stack pt={"md"} pb={"md"} pl={"sm"} pr={"sm"} gap={"xl"}>
+            <Stack gap={"xl"}>
+              <SaveTodo.Date date={ctx.date} setDate={ctx.setDate} />
+              <SaveTodo.Todos todos={cacheTodos} setTodos={setCacheTodos} />
+            </Stack>
+            <Button mt={"md"} color="blue.5">
+              Edit
+            </Button>
+          </Stack>
+        </Modal>
+      )}
+    </>
+  );
+}
+```
+
+설명:
+EditTodoModal은 기존의 Todo 리스트를 수정할 수 있는 모달입니다. 전달받은 Todo 리스트를 캐시로 저장해 상태를 관리하며, 변경된 내용을 반영할 수 있습니다.
+
+## 확장성 예시
+
+위 설계는 생성과 업데이트 모달을 독립적으로 관리하면서, UI 컴포넌트를 재사용해 확장성을 확보하는 것이 목표입니다. 예를 들어, 새로운 기능을 추가하려 할 때, 공통 UI 컴포넌트를 기반으로 쉽게 추가할 수 있습니다.
+
+### 확장: Todo 카테고리 추가하기
+
+만약 생성 모달만 카테고리 기능을 추가해야 한다면, 기존의 구조를 크게 변경하지 않고도 쉽게 확장할 수 있습니다.
+
+1. 공통 UI 컴포넌트로 CategorySelector를 추가합니다.
+2. 이를 CreateTodoModal 넣어줍니다.
+
+```typescript
+// 공통 컴포넌트: CategorySelector.tsx
+export const CategorySelector = ({
+  category,
+  setCategory,
+}: {
+  category: string;
+  setCategory: (value: string) => void;
+}) => {
+  const categories = ["Work", "Personal", "Shopping", "Others"];
+  return (
+    <Select value={category} onChange={setCategory}>
+      {categories.map((cat) => (
+        <option key={cat} value={cat}>
+          {cat}
+        </option>
+      ))}
+    </Select>
+  );
+};
+```
+
+```typescript
+// CreateTodoModal.tsx
+export const CreateTodoModal = () => {
+  const ctx = useSaveTodoDataContext();
+  const modalCtx = useModalControlContext();
+  const [todos, setTodos] = useState<string[]>(
+    Array.from({ length: 4 }, () => "")
+  );
+  const [category, setCategory] = useState<string>("");
+
+  return (
+    <>
+      {ctx && (
+        <Modal
+          opened={modalCtx?.opened || false}
+          onClose={() => {
+            modalCtx?.close();
+          }}
+          title="Create todo"
+        >
+          <Stack>
+            <SaveTodo.Date date={ctx.date} setDate={ctx.setDate} />
+            <SaveTodo.Todos todos={todos} setTodos={setTodos} />
+            <CategorySelector category={category} setCategory={setCategory} />
+            <Button>Add</Button>
+          </Stack>
+        </Modal>
+      )}
+    </>
+  );
+};
+```
+
+위와 같은 설계를 통해 생성 모달과 업데이트 모달 간의 코드 중복을 최소화하면서도 각각의 비즈니스 로직을 독립적으로 유지할 수 있습니다.

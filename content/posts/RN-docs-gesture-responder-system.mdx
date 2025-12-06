@@ -146,12 +146,12 @@ View가 터치 이벤트에 응답할지 여부를 결정합니다.
 ```tsx
 <View
   onResponderGrant={(evt) => {
-    // ✅ 응답자가 되었습니다!
+    // [권장] 응답자가 되었습니다!
     // 시각적 피드백 표시
     console.log('응답자 승인');
   }}
   onResponderReject={(evt) => {
-    // ❌ 다른 컴포넌트가 응답자입니다
+    // [주의] 다른 컴포넌트가 응답자입니다
     console.log('응답자 거부');
   }}
 >

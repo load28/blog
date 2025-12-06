@@ -172,9 +172,9 @@ function move(direction: Direction) {
   // 타입 안전한 함수
 }
 
-move(Direction.Up); // ✅ 통과
-move(0); // ✅ 통과
-move(2); // ❌ 타입 에러
+move(Direction.Up); // [권장] 통과
+move(0); // [권장] 통과
+move(2); // [주의] 타입 에러
 ```
 
 ### 객체 리터럴 방식의 장점
@@ -244,21 +244,21 @@ log('Error', 'Something went wrong'); // [Error:3] Something went wrong
 |------|------|------------|----------------------|
 | 컴파일 결과 | IIFE 객체 | 인라인 치환 | 단순 객체 |
 | 번들 크기 | 큼 | 최소 | 작음 |
-| 런타임 접근 | ✅ 가능 | ❌ 불가능 | ✅ 가능 |
-| 양방향 매핑 | ✅ 지원 | ❌ 불가능 | ⚠️ 수동 구현 가능 |
-| 모듈 간 사용 | ✅ 안전 | ❌ 위험 | ✅ 안전 |
-| isolatedModules | ✅ 호환 | ❌ 경고 | ✅ 호환 |
-| 타입 안전성 | ✅ 강함 | ✅ 강함 | ✅ 강함 |
-| 확장성 | ⚠️ 제한적 | ❌ 불가능 | ✅ 자유로움 |
-| 디버깅 | ✅ 쉬움 | ❌ 어려움 | ✅ 쉬움 |
-| 추천도 (2024+) | ⚠️ 제한적 | ❌ 권장 안 함 | ✅ 권장 |
+| 런타임 접근 | [지원] 가능 | [미지원] 불가능 | [지원] 가능 |
+| 양방향 매핑 | [지원] 지원 | [미지원] 불가능 | [부분] 수동 구현 가능 |
+| 모듈 간 사용 | [지원] 안전 | [미지원] 위험 | [지원] 안전 |
+| isolatedModules | [지원] 호환 | [미지원] 경고 | [지원] 호환 |
+| 타입 안전성 | [지원] 강함 | [지원] 강함 | [지원] 강함 |
+| 확장성 | [부분] 제한적 | [미지원] 불가능 | [지원] 자유로움 |
+| 디버깅 | [지원] 쉬움 | [미지원] 어려움 | [지원] 쉬움 |
+| 추천도 (2024+) | [부분] 제한적 | [미지원] 권장 안 함 | [지원] 권장 |
 
 ## 선택 가이드
 
 ### Enum을 사용하는 경우
 
 ```typescript
-// ✅ 양방향 매핑이 필요한 경우
+// [권장] 양방향 매핑이 필요한 경우
 enum Color {
   Red,
   Green,
@@ -278,7 +278,7 @@ function getColorName(value: number): string {
 ### Const Enum을 사용하는 경우
 
 ```typescript
-// ⚠️ 단일 파일 내에서만 사용
+// [참고] 단일 파일 내에서만 사용
 const enum InternalFlag {
   None = 0,
   Active = 1 << 0,
@@ -297,7 +297,7 @@ const flags = InternalFlag.Active | InternalFlag.Pending;
 ### 객체 리터럴 (as const)을 사용하는 경우
 
 ```typescript
-// ✅ 대부분의 경우 권장되는 현대적 패턴
+// [권장] 대부분의 경우 권장되는 현대적 패턴
 export const ApiEndpoint = {
   Users: '/api/users',
   Posts: '/api/posts',

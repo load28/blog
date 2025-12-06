@@ -200,7 +200,7 @@ CSS-in-JS는 스타일마다 **고유한 해시 클래스명**을 생성합니�
 
 // 클라이언트 하이드레이션
 <button class="sc-cKdPaL hxJQRz">버튼</button>
-// ❌ 클래스명 불일치 → React 경고 발생
+// [주의] 클래스명 불일치 → React 경고 발생
 ```
 
 **React 경고:**
@@ -523,12 +523,12 @@ Client: "sc-cKdPaL hxJQRz"
 
 **해결:**
 ```tsx
-// ❌ 잘못된 예: Registry가 없음
+// [주의] 잘못된 예: Registry가 없음
 export default function RootLayout({ children }) {
   return <html><body>{children}</body></html>;
 }
 
-// ✅ 올바른 예: Registry로 감싸기
+// [권장] 올바른 예: Registry로 감싸기
 export default function RootLayout({ children }) {
   return (
     <html>
@@ -570,7 +570,7 @@ if (process.env.NODE_ENV === 'development') {
 ### 1. GlobalStyle은 layout에 한 번만
 
 ```tsx
-// ❌ 나쁜 예: 매 페이지마다 GlobalStyle
+// [주의] 나쁜 예: 매 페이지마다 GlobalStyle
 export default function Page() {
   return (
     <>
@@ -580,7 +580,7 @@ export default function Page() {
   );
 }
 
-// ✅ 좋은 예: layout에 한 번만
+// [권장] 좋은 예: layout에 한 번만
 export default function RootLayout({ children }) {
   return (
     <html>
@@ -598,12 +598,12 @@ export default function RootLayout({ children }) {
 ### 2. 동적 스타일 최소화
 
 ```tsx
-// ❌ 나쁜 예: 매번 다른 스타일 생성
+// [주의] 나쁜 예: 매번 다른 스타일 생성
 const Button = styled.button<{ color: string }>`
   background: ${props => props.color}; // 매번 새 클래스 생성
 `;
 
-// ✅ 좋은 예: CSS 변수 사용
+// [권장] 좋은 예: CSS 변수 사용
 const Button = styled.button`
   background: var(--button-color);
 `;
@@ -616,13 +616,13 @@ const Button = styled.button`
 ### 3. Transient Props 사용
 
 ```tsx
-// ❌ 나쁜 예: DOM에 전달되는 props
+// [주의] 나쁜 예: DOM에 전달되는 props
 const Button = styled.button<{ $primary: boolean }>`
   background: ${props => props.$primary ? 'blue' : 'gray'};
 `;
 // Warning: React does not recognize the `$primary` prop on a DOM element
 
-// ✅ 좋은 예: $ 접두사로 transient props
+// [권장] 좋은 예: $ 접두사로 transient props
 const Button = styled.button<{ $primary: boolean }>`
   background: ${props => props.$primary ? 'blue' : 'gray'};
 `;
@@ -632,7 +632,7 @@ const Button = styled.button<{ $primary: boolean }>`
 ### 4. 스타일 재사용
 
 ```tsx
-// ❌ 나쁜 예: 중복 스타일
+// [주의] 나쁜 예: 중복 스타일
 const PrimaryButton = styled.button`
   padding: 10px 20px;
   border-radius: 4px;
@@ -645,7 +645,7 @@ const SecondaryButton = styled.button`
   background: gray;
 `;
 
-// ✅ 좋은 예: 베이스 스타일 공유
+// [권장] 좋은 예: 베이스 스타일 공유
 const BaseButton = styled.button`
   padding: 10px 20px;
   border-radius: 4px;
@@ -673,14 +673,14 @@ ReferenceError: document is not defined
 
 **해결:**
 ```tsx
-// ❌ 잘못된 예
+// [주의] 잘못된 예
 const GlobalStyle = createGlobalStyle`
   body {
     margin: 0;
   }
 `;
 
-// ✅ 올바른 예: 클라이언트 전용 체크
+// [권장] 올바른 예: 클라이언트 전용 체크
 'use client';
 
 const GlobalStyle = createGlobalStyle`
@@ -716,12 +716,12 @@ module.exports = {
 
 **해결:**
 ```tsx
-// ❌ 잘못된 예: 중첩된 Registry
+// [주의] 잘못된 예: 중첩된 Registry
 <StyledComponentsRegistry>
   <StyledComponentsRegistry>{children}</StyledComponentsRegistry>
 </StyledComponentsRegistry>
 
-// ✅ 올바른 예: Registry는 최상위에 한 번만
+// [권장] 올바른 예: Registry는 최상위에 한 번만
 <StyledComponentsRegistry>{children}</StyledComponentsRegistry>
 ```
 

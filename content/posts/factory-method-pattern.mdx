@@ -922,7 +922,7 @@ fun main() {
 
 ### 1. 과도한 추상화
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 // 단순한 객체 생성에 불필요한 팩토리 계층
@@ -940,7 +940,7 @@ fun String.toUpperCaseString() = this.uppercase()
 
 ### 2. 팩토리 메서드에서 조건문 사용
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 class PaymentFactory : PaymentFactoryBase() {
@@ -954,7 +954,7 @@ class PaymentFactory : PaymentFactoryBase() {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```kotlin
 // 각 결제 방식마다 별도 팩토리
@@ -969,7 +969,7 @@ class OfflinePaymentFactory : PaymentFactoryBase() {
 
 ### 3. 제품 간 의존성
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 // Product A가 Product B에 의존
@@ -986,7 +986,7 @@ class FactoryA : Factory() {
 }
 ```
 
-**✅ 개선 방법:**
+**[권장] 개선 방법:**
 
 이 경우 추상 팩토리 패턴으로 전환하거나 의존성 주입 사용
 

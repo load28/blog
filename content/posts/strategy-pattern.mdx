@@ -773,7 +773,7 @@ function compressWithOptimalStrategy(fileData: string): string {
 
 ### 1. 과도한 전략 생성
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 // 단순한 차이를 위해 불필요한 전략 생성
@@ -790,7 +790,7 @@ class AddThreeStrategy : MathStrategy {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```kotlin
 // 매개변수로 처리 가능한 경우 단일 전략 사용
@@ -805,7 +805,7 @@ val addTwo = AddStrategy(2)
 
 ### 2. 컨텍스트와 전략 간 과도한 통신
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 // 전략이 컨텍스트의 내부 상태에 과도하게 의존
@@ -821,7 +821,7 @@ class ReportGenerator(private var strategy: ReportStrategy) {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```kotlin
 // 필요한 데이터만 전달
@@ -834,7 +834,7 @@ class ReportGenerator(private var strategy: ReportStrategy) {
 
 ### 3. 전략 선택 로직의 복잡화
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```kotlin
 // 클라이언트가 전략 선택 로직을 알아야 함
@@ -852,7 +852,7 @@ fun processPayment(amount: Double, method: String) {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```kotlin
 // 팩토리 패턴과 결합하여 전략 선택 로직 캡슐화

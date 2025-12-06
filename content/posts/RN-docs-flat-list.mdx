@@ -16,7 +16,7 @@ React Native에서 긴 목록 데이터를 렌더링할 때 `FlatList`는 성능
 `ScrollView`는 모든 자식 컴포넌트를 **초기 렌더링 시점에 한 번에 렌더링**합니다.
 
 ```tsx
-// ❌ 1000개 항목을 한 번에 렌더링
+// [주의] 1000개 항목을 한 번에 렌더링
 <ScrollView>
   {items.map(item => (
     <ItemComponent key={item.id} data={item} />
@@ -35,7 +35,7 @@ React Native에서 긴 목록 데이터를 렌더링할 때 `FlatList`는 성능
 `FlatList`는 **현재 화면에 보이는 항목과 그 주변의 몇 개 항목만** 렌더링합니다.
 
 ```tsx
-// ✅ 화면에 보이는 ~10개 항목만 렌더링
+// [권장] 화면에 보이는 ~10개 항목만 렌더링
 <FlatList
   data={items}
   renderItem={({ item }) => <ItemComponent data={item} />}

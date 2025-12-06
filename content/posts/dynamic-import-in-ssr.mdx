@@ -84,7 +84,7 @@ const WrapComponent = () => {
 `lazy`는 React의 클라이언트 전용 API로, 서버 컴포넌트에서 직접 사용할 수 없습니다.
 
 ```tsx
-// ❌ 서버 컴포넌트에서 직접 사용 불가
+// [주의] 서버 컴포넌트에서 직접 사용 불가
 export default function ServerPage() {
   const LazyComponent = lazy(() => import('./LazyComponent')); // 에러!
   return <LazyComponent />;
@@ -161,12 +161,12 @@ export default function ServerPage() {
 | 특징 | React lazy | Next.js dynamic |
 |------|-----------|-----------------|
 | 사용 환경 | 클라이언트 컴포넌트만 | 서버/클라이언트 모두 |
-| Suspense 필요 | ✅ 필수 | ❌ 선택적 (loading 옵션) |
-| SSR 제어 | ❌ 불가능 | ✅ 가능 (ssr 옵션) |
-| 표준 API | ✅ React 표준 | ❌ Next.js 전용 |
+| Suspense 필요 | [지원] 필수 | [미지원] 선택적 (loading 옵션) |
+| SSR 제어 | [미지원] 불가능 | [지원] 가능 (ssr 옵션) |
+| 표준 API | [지원] React 표준 | [미지원] Next.js 전용 |
 | 로딩 UI | Suspense fallback | loading 옵션 또는 Suspense |
-| 코드 스플리팅 | ✅ 지원 | ✅ 지원 |
-| 번들러 독립성 | ✅ 독립적 | ⚠️ Next.js 의존 |
+| 코드 스플리팅 | [지원] 지원 | [지원] 지원 |
+| 번들러 독립성 | [지원] 독립적 | [부분] Next.js 의존 |
 
 ## SSR 제어: 가장 중요한 차이점
 
@@ -229,13 +229,13 @@ export default function ServerPage() {
 ### 사례 1: 브라우저 API 의존 컴포넌트
 
 ```tsx
-// ❌ 서버에서 에러 발생 (window is not defined)
+// [주의] 서버에서 에러 발생 (window is not defined)
 const MapComponent = () => {
   const map = new window.google.maps.Map(...);
   return <div ref={mapRef} />;
 };
 
-// ✅ ssr: false로 클라이언트 전용 렌더링
+// [권장] ssr: false로 클라이언트 전용 렌더링
 const MapComponent = dynamic(() => import('./MapComponent'), {
   ssr: false,
   loading: () => <div>Loading map...</div>
@@ -346,7 +346,7 @@ LazyComponent.chunk.js: 150KB
 |------|-----------|----------------------------|------------------------------|
 | 서버 번들 크기 | 포함 | 포함 | **제외** |
 | TTFB | 느림 (무거운 컴포넌트 포함) | 느림 | **빠름** |
-| SEO | ✅ 좋음 | ✅ 좋음 | ⚠️ 클라이언트만 |
+| SEO | [지원] 좋음 | [지원] 좋음 | [부분] 클라이언트만 |
 | FCP | 빠름 (서버 렌더링) | 빠름 | 느림 (로딩 UI만) |
 
 ### 추천 전략

@@ -55,7 +55,7 @@ React Native에서 `ScrollView`는 다양한 형태의 콘텐츠를 스크롤 �
 | 사용 사례 | 폼, 상세 페이지, 대시보드 | 목록, 피드, 검색 결과 |
 | 초기 로딩 | 느림 (모두 렌더링) | 빠름 (일부만 렌더링) |
 | 메모리 사용 | 항목 수에 비례 | 거의 일정 |
-| 스크롤 성능 | ✅ 우수 | ✅ 우수 |
+| 스크롤 성능 | [지원] 우수 | [지원] 우수 |
 
 ## ScrollView 기본 사용법
 
@@ -235,14 +235,14 @@ const onRefresh = async () => {
 ### 2. contentContainerStyle로 레이아웃 최적화
 
 ```tsx
-// ❌ 비효율적
+// [주의] 비효율적
 <ScrollView>
   <View style={{ padding: 20 }}>
     {/* 콘텐츠 */}
   </View>
 </ScrollView>
 
-// ✅ 효율적
+// [권장] 효율적
 <ScrollView
   contentContainerStyle={{ padding: 20 }}
 >
@@ -270,14 +270,14 @@ useEffect(() => {
 ### 4. 중첩 스크롤 최적화
 
 ```tsx
-// ❌ 중첩 스크롤 (성능 문제)
+// [주의] 중첩 스크롤 (성능 문제)
 <ScrollView>
   <ScrollView horizontal>
     {/* 수평 스크롤 */}
   </ScrollView>
 </ScrollView>
 
-// ✅ nestedScrollEnabled 사용 (Android)
+// [권장] nestedScrollEnabled 사용 (Android)
 <ScrollView>
   <ScrollView horizontal nestedScrollEnabled>
     {/* 수평 스크롤 */}
@@ -369,14 +369,14 @@ const Dashboard = () => {
 ### 실수 1: 긴 목록에 ScrollView 사용
 
 ```tsx
-// ❌ 성능 문제 발생
+// [주의] 성능 문제 발생
 <ScrollView>
   {items.map(item => (
     <ProductCard key={item.id} data={item} />
   ))}
 </ScrollView>
 
-// ✅ FlatList 사용
+// [권장] FlatList 사용
 <FlatList
   data={items}
   renderItem={({ item }) => <ProductCard data={item} />}
@@ -387,14 +387,14 @@ const Dashboard = () => {
 ### 실수 2: flex: 1 미사용
 
 ```tsx
-// ❌ 스크롤 안 됨
+// [주의] 스크롤 안 됨
 <View style={{ flex: 1 }}>
   <ScrollView>
     {/* 콘텐츠 */}
   </ScrollView>
 </View>
 
-// ✅ 정상 동작
+// [권장] 정상 동작
 <ScrollView style={{ flex: 1 }}>
   {/* 콘텐츠 */}
 </ScrollView>
@@ -403,12 +403,12 @@ const Dashboard = () => {
 ### 실수 3: contentContainerStyle vs style 혼동
 
 ```tsx
-// ❌ 잘못된 사용
+// [주의] 잘못된 사용
 <ScrollView style={{ padding: 20 }}>
   {/* padding이 스크롤 영역에 적용되지 않음 */}
 </ScrollView>
 
-// ✅ 올바른 사용
+// [권장] 올바른 사용
 <ScrollView contentContainerStyle={{ padding: 20 }}>
   {/* padding이 콘텐츠에 적용됨 */}
 </ScrollView>

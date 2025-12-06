@@ -27,8 +27,8 @@ Node.js 생태계에서 패키지 매니저를 선택할 때, Yarn Berry(Yarn 2+
 ```javascript
 // 코드에서 직접 선언하지 않은 패키지 사용 가능
 import lodash from 'lodash'; // express의 의존성
-// npm/Yarn Classic: 동작 ✅ (잘못된 동작)
-// PNPM/Yarn Berry PnP: 에러 ❌ (올바른 동작)
+// npm/Yarn Classic: 동작 [권장] (잘못된 동작)
+// PNPM/Yarn Berry PnP: 에러 [주의] (올바른 동작)
 ```
 
 npm은 평탄화(hoisting)된 `node_modules` 구조로 인해 직접 선언하지 않은 패키지에 접근 가능합니다.
@@ -550,7 +550,7 @@ git commit -m "Enable Zero Install"
 
 ### PNPM을 선택해야 하는 경우
 
-**✅ 추천:**
+**[권장] 추천:**
 
 1. **기존 도구와의 호환성 중요**
    - 레거시 패키지가 많은 프로젝트
@@ -570,12 +570,12 @@ git commit -m "Enable Zero Install"
 // PNPM은 node_modules 구조 유지 → 기존 코드 변경 불필요
 import fs from 'fs';
 const pkgPath = './node_modules/some-package/package.json';
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // ✅ 동작
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // [권장] 동작
 ```
 
 ### Yarn Berry를 선택해야 하는 경우
 
-**✅ 추천:**
+**[권장] 추천:**
 
 1. **최대 성능 필요**
    - CI/CD 시간 최소화
@@ -595,11 +595,11 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // ✅ 동작
 // PnP 모드에서는 파일 시스템 접근 제한
 import fs from 'fs';
 const pkgPath = './node_modules/some-package/package.json';
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // ❌ 에러
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // [주의] 에러
 
 // 해결책: require.resolve 사용
 const pkgPath = require.resolve('some-package/package.json');
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // ✅ 동작
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); // [권장] 동작
 ```
 
 ## 트러블슈팅

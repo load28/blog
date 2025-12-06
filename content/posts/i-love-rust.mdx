@@ -70,7 +70,7 @@ Clippy는 Rust의 공식 Lint 도구로, 500개 이상의 규칙을 제공합니
 ### 비효율적인 코드 감지
 
 ```rust
-// ❌ 비효율적인 코드
+// [주의] 비효율적인 코드
 let x = vec![1, 2, 3];
 let y = x.clone();  // 불필요한 clone
 
@@ -82,25 +82,25 @@ help: consider removing the `clone()` call
 ### 관용적 코드 제안
 
 ```rust
-// ❌ 비관용적인 코드
+// [주의] 비관용적인 코드
 let mut v = Vec::new();
 for i in 0..10 {
     v.push(i);
 }
 
-// ✅ Clippy가 제안하는 코드
+// [권장] Clippy가 제안하는 코드
 let v: Vec<_> = (0..10).collect();
 ```
 
 ### 잠재적 버그 발견
 
 ```rust
-// ❌ 잠재적 버그
+// [주의] 잠재적 버그
 if x == true {  // 불필요한 비교
     // ...
 }
 
-// ✅ Clippy 제안
+// [권장] Clippy 제안
 if x {
     // ...
 }

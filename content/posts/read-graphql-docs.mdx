@@ -455,13 +455,13 @@ const UserDashboard = ({ userId }) => {
 
 | 기능 | Relay | Apollo Client |
 |------|-------|---------------|
-| Fragment Colocation | ✅ 강제 (권장) | ⚠️ 선택적 |
-| Compiler | ✅ 필수 (최적화) | ❌ 선택적 |
-| SSR | ❌ 미지원 | ✅ 공식 지원 |
-| 캐시 정규화 | ✅ 자동 | ⚠️ 수동 설정 |
-| Pagination | ✅ `@connection` | ⚠️ `fetchMore` 수동 |
+| Fragment Colocation | [지원] 강제 (권장) | [부분] 선택적 |
+| Compiler | [지원] 필수 (최적화) | [미지원] 선택적 |
+| SSR | [미지원] 미지원 | [지원] 공식 지원 |
+| 캐시 정규화 | [지원] 자동 | [부분] 수동 설정 |
+| Pagination | [지원] `@connection` | [부분] `fetchMore` 수동 |
 | 학습 곡선 | 높음 | 낮음 |
-| 대규모 앱 확장성 | ✅ 우수 | ⚠️ 수동 관리 필요 |
+| 대규모 앱 확장성 | [지원] 우수 | [부분] 수동 관리 필요 |
 
 ## GraphQL의 장점
 
@@ -542,10 +542,10 @@ query {
 ### 1. 점진적 도입
 
 ```typescript
-// ❌ 전체 시스템 한 번에 마이그레이션
+// [주의] 전체 시스템 한 번에 마이그레이션
 // GraphQL로 모든 엔드포인트 교체 → 위험
 
-// ✅ 단계적 마이그레이션
+// [권장] 단계적 마이그레이션
 // Phase 1: 읽기 전용 쿼리만 GraphQL 전환
 query {
   users { name email }

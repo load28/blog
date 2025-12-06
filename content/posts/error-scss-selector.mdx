@@ -228,7 +228,7 @@ SCSS(Sass)의 중첩 선택자 기능은 CSS를 더 구조적으로 작성할 �
 ### 실수 1: 의도하지 않은 형제 선택자
 
 ```scss
-// ❌ 잘못된 사용
+// [주의] 잘못된 사용
 .parent {
   &child {
     color: red;
@@ -238,7 +238,7 @@ SCSS(Sass)의 중첩 선택자 기능은 CSS를 더 구조적으로 작성할 �
 ```
 
 ```scss
-// ✅ 올바른 사용
+// [권장] 올바른 사용
 .parent {
   .child {
     color: red;
@@ -250,7 +250,7 @@ SCSS(Sass)의 중첩 선택자 기능은 CSS를 더 구조적으로 작성할 �
 ### 실수 2: 불필요한 & 사용
 
 ```scss
-// ❌ 불필요한 사용
+// [주의] 불필요한 사용
 .parent {
   & .child {
     color: red;
@@ -259,7 +259,7 @@ SCSS(Sass)의 중첩 선택자 기능은 CSS를 더 구조적으로 작성할 �
 ```
 
 ```scss
-// ✅ 간결한 사용
+// [권장] 간결한 사용
 .parent {
   .child {
     color: red;

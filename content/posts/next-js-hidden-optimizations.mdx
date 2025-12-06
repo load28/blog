@@ -21,7 +21,7 @@ Next.js App Router에서 MSW를 통합할 때 다음과 같은 타이밍 문제�
 
 **기존 방식의 한계:**
 ```typescript
-// ❌ 문제: 컴포넌트 렌더링 후 MSW 초기화
+// [주의] 문제: 컴포넌트 렌더링 후 MSW 초기화
 export default function RootLayout({ children }) {
   useEffect(() => {
     // 렌더링 이후에 실행됨 - 너무 늦음
@@ -106,7 +106,7 @@ export function MSWProvider({ children }) {
 2. use(mockingEnabledPromise) 실행
 3. Promise 완료 대기 (MSW 서버 초기화 완료)
 4. children 렌더링 시작
-5. API 호출 → MSW 인터셉트 ✅
+5. API 호출 → MSW 인터셉트 [권장]
 ```
 
 ## Next.js의 숨겨진 최적화: 이벤트 루프 지연
@@ -356,13 +356,13 @@ SvelteKit은 **빌드 타임에 정적 분석**으로 preload 생성:
 ### 1. 과도한 동적 임포트 피하기
 
 ```typescript
-// ❌ 너무 많은 동적 임포트
+// [주의] 너무 많은 동적 임포트
 const A = dynamic(() => import('./A'));
 const B = dynamic(() => import('./B'));
 const C = dynamic(() => import('./C'));
 // ... 20개 이상
 
-// ✅ 적절한 청크 분할
+// [권장] 적절한 청크 분할
 const DashboardWidgets = dynamic(() => import('./DashboardWidgets'));
 ```
 
@@ -373,7 +373,7 @@ const DashboardWidgets = dynamic(() => import('./DashboardWidgets'));
 ### 2. 조건부 렌더링과 Preload
 
 ```typescript
-// ⚠️ 주의: 조건부 렌더링은 항상 preload됨
+// [참고] 주의: 조건부 렌더링은 항상 preload됨
 const Admin = dynamic(() => import('./Admin'));
 
 export default function Dashboard({ isAdmin }) {
@@ -387,7 +387,7 @@ export default function Dashboard({ isAdmin }) {
 
 **해결책:**
 ```typescript
-// ✅ 조건부 동적 임포트
+// [권장] 조건부 동적 임포트
 export default function Dashboard({ isAdmin }) {
   const [AdminComponent, setAdmin] = useState(null);
 

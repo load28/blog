@@ -33,25 +33,25 @@ packages/
 
 **1. Library 패키지는 Feature 패키지를 참조 불가**
 ```typescript
-// ❌ packages/libraries/ui-components/Button.tsx
+// [주의] packages/libraries/ui-components/Button.tsx
 import { useAuth } from '@features/auth'; // 불가능!
 
-// ✅ 올바른 사용
+// [권장] 올바른 사용
 import { theme } from '@libraries/utils';
 ```
 
 **2. Feature 패키지는 다른 Feature 패키지를 참조 불가**
 ```typescript
-// ❌ packages/features/dashboard/Dashboard.tsx
+// [주의] packages/features/dashboard/Dashboard.tsx
 import { LoginForm } from '@features/auth'; // 불가능!
 
-// ✅ 올바른 사용: 공통 기능은 library로 추출
+// [권장] 올바른 사용: 공통 기능은 library로 추출
 import { AuthGuard } from '@libraries/auth-utils';
 ```
 
 **3. Feature 패키지는 Library 패키지를 참조 가능**
 ```typescript
-// ✅ packages/features/auth/Login.tsx
+// [권장] packages/features/auth/Login.tsx
 import { Button } from '@libraries/ui-components';
 import { api } from '@libraries/api-client';
 ```
@@ -383,7 +383,7 @@ module.exports = {
 **장점:**
 - 🐛 **디버깅 모드**: `BOUNDARIES_DEBUG=1` 환경변수로 상세 로그
 - 📸 **Capture 기능**: 의존성 그래프 스냅샷 생성
-- ✅ **커뮤니티 검증**: 수천 개 프로젝트에서 사용
+- [지원] **커뮤니티 검증**: 수천 개 프로젝트에서 사용
 - 🔧 **유연한 설정**: glob 패턴, custom matcher 지원
 
 ### 최종 선택: eslint-plugin-boundaries
@@ -446,7 +446,7 @@ module.exports = {
 
 ```typescript
 // packages/libraries/ui-components/AuthButton.tsx
-import { useAuth } from '@features/auth'; // ❌ ESLint 에러
+import { useAuth } from '@features/auth'; // [주의] ESLint 에러
 
 // Error: boundary-types
 // Library packages cannot import from feature packages
@@ -454,7 +454,7 @@ import { useAuth } from '@features/auth'; // ❌ ESLint 에러
 
 ```typescript
 // packages/features/dashboard/Dashboard.tsx
-import { LoginForm } from '@features/auth'; // ❌ ESLint 에러
+import { LoginForm } from '@features/auth'; // [주의] ESLint 에러
 
 // Error: boundary-types
 // Feature packages cannot import from other feature packages
@@ -469,7 +469,7 @@ import { LoginForm } from '@features/auth'; // ❌ ESLint 에러
 1. **명확한 의존성 규칙 정의**
    - Library ↛ Feature
    - Feature ↛ Feature (자기 자신 제외)
-   - Feature → Library ✅
+   - Feature → Library [권장]
 
 2. **프로덕션 환경에는 검증된 솔루션 사용**
    - eslint-plugin-boundaries (독립적 사용 시)

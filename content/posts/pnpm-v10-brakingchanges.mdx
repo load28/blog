@@ -62,7 +62,7 @@ package.json에 명시된 의존성만 node_modules/ 루트에 symlink 생성
 **3. Phantom Dependency 방지**
 ```typescript
 // package.json에 lodash 없음
-import _ from 'lodash'; // ❌ Error: Cannot find module 'lodash'
+import _ from 'lodash'; // [주의] Error: Cannot find module 'lodash'
 
 // npm/Yarn에서는 동작함 (다른 패키지가 설치했으면)
 // PNPM에서는 명시적으로 설치 필요
@@ -121,7 +121,7 @@ node_modules/
 ├── eslint/ → .pnpm/eslint@8.0.0/node_modules/eslint
 └── eslint-plugin-react/ → .pnpm/eslint-plugin-react@7.0.0/...
 
-# VSCode ESLint 확장이 node_modules/eslint를 찾음 ✅
+# VSCode ESLint 확장이 node_modules/eslint를 찾음 [권장]
 ```
 
 ## v10의 변경된 호이스팅 정책: Zero Tolerance
@@ -150,7 +150,7 @@ node_modules/
     └── prettier@3.0.0/
 
 # 루트에 아무것도 없음!
-# VSCode ESLint 확장: ❌ Cannot find module 'eslint'
+# VSCode ESLint 확장: [주의] Cannot find module 'eslint'
 ```
 
 ### 명시적 public-hoist-pattern 필수
@@ -199,7 +199,7 @@ const eslint = require('eslint'); // auto-hoist로 접근 가능!
 **v10에서는 원천 차단:**
 ```typescript
 // node_modules/malicious-pkg/index.js
-const eslint = require('eslint'); // ❌ Error: Cannot find module
+const eslint = require('eslint'); // [주의] Error: Cannot find module
 // package.json에 eslint가 명시되지 않으면 접근 불가
 ```
 
@@ -364,7 +364,7 @@ pnpm install
 
 # 확인
 pnpm dev
-# ✅ 정상 동작
+# [권장] 정상 동작
 ```
 
 ## 트러블슈팅
@@ -454,7 +454,7 @@ public-hoist-pattern[]=typescript
 ```json
 {
   "pnpm": {
-    "shamefully-hoist": true  // ❌ v10의 보안 강화 무효화
+    "shamefully-hoist": true  // [주의] v10의 보안 강화 무효화
   }
 }
 ```
@@ -486,7 +486,7 @@ const eslint = require('eslint'); // 자동으로 접근 가능
 **After (v10):**
 ```typescript
 // package.json에 명시되지 않으면 접근 불가
-const eslint = require('eslint'); // ❌ Error
+const eslint = require('eslint'); // [주의] Error
 ```
 
 ### 명시성과 문서화

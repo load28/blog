@@ -75,7 +75,7 @@ t1     if (instance == null)
 t2                                   if (instance == null)
 t3     → true, instance = ...
 t4                                   → true, instance = ...
-결과:  두 개의 인스턴스 생성! ❌
+결과:  두 개의 인스턴스 생성! [주의]
 ```
 
 **실제 테스트:**
@@ -772,7 +772,7 @@ unsubscribe(); // 구독 해제
 
 ### 1. 싱글톤 남용
 
-**❌ 잘못된 사용:**
+**[주의] 잘못된 사용:**
 
 ```kotlin
 // 모든 것을 싱글톤으로 만들면 안 됨
@@ -791,7 +791,7 @@ class ProductService private constructor() {
 // 의존성 주입으로 해결 가능한 경우
 ```
 
-**✅ 대안:**
+**[권장] 대안:**
 
 ```kotlin
 // 의존성 주입 사용
@@ -803,7 +803,7 @@ class ProductService(private val repository: ProductRepository)
 
 ### 2. 테스트 어려움
 
-**❌ 문제:**
+**[주의] 문제:**
 
 ```kotlin
 class PaymentProcessor {
@@ -817,7 +817,7 @@ class PaymentProcessor {
 // 테스트 시 Logger를 Mock으로 교체하기 어려움
 ```
 
-**✅ 해결:**
+**[권장] 해결:**
 
 ```kotlin
 // 의존성 주입으로 변경
@@ -842,7 +842,7 @@ class PaymentProcessorTest {
 
 ### 3. 직렬화 문제
 
-**❌ 문제:**
+**[주의] 문제:**
 
 ```kotlin
 class SerializableSingleton private constructor() : Serializable {
@@ -856,7 +856,7 @@ class SerializableSingleton private constructor() : Serializable {
 // 역직렬화 시 새 인스턴스 생성!
 ```
 
-**✅ 해결:**
+**[권장] 해결:**
 
 ```kotlin
 class SerializableSingleton private constructor() : Serializable {

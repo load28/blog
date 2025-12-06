@@ -57,14 +57,14 @@ interface Params {
 type Required = RequiredParams<Params>;
 
 const result: Required = {
-  // ❌ last 속성이 없으므로 컴파일 에러 발생
+  // [주의] last 속성이 없으므로 컴파일 에러 발생
   name: {
     first: 'first',
   },
 };
 
 const validResult: Required = {
-  // ✅ 모든 속성이 필수로 정의됨
+  // [권장] 모든 속성이 필수로 정의됨
   name: {
     last: 'last',
     first: 'first',

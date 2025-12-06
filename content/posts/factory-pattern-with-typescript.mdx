@@ -1039,7 +1039,7 @@ pgPool.releaseConnection(connection);
 
 ### 1. any 타입 남발
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```typescript
 class BadFactory {
@@ -1050,7 +1050,7 @@ class BadFactory {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```typescript
 type ConstructorMap<T> = {
@@ -1073,7 +1073,7 @@ class GoodFactory<T extends Record<string, any>> {
 
 ### 2. 타입 가드 누락
 
-**❌ 잘못된 예:**
+**[주의] 잘못된 예:**
 
 ```typescript
 function processUser(user: User) {
@@ -1082,7 +1082,7 @@ function processUser(user: User) {
 }
 ```
 
-**✅ 개선된 예:**
+**[권장] 개선된 예:**
 
 ```typescript
 function isPremiumUser(user: User): user is PremiumUser {

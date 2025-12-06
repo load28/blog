@@ -425,7 +425,7 @@ function animate() {
 ### 1. 반복 계산 피하기
 
 ```javascript
-// ❌ 나쁜 예: 매 프레임마다 차이 계산
+// [주의] 나쁜 예: 매 프레임마다 차이 계산
 function badLerp(a, b, t) {
   return a + t * (b - a); // (b - a) 매번 계산
 }
@@ -434,7 +434,7 @@ for (let i = 0; i < 1000; i++) {
   const value = badLerp(0, 100, i / 1000);
 }
 
-// ✅ 좋은 예: 차이를 미리 계산
+// [권장] 좋은 예: 차이를 미리 계산
 const diff = 100 - 0;
 for (let i = 0; i < 1000; i++) {
   const value = 0 + (i / 1000) * diff;

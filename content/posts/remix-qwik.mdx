@@ -619,7 +619,7 @@ Qwik:
 
 ### Remix가 적합한 경우
 
-**✅ 추천:**
+**[권장] 추천:**
 
 1. **웹 표준 우선 프로젝트**
    - SEO가 중요한 콘텐츠 사이트
@@ -661,7 +661,7 @@ export async function action({ request }) {
 
 ### Qwik이 적합한 경우
 
-**✅ 추천:**
+**[권장] 추천:**
 
 1. **극한의 성능이 필요한 경우**
    - 모바일 우선 애플리케이션
@@ -704,7 +704,7 @@ export default component$(() => {
 
 ### Next.js가 여전히 적합한 경우
 
-**✅ 추천:**
+**[권장] 추천:**
 
 1. **검증된 생태계 필요**
    - 엔터프라이즈 환경
@@ -826,30 +826,30 @@ export const onGet = async () => {
 ### Remix
 
 **장점:**
-- ✅ 웹 표준 활용으로 배우기 쉬움
-- ✅ Progressive Enhancement
-- ✅ 안정적인 React 생태계
+- [지원] 웹 표준 활용으로 배우기 쉬움
+- [지원] Progressive Enhancement
+- [지원] 안정적인 React 생태계
 
 **단점:**
-- ⚠️ React 하이드레이션 비용 여전히 존재
-- ⚠️ Next.js보다 작은 생태계
+- [부분] React 하이드레이션 비용 여전히 존재
+- [부분] Next.js보다 작은 생태계
 
 ### Qwik
 
 **장점:**
-- ✅ 획기적인 성능 (0ms TTI)
-- ✅ 대규모 앱에서도 성능 유지
-- ✅ 자동 코드 분할
+- [지원] 획기적인 성능 (0ms TTI)
+- [지원] 대규모 앱에서도 성능 유지
+- [지원] 자동 코드 분할
 
 **단점:**
-- ⚠️ 새로운 패러다임 (학습 곡선)
-- ⚠️ 작은 생태계 (라이브러리 제한)
-- ⚠️ `$` 문법에 대한 적응 필요
+- [부분] 새로운 패러다임 (학습 곡선)
+- [부분] 작은 생태계 (라이브러리 제한)
+- [부분] `$` 문법에 대한 적응 필요
 
 **직렬화 제약:**
 
 ```typescript
-// ❌ 직렬화 불가능 (클로저 참조)
+// [주의] 직렬화 불가능 (클로저 참조)
 export default component$(() => {
   const externalValue = fetchFromSomewhere();
 
@@ -862,7 +862,7 @@ export default component$(() => {
   );
 });
 
-// ✅ 직렬화 가능
+// [권장] 직렬화 가능
 export default component$(() => {
   const value = useSignal(initialValue);
 

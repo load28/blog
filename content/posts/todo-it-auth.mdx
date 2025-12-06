@@ -166,7 +166,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth(authConfig);
 | 전략 | 장점 | 단점 | 선택 이유 |
 |------|------|------|----------|
 | **JWT** | 빠름 (DB 조회 불필요), 서버리스 친화적 | 즉시 무효화 불가, 크기 제한 | - |
-| **Database** ✅ | 즉시 로그아웃 가능, 세션 통계 수집 | DB 조회 오버헤드 | Todo 앱은 세션 무효화 필요 |
+| **Database** [권장] | 즉시 로그아웃 가능, 세션 통계 수집 | DB 조회 오버헤드 | Todo 앱은 세션 무효화 필요 |
 
 ### DynamoDB marshallOptions
 
@@ -442,10 +442,10 @@ NEXT_PUBLIC_APP_URL=https://todo-app.com
 ```
 
 **보안 체크리스트:**
-- ✅ `.env.local`을 `.gitignore`에 추가
-- ✅ GitHub Actions Secrets에 저장
-- ✅ AWS Secrets Manager 사용 (프로덕션)
-- ❌ `NEXT_PUBLIC_` 접두사에 시크릿 노출 금지
+- [지원] `.env.local`을 `.gitignore`에 추가
+- [지원] GitHub Actions Secrets에 저장
+- [지원] AWS Secrets Manager 사용 (프로덕션)
+- [미지원] `NEXT_PUBLIC_` 접두사에 시크릿 노출 금지
 
 ### 2. CSRF 보호
 

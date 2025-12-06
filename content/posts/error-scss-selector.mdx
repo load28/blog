@@ -1,9 +1,17 @@
 ---
-title: 'Errorful Sass Selector'
-description: 'A guide on common mistakes when using Sass selectors'
+title: 'SCSS 중첩 선택자 사용법: & 연산자의 올바른 활용'
+description: 'SCSS의 & 연산자를 활용한 선택자 중첩과 흔한 실수 방지'
 date: '2024-08-23'
 tags: ['css']
 ---
+
+SCSS(Sass)의 중첩 선택자 기능은 CSS를 더 구조적으로 작성할 수 있게 해주지만, `&` 연산자의 동작 방식을 정확히 이해하지 못하면 의도하지 않은 CSS가 생성될 수 있습니다. 이 글에서는 `&` 연산자의 올바른 사용법과 흔한 실수를 살펴보겠습니다.
+
+## & 연산자의 기본 동작
+
+### 형제 관계 선택자
+
+`&` 연산자를 공백 없이 바로 붙여 사용하면 형제 관계의 선택자가 생성됩니다.
 
 ```scss
 .test {
@@ -13,8 +21,25 @@ tags: ['css']
     background-color: black;
   }
 }
--> .test.test1
+```
 
+컴파일 결과:
+
+```css
+.test.test1 {
+  width: 100px;
+  height: 100px;
+  background-color: black;
+}
+```
+
+이는 `class="test test1"`처럼 두 클래스를 모두 가진 요소를 선택합니다.
+
+### 부모-자식 관계 선택자
+
+`&` 없이 직접 중첩하면 부모-자식 관계의 선택자가 생성됩니다.
+
+```scss
 .test2 {
   .test3 {
     width: 100px;
@@ -22,32 +47,232 @@ tags: ['css']
     background-color: yellow;
   }
 }
--> .test2 .test3
 ```
 
-이렇게 작성했을때 `test`와 `test1`은 형제 관계이며
-`test2`와 `test3`은 부모 자식의 관계를 가져야함
+컴파일 결과:
 
-단 아래와 같이 공백을 넣으면 부모자식 관계를 가지도록 컴파일 할 수가 있음.
-다만 일반적으로 `&` 다음에 공백을 넣으면 가독성이 떨어지므로
-`&`은 형제와 가상선택자일때만 사용함
+```css
+.test2 .test3 {
+  width: 100px;
+  height: 100px;
+  background-color: yellow;
+}
+```
+
+이는 `.test2` 내부의 `.test3` 요소를 선택합니다.
+
+## & 연산자와 공백의 조합
+
+`&` 다음에 공백을 넣으면 부모-자식 관계를 명시적으로 표현할 수 있습니다.
 
 ```scss
 .test {
-	& .test1 {
-	}
+  & .test1 {
+    color: red;
+  }
 }
--> .test .test1
 ```
 
-부모 관계를 나타내고 싶으면 아래와 같이 사용하는것이 구분하기 쉬움
+컴파일 결과:
+
+```css
+.test .test1 {
+  color: red;
+}
+```
+
+하지만 이 방식은 다음과 같은 이유로 권장되지 않습니다:
+
+- **가독성 저하**: `&` 다음의 공백이 명확하지 않아 혼란을 초래할 수 있습니다.
+- **불필요한 복잡성**: 공백만으로 동일한 결과를 얻을 수 있으므로 `&`를 굳이 사용할 필요가 없습니다.
+
+## 권장 사용 패턴
+
+### 1. 형제 관계: & 사용
+
+`&`는 주로 다음과 같은 경우에 사용합니다:
+
+**수식어 클래스 추가:**
+
+```scss
+.button {
+  background-color: blue;
+
+  &.primary {
+    background-color: red;
+  }
+
+  &.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+```
+
+**가상 클래스 선택자:**
+
+```scss
+.link {
+  color: blue;
+
+  &:hover {
+    color: darkblue;
+  }
+
+  &:visited {
+    color: purple;
+  }
+}
+```
+
+**가상 요소:**
+
+```scss
+.card {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+  }
+}
+```
+
+### 2. 부모-자식 관계: 직접 중첩
+
+부모-자식 관계를 나타낼 때는 `&` 없이 직접 중첩하는 것이 명확합니다:
 
 ```scss
 .test {
   .test1 {
+    color: red;
   }
 }
+```
 
+이는 다음과 동일하게 컴파일됩니다:
+
+```css
 .test .test1 {
+  color: red;
 }
 ```
+
+## 실전 예시
+
+### BEM 패턴과 함께 사용
+
+```scss
+.card {
+  padding: 20px;
+
+  &__header {
+    font-size: 24px;
+    font-weight: bold;
+  }
+
+  &__body {
+    margin-top: 16px;
+  }
+
+  &--featured {
+    border: 2px solid gold;
+  }
+}
+```
+
+컴파일 결과:
+
+```css
+.card {
+  padding: 20px;
+}
+
+.card__header {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.card__body {
+  margin-top: 16px;
+}
+
+.card--featured {
+  border: 2px solid gold;
+}
+```
+
+### 미디어 쿼리와 함께 사용
+
+```scss
+.container {
+  width: 100%;
+
+  @media (min-width: 768px) {
+    width: 750px;
+  }
+
+  @media (min-width: 1024px) {
+    width: 970px;
+  }
+}
+```
+
+## 흔한 실수와 해결책
+
+### 실수 1: 의도하지 않은 형제 선택자
+
+```scss
+// ❌ 잘못된 사용
+.parent {
+  &child {
+    color: red;
+  }
+}
+// 결과: .parentchild (의도하지 않음)
+```
+
+```scss
+// ✅ 올바른 사용
+.parent {
+  .child {
+    color: red;
+  }
+}
+// 결과: .parent .child
+```
+
+### 실수 2: 불필요한 & 사용
+
+```scss
+// ❌ 불필요한 사용
+.parent {
+  & .child {
+    color: red;
+  }
+}
+```
+
+```scss
+// ✅ 간결한 사용
+.parent {
+  .child {
+    color: red;
+  }
+}
+```
+
+## 결론
+
+SCSS의 `&` 연산자는 강력한 도구이지만, 올바르게 사용해야 합니다:
+
+- **형제 관계 선택자**: `&`를 공백 없이 사용 (`.parent { &.modifier { } }`)
+- **가상 클래스/요소**: `&:`로 사용 (`.link { &:hover { } }`)
+- **부모-자식 관계**: `&` 없이 직접 중첩 (`.parent { .child { } }`)
+
+이러한 원칙을 따르면 가독성 높고 유지보수하기 쉬운 SCSS 코드를 작성할 수 있습니다.

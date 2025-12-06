@@ -1,5 +1,5 @@
-import { PostMetadata } from "@/lib/posts";
 import { getPostImagePath } from "@/lib/images";
+import { PostMetadata } from "@/lib/posts";
 import Image from "next/image";
 import Link from "next/link";
 

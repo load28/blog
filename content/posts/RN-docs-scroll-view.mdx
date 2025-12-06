@@ -1,18 +1,429 @@
 ---
-title: 'RN docs - ScrollView'
-description: 'Exploring the ScrollView component in React Native'
-date: '2024-08-28:00:00Z'
+title: 'React Native ScrollView: 혼합 콘텐츠 스크롤과 최적화 전략'
+description: 'ScrollView의 활용 패턴과 FlatList 대비 적절한 사용 시나리오 분석'
+date: '2024-08-28T00:00:00Z'
 tags: ['react-native']
 ---
 
-스크롤 뷰 사용하기
-`ScrollView`는 여러 구성 요소와 뷰를 포함할 수 있는 일반적인 스크롤 컨테이너입니다. 스크롤 가능한 항목들은 다양한 형식을 가질 수 있으며, horizontal 속성을 설정하면 세로로도 가로로도 스크롤할 수 있습니다.
+React Native에서 `ScrollView`는 다양한 형태의 콘텐츠를 스크롤 가능한 영역에 표시하는 범용 컨테이너입니다. 폼, 상세 페이지, 혼합 레이아웃 등 **서로 다른 구조의 콘텐츠를 조합**할 때 필수적인 컴포넌트입니다.
 
-`ScrollView`는 pagingEnabled 속성을 사용하여 스와이프 제스처를 통해 뷰를 페이징할 수 있도록 설정할 수 있습니다. Android에서는 ViewPager 컴포넌트를 사용하여 뷰 간의 가로 스와이핑도 구현할 수 있습니다.
+그러나 ScrollView는 모든 자식을 초기에 렌더링하는 특성 때문에, 잘못 사용하면 심각한 성능 문제를 야기할 수 있습니다. 이 글에서는 ScrollView의 올바른 사용법과 FlatList와의 차이점, 그리고 실전 최적화 전략을 살펴봅니다.
 
-iOS에서는 `ScrollView`에 단일 항목을 사용하여 사용자가 콘텐츠를 확대/축소할 수 있게 할 수 있습니다. `maximumZoomScale`과 `minimumZoomScale` 속성을 설정하면 사용자가 핀치 및 확장 제스처를 사용하여 콘텐츠를 확대하거나 축소할 수 있습니다.
+## ScrollView vs FlatList: 언제 무엇을 사용할까?
 
-**`ScrollView`는 소수의 크기가 제한된 항목을 표시하는 데 가장 적합합니다. `ScrollView`의 모든 요소와 뷰는 화면에 표시되지 않더라도 렌더링됩니다.**<br/>
-화면에 맞지 않는 긴 항목 목록이 있는 경우에는 대신 `FlatList`를 사용하는 것이 좋습니다.
+### ScrollView의 렌더링 방식
 
-원문 - https://reactnative.dev/docs/using-a-scrollview
+**모든 자식을 즉시 렌더링:**
+
+```tsx
+<ScrollView>
+  <Header />
+  <Banner />
+  <ProductList items={items} /> {/* 100개 항목 모두 렌더링 */}
+  <Footer />
+</ScrollView>
+```
+
+**렌더링 동작:**
+1. 컴포넌트 마운트 시 모든 자식 컴포넌트를 렌더링
+2. 화면에 보이지 않는 요소도 DOM에 존재
+3. 스크롤 성능은 양호하지만 초기 로딩 느림
+
+### FlatList의 가상화
+
+**화면에 보이는 항목만 렌더링:**
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={({ item }) => <ProductCard item={item} />}
+  // 화면에 보이는 ~10개 항목만 렌더링
+/>
+```
+
+**렌더링 동작:**
+1. 초기에는 화면에 보이는 항목만 렌더링
+2. 스크롤 시 동적으로 항목을 추가/제거
+3. 메모리 사용량이 일정하게 유지
+
+### 선택 기준 비교표
+
+| 상황 | ScrollView | FlatList |
+|------|-----------|----------|
+| 항목 수 | **10개 미만** | 50개 이상 |
+| 콘텐츠 구조 | **서로 다른 레이아웃** | 동일한 구조 반복 |
+| 사용 사례 | 폼, 상세 페이지, 대시보드 | 목록, 피드, 검색 결과 |
+| 초기 로딩 | 느림 (모두 렌더링) | 빠름 (일부만 렌더링) |
+| 메모리 사용 | 항목 수에 비례 | 거의 일정 |
+| 스크롤 성능 | ✅ 우수 | ✅ 우수 |
+
+## ScrollView 기본 사용법
+
+### 수직 스크롤 (기본)
+
+```tsx
+import { ScrollView, View, Text, StyleSheet } from 'react-native';
+
+const ProfileScreen = () => {
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>사용자 프로필</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>이름</Text>
+        <Text style={styles.value}>홍길동</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>이메일</Text>
+        <Text style={styles.value}>hong@example.com</Text>
+      </View>
+
+      {/* 더 많은 섹션들... */}
+    </ScrollView>
+  );
+};
+```
+
+### 수평 스크롤
+
+```tsx
+<ScrollView
+  horizontal
+  showsHorizontalScrollIndicator={false}
+  style={styles.carousel}
+>
+  <Image source={{ uri: 'image1.jpg' }} style={styles.image} />
+  <Image source={{ uri: 'image2.jpg' }} style={styles.image} />
+  <Image source={{ uri: 'image3.jpg' }} style={styles.image} />
+</ScrollView>
+```
+
+**활용 사례:**
+- 이미지 캐러셀
+- 카테고리 탭
+- 스토리 뷰 (Instagram, Facebook)
+
+## 고급 기능과 Props
+
+### 1. 페이징 (Swipe to Page)
+
+```tsx
+<ScrollView
+  horizontal
+  pagingEnabled  // 페이지 단위로 스냅
+  showsHorizontalScrollIndicator={false}
+  onMomentumScrollEnd={(event) => {
+    const pageIndex = Math.round(
+      event.nativeEvent.contentOffset.x / width
+    );
+    setCurrentPage(pageIndex);
+  }}
+>
+  <View style={{ width }}>
+    <Text>페이지 1</Text>
+  </View>
+  <View style={{ width }}>
+    <Text>페이지 2</Text>
+  </View>
+  <View style={{ width }}>
+    <Text>페이지 3</Text>
+  </View>
+</ScrollView>
+```
+
+**사용 사례:**
+- 온보딩 화면
+- 튜토리얼
+- 제품 이미지 갤러리
+
+### 2. Pull to Refresh
+
+```tsx
+import { RefreshControl } from 'react-native';
+
+const [refreshing, setRefreshing] = useState(false);
+
+const onRefresh = async () => {
+  setRefreshing(true);
+  await fetchNewData();
+  setRefreshing(false);
+};
+
+<ScrollView
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      colors={['#9Bd35A', '#689F38']}  // Android
+      tintColor="#689F38"              // iOS
+    />
+  }
+>
+  {/* 콘텐츠 */}
+</ScrollView>
+```
+
+### 3. 핀치 줌 (iOS 전용)
+
+```tsx
+<ScrollView
+  maximumZoomScale={3}
+  minimumZoomScale={1}
+  bouncesZoom={true}
+>
+  <Image
+    source={{ uri: 'photo.jpg' }}
+    style={{ width: 300, height: 400 }}
+  />
+</ScrollView>
+```
+
+**사용 사례:**
+- 이미지 뷰어
+- 지도 앱
+- PDF 리더
+
+### 4. Sticky Header
+
+```tsx
+<ScrollView stickyHeaderIndices={[0]}>
+  <View style={styles.stickyHeader}>
+    <Text>고정된 헤더</Text>
+  </View>
+
+  <View style={styles.content}>
+    {/* 스크롤 가능한 콘텐츠 */}
+  </View>
+</ScrollView>
+```
+
+### 5. 키보드 관리
+
+```tsx
+<ScrollView
+  keyboardShouldPersistTaps="handled"  // 키보드 외부 탭 처리
+  keyboardDismissMode="on-drag"        // 드래그 시 키보드 숨김
+>
+  <TextInput placeholder="이름" />
+  <TextInput placeholder="이메일" />
+  <TextInput placeholder="비밀번호" />
+</ScrollView>
+```
+
+**keyboardDismissMode 옵션:**
+- `"none"`: 자동으로 숨기지 않음
+- `"on-drag"`: 스크롤 시작 시 숨김
+- `"interactive"` (iOS): 인터랙티브하게 숨김
+
+## 성능 최적화 전략
+
+### 1. removeClippedSubviews (Android)
+
+```tsx
+<ScrollView
+  removeClippedSubviews={true}  // 화면 밖 뷰 제거
+>
+  {/* 많은 콘텐츠 */}
+</ScrollView>
+```
+
+**주의:** iOS에서는 효과 없으며, 일부 레이아웃에서 깜빡임 발생 가능
+
+### 2. contentContainerStyle로 레이아웃 최적화
+
+```tsx
+// ❌ 비효율적
+<ScrollView>
+  <View style={{ padding: 20 }}>
+    {/* 콘텐츠 */}
+  </View>
+</ScrollView>
+
+// ✅ 효율적
+<ScrollView
+  contentContainerStyle={{ padding: 20 }}
+>
+  {/* 콘텐츠 */}
+</ScrollView>
+```
+
+### 3. 초기 렌더링 최적화
+
+```tsx
+const [showHeavyContent, setShowHeavyContent] = useState(false);
+
+useEffect(() => {
+  // 초기 렌더링 이후 무거운 콘텐츠 로드
+  setTimeout(() => setShowHeavyContent(true), 100);
+}, []);
+
+<ScrollView>
+  <Header />
+  <MainContent />
+  {showHeavyContent && <HeavySection />}
+</ScrollView>
+```
+
+### 4. 중첩 스크롤 최적화
+
+```tsx
+// ❌ 중첩 스크롤 (성능 문제)
+<ScrollView>
+  <ScrollView horizontal>
+    {/* 수평 스크롤 */}
+  </ScrollView>
+</ScrollView>
+
+// ✅ nestedScrollEnabled 사용 (Android)
+<ScrollView>
+  <ScrollView horizontal nestedScrollEnabled>
+    {/* 수평 스크롤 */}
+  </ScrollView>
+</ScrollView>
+```
+
+## 실전 사용 사례
+
+### 사례 1: 폼 화면
+
+```tsx
+const RegisterForm = () => {
+  return (
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={styles.title}>회원가입</Text>
+
+      <TextInput placeholder="이름" style={styles.input} />
+      <TextInput placeholder="이메일" style={styles.input} />
+      <TextInput
+        placeholder="비밀번호"
+        secureTextEntry
+        style={styles.input}
+      />
+
+      <Button title="가입하기" onPress={handleSubmit} />
+    </ScrollView>
+  );
+};
+```
+
+### 사례 2: 제품 상세 페이지
+
+```tsx
+const ProductDetail = ({ product }) => {
+  return (
+    <ScrollView>
+      <ScrollView horizontal pagingEnabled>
+        {product.images.map(img => (
+          <Image key={img} source={{ uri: img }} style={styles.image} />
+        ))}
+      </ScrollView>
+
+      <View style={styles.info}>
+        <Text style={styles.name}>{product.name}</Text>
+        <Text style={styles.price}>{product.price}원</Text>
+        <Text style={styles.description}>{product.description}</Text>
+      </View>
+
+      <View style={styles.reviews}>
+        {/* 리뷰 목록 (소수) */}
+      </View>
+    </ScrollView>
+  );
+};
+```
+
+### 사례 3: 대시보드 화면
+
+```tsx
+const Dashboard = () => {
+  return (
+    <ScrollView>
+      <View style={styles.stats}>
+        <StatCard title="오늘 방문자" value="1,234" />
+        <StatCard title="신규 가입" value="56" />
+      </View>
+
+      <View style={styles.chart}>
+        <LineChart data={chartData} />
+      </View>
+
+      <View style={styles.recentActivity}>
+        <Text style={styles.sectionTitle}>최근 활동</Text>
+        {activities.slice(0, 5).map(activity => (
+          <ActivityItem key={activity.id} data={activity} />
+        ))}
+      </View>
+    </ScrollView>
+  );
+};
+```
+
+## 흔한 실수와 해결책
+
+### 실수 1: 긴 목록에 ScrollView 사용
+
+```tsx
+// ❌ 성능 문제 발생
+<ScrollView>
+  {items.map(item => (
+    <ProductCard key={item.id} data={item} />
+  ))}
+</ScrollView>
+
+// ✅ FlatList 사용
+<FlatList
+  data={items}
+  renderItem={({ item }) => <ProductCard data={item} />}
+  keyExtractor={item => item.id}
+/>
+```
+
+### 실수 2: flex: 1 미사용
+
+```tsx
+// ❌ 스크롤 안 됨
+<View style={{ flex: 1 }}>
+  <ScrollView>
+    {/* 콘텐츠 */}
+  </ScrollView>
+</View>
+
+// ✅ 정상 동작
+<ScrollView style={{ flex: 1 }}>
+  {/* 콘텐츠 */}
+</ScrollView>
+```
+
+### 실수 3: contentContainerStyle vs style 혼동
+
+```tsx
+// ❌ 잘못된 사용
+<ScrollView style={{ padding: 20 }}>
+  {/* padding이 스크롤 영역에 적용되지 않음 */}
+</ScrollView>
+
+// ✅ 올바른 사용
+<ScrollView contentContainerStyle={{ padding: 20 }}>
+  {/* padding이 콘텐츠에 적용됨 */}
+</ScrollView>
+```
+
+## 결론
+
+`ScrollView`는 React Native에서 다양한 형태의 콘텐츠를 스크롤 가능하게 만드는 범용 컨테이너입니다. 폼, 상세 페이지, 대시보드처럼 **구조가 다른 콘텐츠를 조합**할 때 필수적입니다.
+
+**핵심 권장사항:**
+- **10개 미만의 혼합 콘텐츠에는 ScrollView**
+- 50개 이상의 동일 구조 목록에는 FlatList
+- `contentContainerStyle`로 패딩/여백 설정
+- 폼에서는 `keyboardShouldPersistTaps="handled"` 사용
+
+**참고 자료:**
+- [React Native 공식 문서 - ScrollView](https://reactnative.dev/docs/scrollview)
+- [React Native 공식 문서 - Using a ScrollView](https://reactnative.dev/docs/using-a-scrollview)

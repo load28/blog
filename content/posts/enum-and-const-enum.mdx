@@ -1,17 +1,19 @@
 ---
-title: 'Enum and const enum'
-description: 'Comparing enum and const enum in TypeScript: How to choose the best option for your project'
+title: 'TypeScript Enum vs Const Enum: 성능과 사용성 비교'
+description: 'Enum과 Const Enum의 차이점과 객체 리터럴을 활용한 대체 구현'
 date: '2024-08-28T16:00:00Z'
 tags: ['typescript']
 ---
 
-TypeScript는 코드에서 상수 집합을 관리하기 위해 `enum`을 제공합니다. `enum`은 코드의 가독성을 높이고, 특정 값의 집합을 의미 있게 정의하는 데 매우 유용합니다. 그러나 `enum`에는 `const enum`이라는 최적화된 버전이 있으며, 이를 선택하는 것은 프로젝트의 성능 및 유지보수에 큰 영향을 미칠 수 있습니다. 이번 글에서는 `enum`과 `const enum`의 차이를 비교하고, 이 둘을 대체할 수 있는 방법을 제안해 보겠습니다.
+TypeScript는 코드에서 상수 집합을 관리하기 위해 `enum`을 제공합니다. `enum`은 코드의 가독성을 높이고, 특정 값의 집합을 의미 있게 정의하는 데 매우 유용합니다. 그러나 `enum`에는 `const enum`이라는 최적화된 버전이 있으며, 이를 선택하는 것은 프로젝트의 성능 및 유지보수에 큰 영향을 미칠 수 있습니다.
 
-## enum과 const enum의 차이점
+이 글에서는 `enum`과 `const enum`의 차이를 비교하고, 이 둘을 대체할 수 있는 방법을 제안하겠습니다.
 
-### 1. enum의 동작 방식
+## Enum과 Const Enum의 차이점
 
-`enum`을 사용하면 TypeScript는 이를 실제 JavaScript 객체로 변환합니다. 각`enum`멤버는 이 객체의 속성이 되며, 이 속성을 통해 값에 접근할 수 있습니다. 이 방식은 코드의 가독성을 높이고, 런타임에서도 `enum`의 멤버를 동적으로 사용할 수 있게 합니다.
+### 1. Enum의 동작 방식
+
+`enum`을 사용하면 TypeScript는 이를 실제 JavaScript 객체로 변환합니다. 각 `enum` 멤버는 이 객체의 속성이 되며, 이 속성을 통해 값에 접근할 수 있습니다. 이 방식은 코드의 가독성을 높이고, 런타임에서도 `enum`의 멤버를 동적으로 사용할 수 있게 합니다.
 
 ```typescript
 enum Direction {
@@ -34,9 +36,16 @@ var Direction;
 })(Direction || (Direction = {}));
 ```
 
-### 2. const enum의 동작 방식
+이러한 양방향 매핑(reverse mapping)을 통해 다음과 같이 사용할 수 있습니다:
 
-반면, `const enum`은 컴파일 시 모든 참조가 상수 값으로 인라인 처리됩니다. 결과적으로, `const enum`은 런타임에 실제 객체로 존재하지 않으며, 컴파일된 코드의 크기가 줄어들고 성능이 최적화됩니다. 그러나 `const enum`은 모듈 경계를 넘어 사용할 수 없으며, 디버깅 시 어려움을 겪을 수 있습니다.
+```typescript
+console.log(Direction.Up); // 0
+console.log(Direction[0]); // "Up"
+```
+
+### 2. Const Enum의 동작 방식
+
+반면, `const enum`은 컴파일 시 모든 참조가 상수 값으로 인라인 처리됩니다. 결과적으로, `const enum`은 런타임에 실제 객체로 존재하지 않으며, 컴파일된 코드의 크기가 줄어들고 성능이 최적화됩니다.
 
 ```typescript
 const enum Direction {
@@ -45,25 +54,43 @@ const enum Direction {
   Left,
   Right,
 }
+
+const direction = Direction.Up;
 ```
 
 위 코드는 컴파일 후 다음과 같이 인라인된 상수로 변환됩니다:
 
 ```typescript
-var direction = 0; /* Up */
+const direction = 0; /* Up */
 ```
 
-## enum과 const enum의 단점
+## Enum과 Const Enum의 장단점
 
-두 방식 모두 장단점이 있지만, 다음과 같은 단점도 고려해야 합니다.
+### Enum의 장점
 
-- 모듈 경계 문제 - `const enum`은 모듈 간의 상호작용이 어려워 모듈화된 코드에서는 사용하기 까다롭습니다.<br/>
-- 디버깅 문제 - `const enum`을 사용할 경우, 디버깅 시 값이 인라인된 숫자로 표시되어 문제를 추적하기 어려울 수 있습니다.<br/>
-- 런타임 오버헤드 - 일반 `enum`은 객체를 생성하기 때문에 런타임 오버헤드가 발생할 수 있습니다.
+- **런타임 접근 가능**: 런타임에 enum 객체가 존재하여 동적으로 값을 조회할 수 있습니다.
+- **양방향 매핑**: 키로 값을, 값으로 키를 조회할 수 있습니다.
+- **모듈 간 사용 용이**: 모듈 경계를 넘어 안전하게 사용할 수 있습니다.
 
-## 대체 코드: 객체 리터럴을 사용한 enum 구현
+### Enum의 단점
 
-이러한 단점을 피하면서도 비슷한 기능을 구현하기 위해, 객체 리터럴을 사용한 방법을 고려할 수 있습니다. 이 방법은 런타임 오버헤드를 없애고, `const enum`과 유사한 최적화를 제공하면서도, 보다 유연한 구조를 유지할 수 있습니다.
+- **런타임 오버헤드**: 객체를 생성하기 때문에 런타임 메모리를 사용합니다.
+- **번들 크기 증가**: 추가적인 JavaScript 코드가 생성됩니다.
+
+### Const Enum의 장점
+
+- **성능 최적화**: 컴파일 시 인라인 처리되어 런타임 오버헤드가 없습니다.
+- **작은 번들 크기**: 추가적인 JavaScript 코드가 생성되지 않습니다.
+
+### Const Enum의 단점
+
+- **모듈 경계 문제**: `const enum`은 모듈 간의 상호작용이 어려워 모듈화된 코드에서는 사용하기 까다롭습니다.
+- **디버깅 어려움**: 값이 인라인된 숫자로 표시되어 문제를 추적하기 어려울 수 있습니다.
+- **런타임 접근 불가**: 런타임에 enum 객체가 존재하지 않아 동적 조회가 불가능합니다.
+
+## 대체 구현: 객체 리터럴과 as const
+
+이러한 단점을 피하면서도 비슷한 기능을 구현하기 위해, 객체 리터럴과 `as const`를 사용한 방법을 고려할 수 있습니다. 이 방법은 런타임 오버헤드를 최소화하면서도, `const enum`보다 유연한 구조를 유지할 수 있습니다.
 
 ```typescript
 const Direction = {
@@ -76,4 +103,62 @@ const Direction = {
 type Direction = (typeof Direction)[keyof typeof Direction];
 ```
 
-TypeScript에서 `enum`과 `const enum`은 코드의 가독성을 높이고 성능을 최적화하는 유용한 도구입니다. 하지만 각각의 단점도 존재하므로, 특정 상황에서는 이들 대신 객체 리터럴을 사용한 대체 코드를 고려하는 것이 좋습니다. 객체 리터럴은 런타임 오버헤드를 피하면서도 유사한 기능을 제공하며, 모듈화된 코드에서도 안정적으로 사용할 수 있습니다. 프로젝트의 요구 사항에 따라 적절한 방식을 선택하여 더 나은 코드를 작성해보세요.
+### 객체 리터럴 방식의 장점
+
+- **타입 안전성**: TypeScript의 타입 시스템을 완전히 활용할 수 있습니다.
+- **런타임 접근 가능**: 필요시 런타임에 객체로 접근할 수 있습니다.
+- **모듈 간 사용 용이**: import/export로 안전하게 공유할 수 있습니다.
+- **번들 크기 최적화**: 단순한 객체 리터럴로 컴파일됩니다.
+- **확장성**: 추가적인 메타데이터나 메서드를 쉽게 추가할 수 있습니다.
+
+### 사용 예시
+
+```typescript
+const Direction = {
+  Up: 0,
+  Down: 1,
+  Left: 2,
+  Right: 3,
+} as const;
+
+type Direction = (typeof Direction)[keyof typeof Direction];
+
+function move(direction: Direction) {
+  console.log(`Moving in direction: ${direction}`);
+}
+
+move(Direction.Up); // 타입 안전
+move(0); // 타입 안전
+
+// 런타임에 키 순회 가능
+Object.keys(Direction).forEach(key => {
+  console.log(`${key}: ${Direction[key as keyof typeof Direction]}`);
+});
+```
+
+## 선택 가이드
+
+### Enum을 사용해야 하는 경우
+
+- 양방향 매핑이 필요한 경우
+- 런타임에 enum 멤버를 동적으로 순회해야 하는 경우
+- 번들 크기가 크게 중요하지 않은 경우
+
+### Const Enum을 사용해야 하는 경우
+
+- 성능과 번들 크기가 매우 중요한 경우
+- 단일 모듈 내에서만 사용하는 경우
+- 런타임 접근이 필요 없는 경우
+
+### 객체 리터럴을 사용해야 하는 경우
+
+- 모듈 간 공유가 필요한 경우
+- 타입 안전성과 런타임 접근을 모두 원하는 경우
+- 확장성과 유지보수성을 중시하는 경우
+- 최신 TypeScript 패턴을 선호하는 경우
+
+## 결론
+
+TypeScript에서 `enum`과 `const enum`은 코드의 가독성을 높이고 성능을 최적화하는 유용한 도구입니다. 하지만 각각의 단점도 존재하므로, 특정 상황에서는 객체 리터럴과 `as const`를 사용한 대체 구현을 고려하는 것이 좋습니다.
+
+객체 리터럴 방식은 런타임 오버헤드를 최소화하면서도 유사한 기능을 제공하며, 모듈화된 코드에서도 안정적으로 사용할 수 있습니다. 프로젝트의 요구 사항에 따라 적절한 방식을 선택하여 더 나은 코드를 작성하시기 바랍니다.

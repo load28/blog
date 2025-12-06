@@ -1,11 +1,297 @@
 ---
-title: 'Linear Function Graph'
-description: 'Visualization and Analysis of Linear Functions'
-date: '2025-01-04'
-tags: ['math']
+title: '일차 함수 그래프: 기울기와 y절편으로 이해하는 선형 관계'
+description: '일차 함수의 수학적 정의부터 기울기 시각화, 실생활 응용, JavaScript 그래프 렌더링까지 완벽 분석'
+date: '2025-01-04T00:00:00Z'
+tags: ['math', 'linear-function', 'visualization', 'algebra']
 series: 'math'
 seriesNumber: 1
 ---
+
+## 일차 함수란?
+
+일차 함수(Linear Function)는 **직선 형태의 그래프**를 가지는 함수로, 두 변수 사이의 **비례 관계**를 나타냅니다.
+
+### 표준 형태
+
+$$
+y = mx + b
+$$
+
+- $m$: **기울기** (slope) - 직선의 경사도
+- $b$: **y절편** (y-intercept) - 직선이 y축과 만나는 점
+
+### 일상 속 일차 함수
+
+```
+예 1: 택시 요금
+- 기본 요금: 3,800원 (b = 3800)
+- km당 요금: 1,000원 (m = 1000)
+→ 요금 = 1000 × 거리 + 3800
+
+예 2: 온도 변환 (섭씨 → 화씨)
+F = (9/5)C + 32
+- 기울기: 9/5 = 1.8
+- y절편: 32
+```
+
+## 기울기의 의미
+
+### 수학적 정의
+
+두 점 $(x_1, y_1)$과 $(x_2, y_2)$를 지나는 직선의 기울기:
+
+$$
+m = \frac{y_2 - y_1}{x_2 - x_1} = \frac{\Delta y}{\Delta x} = \frac{\text{변화량 (y)}}{\text{변화량 (x)}}
+$$
+
+### 기울기 해석
+
+| 기울기 | 의미 | 그래프 |
+|--------|------|--------|
+| $m > 0$ | 증가 함수 (우상향) | ／ |
+| $m < 0$ | 감소 함수 (우하향) | ＼ |
+| $m = 0$ | 상수 함수 (수평선) | ─ |
+| $m = \text{undefined}$ | 수직선 | │ |
+
+### 기울기 크기 비교
+
+$$
+\begin{align*}
+y_1 &= 2x + 1 \quad &\text{(기울기 2: 완만)} \\
+y_2 &= 5x + 1 \quad &\text{(기울기 5: 가파름)} \\
+y_3 &= 0.5x + 1 \quad &\text{(기울기 0.5: 매우 완만)}
+\end{align*}
+$$
+
+## y절편의 의미
+
+**y절편 $b$**: $x = 0$일 때의 $y$ 값
+
+$$
+y = mx + b \quad \Rightarrow \quad y(0) = m \cdot 0 + b = b
+$$
+
+**그래프에서의 위치:**
+- $b > 0$: y축 양의 방향에서 시작
+- $b < 0$: y축 음의 방향에서 시작
+- $b = 0$: 원점을 지남
+
+## 일차 함수의 다양한 형태
+
+### 1. 기울기-절편 형태 (Slope-Intercept Form)
+
+$$
+y = mx + b
+$$
+
+**장점:** 기울기와 y절편을 바로 알 수 있음
+
+### 2. 점-기울기 형태 (Point-Slope Form)
+
+점 $(x_1, y_1)$을 지나고 기울기가 $m$인 직선:
+
+$$
+y - y_1 = m(x - x_1)
+$$
+
+**예제:** 점 $(2, 3)$을 지나고 기울기가 4인 직선:
+
+$$
+\begin{align*}
+y - 3 &= 4(x - 2) \\
+y - 3 &= 4x - 8 \\
+y &= 4x - 5
+\end{align*}
+$$
+
+### 3. 일반 형태 (Standard Form)
+
+$$
+Ax + By = C
+$$
+
+**y = mx + b로 변환:**
+
+$$
+By = -Ax + C \quad \Rightarrow \quad y = -\frac{A}{B}x + \frac{C}{B}
+$$
+
+## JavaScript로 그래프 그리기
+
+### Canvas를 이용한 기본 그래프
+
+```javascript
+/**
+ * 일차 함수 그래프 렌더러
+ */
+class LinearFunctionGraph {
+  constructor(canvasId, width = 800, height = 600) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext('2d');
+    this.canvas.width = width;
+    this.canvas.height = height;
+
+    this.width = width;
+    this.height = height;
+    this.centerX = width / 2;
+    this.centerY = height / 2;
+    this.scale = 20; // 1 단위 = 20 픽셀
+  }
+
+  // 좌표 변환: 수학 좌표 → 캔버스 좌표
+  toCanvasX(x) {
+    return this.centerX + x * this.scale;
+  }
+
+  toCanvasY(y) {
+    return this.centerY - y * this.scale; // y축 반전
+  }
+
+  // 좌표축 그리기
+  drawAxes() {
+    const ctx = this.ctx;
+
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+
+    // X축
+    ctx.beginPath();
+    ctx.moveTo(0, this.centerY);
+    ctx.lineTo(this.width, this.centerY);
+    ctx.stroke();
+
+    // Y축
+    ctx.beginPath();
+    ctx.moveTo(this.centerX, 0);
+    ctx.lineTo(this.centerX, this.height);
+    ctx.stroke();
+
+    // 눈금 그리기
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+
+    for (let x = -this.width / 2; x < this.width / 2; x += this.scale) {
+      const canvasX = this.toCanvasX(x / this.scale);
+      ctx.beginPath();
+      ctx.moveTo(canvasX, 0);
+      ctx.lineTo(canvasX, this.height);
+      ctx.stroke();
+    }
+
+    for (let y = -this.height / 2; y < this.height / 2; y += this.scale) {
+      const canvasY = this.toCanvasY(y / this.scale);
+      ctx.beginPath();
+      ctx.moveTo(0, canvasY);
+      ctx.lineTo(this.width, canvasY);
+      ctx.stroke();
+    }
+  }
+
+  // 일차 함수 그리기: y = mx + b
+  drawLinearFunction(m, b, color = 'blue', label = '') {
+    const ctx = this.ctx;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+
+    const xMin = -this.width / (2 * this.scale);
+    const xMax = this.width / (2 * this.scale);
+
+    for (let x = xMin; x <= xMax; x += 0.1) {
+      const y = m * x + b;
+      const canvasX = this.toCanvasX(x);
+      const canvasY = this.toCanvasY(y);
+
+      if (x === xMin) {
+        ctx.moveTo(canvasX, canvasY);
+      } else {
+        ctx.lineTo(canvasX, canvasY);
+      }
+    }
+
+    ctx.stroke();
+
+    // 라벨 표시
+    if (label) {
+      ctx.fillStyle = color;
+      ctx.font = '16px Arial';
+      const labelY = m * 10 + b;
+      ctx.fillText(label, this.toCanvasX(10), this.toCanvasY(labelY) - 10);
+    }
+  }
+
+  // 점 표시
+  drawPoint(x, y, color = 'red', label = '') {
+    const ctx = this.ctx;
+    const canvasX = this.toCanvasX(x);
+    const canvasY = this.toCanvasY(y);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(canvasX, canvasY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (label) {
+      ctx.fillStyle = '#000';
+      ctx.font = '14px Arial';
+      ctx.fillText(label, canvasX + 10, canvasY - 10);
+    }
+  }
+
+  // 기울기 시각화 (삼각형)
+  drawSlopeTriangle(x, y, m, color = 'green') {
+    const ctx = this.ctx;
+    const dx = 2; // 삼각형 너비
+    const dy = m * dx; // 삼각형 높이
+
+    const x1 = this.toCanvasX(x);
+    const y1 = this.toCanvasY(y);
+    const x2 = this.toCanvasX(x + dx);
+    const y2 = this.toCanvasY(y);
+    const x3 = this.toCanvasX(x + dx);
+    const y3 = this.toCanvasY(y + dy);
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+
+    // 삼각형
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+    ctx.stroke();
+
+    // 라벨
+    ctx.fillStyle = color;
+    ctx.font = '12px Arial';
+    ctx.fillText(`Δx = ${dx}`, (x1 + x2) / 2, y2 + 20);
+    ctx.fillText(`Δy = ${dy.toFixed(1)}`, x3 + 10, (y1 + y3) / 2);
+  }
+
+  // 전체 초기화
+  clear() {
+    this.ctx.clearRect(0, 0, this.width, this.height);
+  }
+}
+
+// 사용 예
+const graph = new LinearFunctionGraph('myCanvas');
+
+graph.clear();
+graph.drawAxes();
+graph.drawLinearFunction(2, 1, 'blue', 'y = 2x + 1');
+graph.drawLinearFunction(-1, 3, 'red', 'y = -x + 3');
+graph.drawLinearFunction(0.5, -2, 'green', 'y = 0.5x - 2');
+
+graph.drawPoint(0, 1, 'blue', '(0, 1)'); // y절편
+graph.drawSlopeTriangle(1, 3, 2, 'orange'); // 기울기 삼각형
+```
+
+## 기울기 단위 시각화
+
+아래는 기울기의 의미를 시각적으로 이해하기 위한 인터랙티브 컴포넌트입니다:
+
 <BaseGraph/>
 <br/>
 <SlopeUnitVisualizer2/>
@@ -13,3 +299,187 @@ seriesNumber: 1
 <SlopeUnitVisualizer3/>
 <br/>
 <SlopeUnitVisualizer4/>
+
+## 실생활 응용
+
+### 1. 물리학: 등속 직선 운동
+
+$$
+x(t) = v \cdot t + x_0
+$$
+
+- $x(t)$: 시간 $t$에서의 위치
+- $v$: 속도 (기울기)
+- $x_0$: 초기 위치 (y절편)
+
+```javascript
+/**
+ * 등속 운동 시뮬레이션
+ */
+class UniformMotion {
+  constructor(initialPosition, velocity) {
+    this.x0 = initialPosition; // 초기 위치
+    this.v = velocity;         // 속도
+  }
+
+  // 시간 t에서의 위치
+  position(t) {
+    return this.v * t + this.x0;
+  }
+
+  // 특정 위치에 도달하는 시간
+  timeToReach(targetX) {
+    return (targetX - this.x0) / this.v;
+  }
+}
+
+// 사용 예
+const car = new UniformMotion(10, 20); // 10m 위치에서 20m/s 속도
+console.log('5초 후 위치:', car.position(5), 'm'); // 110m
+console.log('150m 도달 시간:', car.timeToReach(150), '초'); // 7초
+```
+
+### 2. 경제학: 수요-공급 곡선
+
+```javascript
+/**
+ * 수요 함수: 가격이 오르면 수요 감소 (음의 기울기)
+ * 공급 함수: 가격이 오르면 공급 증가 (양의 기울기)
+ */
+class Market {
+  constructor() {
+    this.demandSlope = -2;   // 수요 기울기
+    this.demandIntercept = 100; // 최대 수요
+    this.supplySlope = 1.5;  // 공급 기울기
+    this.supplyIntercept = 10; // 최소 공급
+  }
+
+  demand(price) {
+    return this.demandSlope * price + this.demandIntercept;
+  }
+
+  supply(price) {
+    return this.supplySlope * price + this.supplyIntercept;
+  }
+
+  // 균형 가격 (수요 = 공급)
+  equilibriumPrice() {
+    // demandSlope * P + demandIntercept = supplySlope * P + supplyIntercept
+    return (
+      (this.supplyIntercept - this.demandIntercept) /
+      (this.demandSlope - this.supplySlope)
+    );
+  }
+
+  equilibriumQuantity() {
+    const price = this.equilibriumPrice();
+    return this.demand(price);
+  }
+}
+
+const market = new Market();
+console.log('균형 가격:', market.equilibriumPrice().toFixed(2)); // 25.71
+console.log('균형 수량:', market.equilibriumQuantity().toFixed(2)); // 48.57
+```
+
+### 3. 데이터 분석: 선형 회귀
+
+```javascript
+/**
+ * 최소제곱법을 이용한 선형 회귀
+ */
+function linearRegression(points) {
+  const n = points.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+  for (const { x, y } of points) {
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumX2 += x * x;
+  }
+
+  // 기울기 m = (n*ΣXY - ΣX*ΣY) / (n*ΣX² - (ΣX)²)
+  const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+
+  // y절편 b = (ΣY - m*ΣX) / n
+  const b = (sumY - m * sumX) / n;
+
+  return { m, b };
+}
+
+// 사용 예: 공부 시간 vs 점수
+const data = [
+  { x: 1, y: 50 },  // 1시간 → 50점
+  { x: 2, y: 60 },  // 2시간 → 60점
+  { x: 3, y: 70 },  // 3시간 → 70점
+  { x: 4, y: 80 },  // 4시간 → 80점
+  { x: 5, y: 90 },  // 5시간 → 90점
+];
+
+const { m, b } = linearRegression(data);
+console.log(`회귀선: y = ${m.toFixed(2)}x + ${b.toFixed(2)}`);
+// y = 10.00x + 40.00
+
+// 예측: 6시간 공부하면?
+const predictedScore = m * 6 + b;
+console.log(`6시간 공부 시 예상 점수: ${predictedScore}점`); // 100점
+```
+
+## 평행선과 수직선
+
+### 평행선
+
+두 직선이 **평행**하면 기울기가 같습니다:
+
+$$
+\begin{align*}
+L_1: y &= m_1 x + b_1 \\
+L_2: y &= m_2 x + b_2 \\
+L_1 \parallel L_2 &\Leftrightarrow m_1 = m_2
+\end{align*}
+$$
+
+### 수직선
+
+두 직선이 **수직**이면 기울기의 곱이 -1입니다:
+
+$$
+L_1 \perp L_2 \Leftrightarrow m_1 \cdot m_2 = -1
+$$
+
+```javascript
+/**
+ * 직선 관계 판별
+ */
+function lineRelationship(m1, m2) {
+  if (m1 === m2) {
+    return '평행';
+  } else if (Math.abs(m1 * m2 + 1) < 0.0001) {
+    return '수직';
+  } else {
+    return '일반';
+  }
+}
+
+console.log(lineRelationship(2, 2));     // 평행
+console.log(lineRelationship(2, -0.5));  // 수직
+console.log(lineRelationship(2, 3));     // 일반
+```
+
+## 정리
+
+일차 함수는 다음과 같은 이유로 수학의 기초이자 실생활의 핵심입니다:
+
+1. **직선의 방정식**: $y = mx + b$로 모든 직선 표현
+2. **기울기**: 변화율, 속도, 비율 등을 나타냄
+3. **y절편**: 초기값, 고정 비용 등을 나타냄
+4. **선형 관계**: 비례, 반비례 등 간단한 관계 모델링
+
+**주요 활용 분야:**
+- 물리학 (등속 운동, 힘과 가속도)
+- 경제학 (수요-공급, 비용 함수)
+- 데이터 분석 (선형 회귀, 예측)
+- 컴퓨터 그래픽스 (선 그리기, 보간)
+
+일차 함수를 이해하면 더 복잡한 함수(이차 함수, 지수 함수 등)를 배우는 기초가 되며, 데이터의 선형 패턴을 발견하고 예측하는 능력을 얻게 됩니다.

@@ -1,145 +1,1162 @@
 ---
-title: Factory pattern with typescript
-description: 'Exploring the Factory Pattern in TypeScript: How to create flexible and maintainable user systems with a focus on extensibility and maintainability'
-date: '2024-08-29:00:00Z'
-tags: ['design-pattern']
+title: 'TypeScript 팩토리 패턴: 제네릭과 타입 안정성을 활용한 객체 생성 패턴'
+description: 'TypeScript의 고급 타입 시스템과 제네릭을 활용한 확장 가능한 팩토리 패턴 설계 가이드'
+date: '2024-08-29T00:00:00Z'
+tags: ['design-pattern', 'typescript', 'factory', 'generics']
 ---
 
-타입스크립트(TypeScript)에서 팩토리 패턴(Factory Design Pattern)을 활용하여 유연하고 확장 가능한 사용자 시스템을 구현하는 방법을 살펴보겠습니다. 이 접근법은 다양한 유형의 사용자들을 체계적으로 관리할 수 있는 확장 가능하고 유지 보수하기 쉬운 코드를 작성하는 데 유용합니다. 각 구성 요소를 단계별로 살펴보겠습니다.
+TypeScript에서 팩토리 패턴(Factory Pattern)은 객체 생성 로직을 캡슐화하고, **타입 안정성을 보장**하면서도 유연하게 다양한 객체를 생성할 수 있는 강력한 디자인 패턴입니다. TypeScript의 고급 타입 시스템, 제네릭, 그리고 조건부 타입을 활용하면 JavaScript보다 훨씬 안전하고 표현력 있는 팩토리를 구현할 수 있습니다.
 
-## 문제 정의
+이 글에서는 TypeScript만의 특징을 살린 팩토리 패턴 구현 방법, 실전 사례, 그리고 고급 패턴을 다룹니다.
 
-여러분이 무료(Free), 체험판(Trial), 프리미엄(Premium)과 같은 서로 다른 유형의 사용자가 있는 애플리케이션을 구축하고 있다고 상상해 보세요. 각 사용자 유형은 고유한 권한과 동작을 가지고 있습니다. 우리는 각 사용자 유형의 로직을 별도의 클래스에 캡슐화하여 코드베이스를 깔끔하고 체계적으로 유지하고 싶습니다. 또한, 사용자의 유형에 따라 이 클래스 인스턴스를 동적으로 생성할 수 있는 방법이 필요합니다.
+## 왜 TypeScript에서 팩토리 패턴인가?
 
-## 사용자 유형을 위한 열거형(Enum) 정의
+### JavaScript의 한계
 
-먼저, UserKind라는 열거형(enum)을 정의하여 서로 다른 사용자 유형을 나타냅니다:
+순수 JavaScript에서는 타입 검사가 런타임에만 이루어지므로 실수를 미리 발견하기 어렵습니다.
+
+**JavaScript 팩토리의 문제:**
+
+```javascript
+// JavaScript - 타입 안정성 없음
+class UserFactory {
+  createUser(type, data) {
+    switch (type) {
+      case 'free':
+        return { ...data, maxProjects: 5 };
+      case 'premium':
+        return { ...data, maxProjects: 100 };
+      default:
+        return { ...data, maxProjects: 1 };
+    }
+  }
+}
+
+const factory = new UserFactory();
+const user = factory.createUser('premuim', { name: 'John' }); // 오타! 런타임 에러
+console.log(user.maxProjets); // 또 다른 오타! undefined 반환
+```
+
+### TypeScript의 장점
+
+TypeScript에서는 컴파일 타임에 타입 체크가 이루어져 안전합니다.
 
 ```typescript
 enum UserKind {
   FREE,
   TRIAL,
-  PREMIUM,
+  PREMIUM
 }
-```
 
-열거형은 이름이 지정된 상수 집합을 정의하는 데 매우 유용하며, 코드의 가독성을 높이고 실수를 줄일 수 있습니다.
-
-### 사용자 타입 정의
-
-다음으로, 사용자 객체의 기본 구조를 나타내는 TUser 타입을 정의합니다. 여기에는 id, name, type이 포함됩니다:
-
-```typescript
-type TUser = {
+interface User {
   id: string;
   name: string;
   type: UserKind;
-};
+  maxProjects: number;
+}
+
+class TypeSafeUserFactory {
+  createUser(type: UserKind, name: string): User {
+    const baseUser = {
+      id: crypto.randomUUID(),
+      name,
+      type
+    };
+
+    switch (type) {
+      case UserKind.FREE:
+        return { ...baseUser, maxProjects: 5 };
+      case UserKind.PREMIUM:
+        return { ...baseUser, maxProjects: 100 };
+      case UserKind.TRIAL:
+        return { ...baseUser, maxProjects: 10 };
+    }
+  }
+}
+
+const factory = new TypeSafeUserFactory();
+const user = factory.createUser(UserKind.PREMIUM, 'John');
+// factory.createUser('premuim', 'John'); // 컴파일 에러!
+console.log(user.maxProjects); // 100 - 타입 안전!
 ```
 
-이 타입을 통해 사용자 객체를 생성할 때 일관된 구조를 유지할 수 있습니다.
+## 기본 팩토리 패턴 구현
 
-## 추상 사용자 클래스
+### 문제 상황: 사용자 권한 시스템
 
-모든 사용자 유형에 공통적인 동작을 캡슐화하기 위해 User라는 추상 클래스를 정의합니다:
+다양한 유형의 사용자(Free, Trial, Premium)가 있고, 각각 다른 권한과 제한이 있는 시스템을 구현합니다.
+
+### 타입 정의
 
 ```typescript
-abstract class User {
-  id: TUser['type'];
+// 사용자 타입 열거형
+enum UserKind {
+  FREE,
+  TRIAL,
+  PREMIUM
+}
 
-  abstract read(): string;
-  abstract create(): string;
+// 기본 사용자 타입
+interface BaseUser {
+  id: string;
+  name: string;
+  email: string;
+  type: UserKind;
+}
 
-  protected constructor(id: TUser['type']) {
-    this.id = id;
+// 각 사용자 유형별 인터페이스
+interface FreeUser extends BaseUser {
+  type: UserKind.FREE;
+  maxProjects: 5;
+  canExport: false;
+  storageLimit: 100; // MB
+}
+
+interface TrialUser extends BaseUser {
+  type: UserKind.TRIAL;
+  maxProjects: 10;
+  canExport: true;
+  storageLimit: 500;
+  trialExpiresAt: Date;
+}
+
+interface PremiumUser extends BaseUser {
+  type: UserKind.PREMIUM;
+  maxProjects: number; // 무제한
+  canExport: true;
+  storageLimit: number; // 무제한
+  prioritySupport: true;
+  customDomain: string | null;
+}
+
+// 유니온 타입으로 모든 사용자 표현
+type User = FreeUser | TrialUser | PremiumUser;
+```
+
+### 추상 User 클래스
+
+```typescript
+abstract class UserBase implements BaseUser {
+  id: string;
+  name: string;
+  email: string;
+  abstract type: UserKind;
+
+  protected constructor(name: string, email: string) {
+    this.id = crypto.randomUUID();
+    this.name = name;
+    this.email = email;
+  }
+
+  abstract canCreateProject(): boolean;
+  abstract getStorageLimit(): number;
+
+  // 공통 메서드
+  updateProfile(name: string, email: string): void {
+    this.name = name;
+    this.email = email;
   }
 }
 ```
 
-User 클래스는 각 구체적인 사용자 유형이 구현할 두 가지 추상 메소드 read()와 create()를 가집니다. id 속성은 사용자의 유형을 나타내며 생성자를 통해 설정됩니다.
-
-## 구체적인 사용자 클래스
-
-그런 다음, Premium, Free, Trial 세 가지 구체적인 클래스를 생성하여 User 클래스를 확장합니다:
+### 구체적 사용자 클래스
 
 ```typescript
-class Premium extends User {
-  constructor() {
-    super(UserKind.PREMIUM);
+class Free extends UserBase implements FreeUser {
+  readonly type = UserKind.FREE;
+  readonly maxProjects = 5;
+  readonly canExport = false;
+  readonly storageLimit = 100;
+
+  constructor(name: string, email: string) {
+    super(name, email);
   }
 
-  create(): string {
-    return '프리미엄 사용자는 콘텐츠를 생성할 수 있습니다.';
+  canCreateProject(): boolean {
+    // 실제로는 현재 프로젝트 수를 체크
+    return true;
   }
 
-  read(): string {
-    return '프리미엄 사용자는 모든 콘텐츠를 읽을 수 있습니다.';
-  }
-}
-
-class Free extends User {
-  constructor() {
-    super(UserKind.FREE);
+  getStorageLimit(): number {
+    return this.storageLimit;
   }
 
-  create(): string {
-    return '무료 사용자는 콘텐츠를 생성할 수 없습니다.';
-  }
-
-  read(): string {
-    return '무료 사용자는 제한된 콘텐츠를 읽을 수 있습니다.';
+  upgradeToTrial(): Trial {
+    return new Trial(this.name, this.email);
   }
 }
 
-class Trial extends User {
-  constructor() {
-    super(UserKind.TRIAL);
+class Trial extends UserBase implements TrialUser {
+  readonly type = UserKind.TRIAL;
+  readonly maxProjects = 10;
+  readonly canExport = true;
+  readonly storageLimit = 500;
+  readonly trialExpiresAt: Date;
+
+  constructor(name: string, email: string) {
+    super(name, email);
+    // 30일 체험
+    this.trialExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   }
 
-  create(): string {
-    return '체험판 사용자는 제한된 콘텐츠를 생성할 수 있습니다.';
+  canCreateProject(): boolean {
+    return new Date() < this.trialExpiresAt;
   }
 
-  read(): string {
-    return '체험판 사용자는 제한된 콘텐츠를 읽을 수 있습니다.';
+  getStorageLimit(): number {
+    return this.storageLimit;
+  }
+
+  isExpired(): boolean {
+    return new Date() >= this.trialExpiresAt;
+  }
+
+  upgradeToPremium(customDomain: string | null): Premium {
+    return new Premium(this.name, this.email, customDomain);
+  }
+}
+
+class Premium extends UserBase implements PremiumUser {
+  readonly type = UserKind.PREMIUM;
+  readonly maxProjects = Infinity;
+  readonly canExport = true;
+  readonly storageLimit = Infinity;
+  readonly prioritySupport = true;
+  customDomain: string | null;
+
+  constructor(name: string, email: string, customDomain: string | null = null) {
+    super(name, email);
+    this.customDomain = customDomain;
+  }
+
+  canCreateProject(): boolean {
+    return true; // 항상 가능
+  }
+
+  getStorageLimit(): number {
+    return this.storageLimit;
+  }
+
+  setCustomDomain(domain: string): void {
+    this.customDomain = domain;
   }
 }
 ```
 
-각 클래스는 사용자 유형의 권한에 따라 create()와 read() 메소드를 구현합니다.
-
-## UserFactory 클래스
-
-사용자 유형의 인스턴스를 동적으로 생성하기 위해 UserFactory 클래스를 구현합니다:
+### 제네릭 팩토리 구현
 
 ```typescript
-class UserFactory<T = User> {
-  private readonly userClass: new (...args: any) => T;
+// 제네릭 팩토리 클래스
+class UserFactory<T extends UserBase = UserBase> {
+  private readonly userClass: new (name: string, email: string, ...args: any[]) => T;
 
-  constructor(userClass: new (...args: any) => T) {
+  constructor(userClass: new (name: string, email: string, ...args: any[]) => T) {
     this.userClass = userClass;
   }
 
-  create(user: TUser) {
-    return new this.userClass(user);
+  create(name: string, email: string, ...args: any[]): T {
+    return new this.userClass(name, email, ...args);
+  }
+
+  // 팩토리 메서드 패턴: 타입별 검증 로직 추가 가능
+  createWithValidation(name: string, email: string, ...args: any[]): T {
+    if (!this.validateEmail(email)) {
+      throw new Error('Invalid email format');
+    }
+
+    if (name.length < 2) {
+      throw new Error('Name must be at least 2 characters');
+    }
+
+    return this.create(name, email, ...args);
+  }
+
+  private validateEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+}
+
+// 사용 예시
+const freeFactory = new UserFactory(Free);
+const trialFactory = new UserFactory(Trial);
+const premiumFactory = new UserFactory(Premium);
+
+const freeUser = freeFactory.create('Alice', 'alice@example.com');
+console.log(freeUser.type); // UserKind.FREE
+console.log(freeUser.maxProjects); // 5
+
+const trialUser = trialFactory.create('Bob', 'bob@example.com');
+console.log(trialUser.isExpired()); // false
+
+const premiumUser = premiumFactory.create('Charlie', 'charlie@example.com', 'myapp.com');
+console.log(premiumUser.customDomain); // 'myapp.com'
+```
+
+## 고급 TypeScript 팩토리 패턴
+
+### 1. 조건부 타입을 활용한 스마트 팩토리
+
+```typescript
+// 타입별 생성 매개변수 정의
+type UserCreationParams<K extends UserKind> =
+  K extends UserKind.FREE
+    ? { name: string; email: string }
+    : K extends UserKind.TRIAL
+    ? { name: string; email: string }
+    : K extends UserKind.PREMIUM
+    ? { name: string; email: string; customDomain?: string | null }
+    : never;
+
+// 타입별 반환 타입 정의
+type UserTypeMap = {
+  [UserKind.FREE]: Free;
+  [UserKind.TRIAL]: Trial;
+  [UserKind.PREMIUM]: Premium;
+};
+
+// 스마트 팩토리: 타입에 따라 매개변수와 반환 타입이 자동으로 결정
+class SmartUserFactory {
+  create<K extends UserKind>(
+    type: K,
+    params: UserCreationParams<K>
+  ): UserTypeMap[K] {
+    const { name, email } = params;
+
+    switch (type) {
+      case UserKind.FREE:
+        return new Free(name, email) as UserTypeMap[K];
+
+      case UserKind.TRIAL:
+        return new Trial(name, email) as UserTypeMap[K];
+
+      case UserKind.PREMIUM:
+        const premiumParams = params as UserCreationParams<UserKind.PREMIUM>;
+        return new Premium(
+          name,
+          email,
+          premiumParams.customDomain
+        ) as UserTypeMap[K];
+
+      default:
+        throw new Error(`Unknown user type: ${type}`);
+    }
+  }
+}
+
+// 사용: 타입 추론 자동
+const smartFactory = new SmartUserFactory();
+
+// TypeScript가 반환 타입을 Free로 추론
+const user1 = smartFactory.create(UserKind.FREE, {
+  name: 'Alice',
+  email: 'alice@example.com'
+});
+
+// TypeScript가 반환 타입을 Premium으로 추론하고 customDomain 매개변수 요구
+const user2 = smartFactory.create(UserKind.PREMIUM, {
+  name: 'Charlie',
+  email: 'charlie@example.com',
+  customDomain: 'myapp.com'
+});
+
+// 컴파일 에러: customDomain은 FREE에 없음
+// const user3 = smartFactory.create(UserKind.FREE, {
+//   name: 'David',
+//   email: 'david@example.com',
+//   customDomain: 'test.com' // 에러!
+// });
+```
+
+### 2. 추상 팩토리 패턴 with TypeScript
+
+여러 관련 객체를 함께 생성해야 할 때 사용합니다.
+
+```typescript
+// Product 인터페이스
+interface Button {
+  render(): string;
+  onClick(handler: () => void): void;
+}
+
+interface Checkbox {
+  render(): string;
+  isChecked(): boolean;
+  toggle(): void;
+}
+
+interface Input {
+  render(): string;
+  getValue(): string;
+  setValue(value: string): void;
+}
+
+// Windows 제품군
+class WindowsButton implements Button {
+  render(): string {
+    return '<button class="windows-btn">Click me</button>';
+  }
+
+  onClick(handler: () => void): void {
+    console.log('Windows button clicked');
+    handler();
+  }
+}
+
+class WindowsCheckbox implements Checkbox {
+  private checked = false;
+
+  render(): string {
+    return `<input type="checkbox" class="windows-checkbox" ${
+      this.checked ? 'checked' : ''
+    }>`;
+  }
+
+  isChecked(): boolean {
+    return this.checked;
+  }
+
+  toggle(): void {
+    this.checked = !this.checked;
+  }
+}
+
+class WindowsInput implements Input {
+  private value = '';
+
+  render(): string {
+    return `<input type="text" class="windows-input" value="${this.value}">`;
+  }
+
+  getValue(): string {
+    return this.value;
+  }
+
+  setValue(value: string): void {
+    this.value = value;
+  }
+}
+
+// macOS 제품군
+class MacOSButton implements Button {
+  render(): string {
+    return '<button class="macos-btn">Click me</button>';
+  }
+
+  onClick(handler: () => void): void {
+    console.log('macOS button clicked');
+    handler();
+  }
+}
+
+class MacOSCheckbox implements Checkbox {
+  private checked = false;
+
+  render(): string {
+    return `<input type="checkbox" class="macos-checkbox" ${
+      this.checked ? 'checked' : ''
+    }>`;
+  }
+
+  isChecked(): boolean {
+    return this.checked;
+  }
+
+  toggle(): void {
+    this.checked = !this.checked;
+  }
+}
+
+class MacOSInput implements Input {
+  private value = '';
+
+  render(): string {
+    return `<input type="text" class="macos-input" value="${this.value}">`;
+  }
+
+  getValue(): string {
+    return this.value;
+  }
+
+  setValue(value: string): void {
+    this.value = value;
+  }
+}
+
+// 추상 팩토리 인터페이스
+interface GUIFactory {
+  createButton(): Button;
+  createCheckbox(): Checkbox;
+  createInput(): Input;
+}
+
+// 구체적 팩토리
+class WindowsGUIFactory implements GUIFactory {
+  createButton(): Button {
+    return new WindowsButton();
+  }
+
+  createCheckbox(): Checkbox {
+    return new WindowsCheckbox();
+  }
+
+  createInput(): Input {
+    return new WindowsInput();
+  }
+}
+
+class MacOSGUIFactory implements GUIFactory {
+  createButton(): Button {
+    return new MacOSButton();
+  }
+
+  createCheckbox(): Checkbox {
+    return new MacOSCheckbox();
+  }
+
+  createInput(): Input {
+    return new MacOSInput();
+  }
+}
+
+// 클라이언트 코드
+class Application {
+  private button: Button;
+  private checkbox: Checkbox;
+  private input: Input;
+
+  constructor(factory: GUIFactory) {
+    this.button = factory.createButton();
+    this.checkbox = factory.createCheckbox();
+    this.input = factory.createInput();
+  }
+
+  render(): string {
+    return `
+      ${this.button.render()}
+      ${this.checkbox.render()}
+      ${this.input.render()}
+    `;
+  }
+}
+
+// 플랫폼 감지 후 팩토리 선택
+function getGUIFactory(): GUIFactory {
+  const platform = navigator.platform.toLowerCase();
+
+  if (platform.includes('mac')) {
+    return new MacOSGUIFactory();
+  } else {
+    return new WindowsGUIFactory();
+  }
+}
+
+// 사용
+const factory = getGUIFactory();
+const app = new Application(factory);
+console.log(app.render());
+```
+
+### 3. 빌더 패턴과 팩토리 패턴 결합
+
+복잡한 객체를 단계적으로 생성하면서 팩토리의 장점을 유지합니다.
+
+```typescript
+interface DatabaseConfig {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  ssl: boolean;
+  poolSize: number;
+  timeout: number;
+}
+
+class DatabaseConfigBuilder {
+  private config: Partial<DatabaseConfig> = {
+    ssl: false,
+    poolSize: 10,
+    timeout: 5000
+  };
+
+  setHost(host: string): this {
+    this.config.host = host;
+    return this;
+  }
+
+  setPort(port: number): this {
+    this.config.port = port;
+    return this;
+  }
+
+  setDatabase(database: string): this {
+    this.config.database = database;
+    return this;
+  }
+
+  setCredentials(username: string, password: string): this {
+    this.config.username = username;
+    this.config.password = password;
+    return this;
+  }
+
+  enableSSL(): this {
+    this.config.ssl = true;
+    return this;
+  }
+
+  setPoolSize(size: number): this {
+    this.config.poolSize = size;
+    return this;
+  }
+
+  setTimeout(ms: number): this {
+    this.config.timeout = ms;
+    return this;
+  }
+
+  build(): DatabaseConfig {
+    // 필수 필드 검증
+    if (!this.config.host || !this.config.port || !this.config.database) {
+      throw new Error('Host, port, and database are required');
+    }
+
+    return this.config as DatabaseConfig;
+  }
+}
+
+// 팩토리에서 빌더 제공
+class DatabaseConfigFactory {
+  static development(): DatabaseConfigBuilder {
+    return new DatabaseConfigBuilder()
+      .setHost('localhost')
+      .setPort(5432)
+      .setDatabase('dev_db')
+      .setCredentials('dev_user', 'dev_password')
+      .setPoolSize(5);
+  }
+
+  static production(): DatabaseConfigBuilder {
+    return new DatabaseConfigBuilder()
+      .setHost('prod.db.example.com')
+      .setPort(5432)
+      .enableSSL()
+      .setPoolSize(50)
+      .setTimeout(10000);
+  }
+
+  static test(): DatabaseConfigBuilder {
+    return new DatabaseConfigBuilder()
+      .setHost('localhost')
+      .setPort(5433)
+      .setDatabase('test_db')
+      .setCredentials('test_user', 'test_password')
+      .setPoolSize(2)
+      .setTimeout(1000);
+  }
+}
+
+// 사용
+const devConfig = DatabaseConfigFactory.development()
+  .setDatabase('my_dev_db')
+  .build();
+
+const prodConfig = DatabaseConfigFactory.production()
+  .setDatabase('my_prod_db')
+  .setCredentials('prod_user', 'secure_password')
+  .build();
+```
+
+## 실전 사용 사례
+
+### 1. HTTP 클라이언트 팩토리
+
+```typescript
+enum HttpMethod {
+  GET = 'GET',
+  POST = 'POST',
+  PUT = 'PUT',
+  DELETE = 'DELETE',
+  PATCH = 'PATCH'
+}
+
+interface HttpRequest {
+  method: HttpMethod;
+  url: string;
+  headers: Record<string, string>;
+  body?: any;
+}
+
+interface HttpResponse<T = any> {
+  status: number;
+  data: T;
+  headers: Record<string, string>;
+}
+
+abstract class HttpClient {
+  protected baseURL: string;
+  protected defaultHeaders: Record<string, string>;
+
+  constructor(baseURL: string, defaultHeaders: Record<string, string> = {}) {
+    this.baseURL = baseURL;
+    this.defaultHeaders = defaultHeaders;
+  }
+
+  abstract request<T>(request: HttpRequest): Promise<HttpResponse<T>>;
+
+  async get<T>(url: string, headers?: Record<string, string>): Promise<HttpResponse<T>> {
+    return this.request<T>({
+      method: HttpMethod.GET,
+      url,
+      headers: { ...this.defaultHeaders, ...headers }
+    });
+  }
+
+  async post<T>(url: string, body: any, headers?: Record<string, string>): Promise<HttpResponse<T>> {
+    return this.request<T>({
+      method: HttpMethod.POST,
+      url,
+      body,
+      headers: { ...this.defaultHeaders, ...headers }
+    });
+  }
+}
+
+class FetchHttpClient extends HttpClient {
+  async request<T>(request: HttpRequest): Promise<HttpResponse<T>> {
+    const response = await fetch(`${this.baseURL}${request.url}`, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body ? JSON.stringify(request.body) : undefined
+    });
+
+    const data = await response.json();
+
+    return {
+      status: response.status,
+      data,
+      headers: Object.fromEntries(response.headers.entries())
+    };
+  }
+}
+
+class AxiosHttpClient extends HttpClient {
+  async request<T>(request: HttpRequest): Promise<HttpResponse<T>> {
+    // axios 라이브러리 사용 (실제로는 import 필요)
+    const axiosResponse = await (globalThis as any).axios({
+      method: request.method,
+      url: `${this.baseURL}${request.url}`,
+      headers: request.headers,
+      data: request.body
+    });
+
+    return {
+      status: axiosResponse.status,
+      data: axiosResponse.data,
+      headers: axiosResponse.headers
+    };
+  }
+}
+
+// 팩토리
+type HttpClientType = 'fetch' | 'axios';
+
+class HttpClientFactory {
+  static create(
+    type: HttpClientType,
+    baseURL: string,
+    defaultHeaders?: Record<string, string>
+  ): HttpClient {
+    switch (type) {
+      case 'fetch':
+        return new FetchHttpClient(baseURL, defaultHeaders);
+      case 'axios':
+        return new AxiosHttpClient(baseURL, defaultHeaders);
+      default:
+        throw new Error(`Unknown HTTP client type: ${type}`);
+    }
+  }
+
+  // 환경별 프리셋
+  static createForEnvironment(env: 'development' | 'production'): HttpClient {
+    const baseURL = env === 'production'
+      ? 'https://api.example.com'
+      : 'http://localhost:3000';
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(env === 'production' ? { 'X-API-Key': process.env.API_KEY || '' } : {})
+    };
+
+    return this.create('fetch', baseURL, headers);
+  }
+}
+
+// 사용
+const client = HttpClientFactory.createForEnvironment('development');
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+const response = await client.get<User[]>('/users');
+console.log(response.data); // User[] 타입 추론
+```
+
+### 2. 이벤트 핸들러 팩토리
+
+```typescript
+interface EventPayload {
+  timestamp: Date;
+  source: string;
+}
+
+interface UserCreatedPayload extends EventPayload {
+  userId: string;
+  email: string;
+}
+
+interface OrderPlacedPayload extends EventPayload {
+  orderId: string;
+  amount: number;
+  userId: string;
+}
+
+interface PaymentProcessedPayload extends EventPayload {
+  paymentId: string;
+  orderId: string;
+  method: string;
+}
+
+type EventType = 'user.created' | 'order.placed' | 'payment.processed';
+
+type EventPayloadMap = {
+  'user.created': UserCreatedPayload;
+  'order.placed': OrderPlacedPayload;
+  'payment.processed': PaymentProcessedPayload;
+};
+
+interface EventHandler<T extends EventPayload> {
+  handle(payload: T): Promise<void>;
+}
+
+class UserCreatedHandler implements EventHandler<UserCreatedPayload> {
+  async handle(payload: UserCreatedPayload): Promise<void> {
+    console.log(`Sending welcome email to ${payload.email}`);
+    // 이메일 발송 로직
+  }
+}
+
+class OrderPlacedHandler implements EventHandler<OrderPlacedPayload> {
+  async handle(payload: OrderPlacedPayload): Promise<void> {
+    console.log(`Processing order ${payload.orderId} for $${payload.amount}`);
+    // 주문 처리 로직
+  }
+}
+
+class PaymentProcessedHandler implements EventHandler<PaymentProcessedPayload> {
+  async handle(payload: PaymentProcessedPayload): Promise<void> {
+    console.log(`Payment ${payload.paymentId} processed via ${payload.method}`);
+    // 결제 확인 로직
+  }
+}
+
+class EventHandlerFactory {
+  private handlers: Map<EventType, EventHandler<any>> = new Map();
+
+  constructor() {
+    this.handlers.set('user.created', new UserCreatedHandler());
+    this.handlers.set('order.placed', new OrderPlacedHandler());
+    this.handlers.set('payment.processed', new PaymentProcessedHandler());
+  }
+
+  getHandler<T extends EventType>(
+    eventType: T
+  ): EventHandler<EventPayloadMap[T]> | null {
+    return this.handlers.get(eventType) || null;
+  }
+
+  async handleEvent<T extends EventType>(
+    eventType: T,
+    payload: EventPayloadMap[T]
+  ): Promise<void> {
+    const handler = this.getHandler(eventType);
+
+    if (!handler) {
+      console.warn(`No handler found for event: ${eventType}`);
+      return;
+    }
+
+    await handler.handle(payload);
+  }
+}
+
+// 사용
+const eventFactory = new EventHandlerFactory();
+
+await eventFactory.handleEvent('user.created', {
+  timestamp: new Date(),
+  source: 'signup-form',
+  userId: 'user-123',
+  email: 'user@example.com'
+});
+
+await eventFactory.handleEvent('order.placed', {
+  timestamp: new Date(),
+  source: 'checkout',
+  orderId: 'order-456',
+  amount: 99.99,
+  userId: 'user-123'
+});
+```
+
+### 3. 커넥션 풀 팩토리
+
+```typescript
+interface Connection {
+  id: string;
+  isActive: boolean;
+  execute(query: string): Promise<any>;
+  close(): void;
+}
+
+class DatabaseConnection implements Connection {
+  id: string;
+  isActive: boolean;
+  private connectionString: string;
+
+  constructor(connectionString: string) {
+    this.id = crypto.randomUUID();
+    this.isActive = true;
+    this.connectionString = connectionString;
+  }
+
+  async execute(query: string): Promise<any> {
+    console.log(`[${this.id}] Executing: ${query}`);
+    // 실제 쿼리 실행 로직
+    return [];
+  }
+
+  close(): void {
+    this.isActive = false;
+    console.log(`[${this.id}] Connection closed`);
+  }
+}
+
+class ConnectionPool {
+  private connections: Connection[] = [];
+  private available: Connection[] = [];
+  private inUse: Connection[] = [];
+  private maxSize: number;
+  private connectionFactory: () => Connection;
+
+  constructor(connectionFactory: () => Connection, maxSize: number = 10) {
+    this.connectionFactory = connectionFactory;
+    this.maxSize = maxSize;
+  }
+
+  async getConnection(): Promise<Connection> {
+    if (this.available.length > 0) {
+      const connection = this.available.pop()!;
+      this.inUse.push(connection);
+      return connection;
+    }
+
+    if (this.connections.length < this.maxSize) {
+      const connection = this.connectionFactory();
+      this.connections.push(connection);
+      this.inUse.push(connection);
+      return connection;
+    }
+
+    // 대기 (실제로는 Promise 큐 사용)
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return this.getConnection();
+  }
+
+  releaseConnection(connection: Connection): void {
+    const index = this.inUse.indexOf(connection);
+    if (index > -1) {
+      this.inUse.splice(index, 1);
+      this.available.push(connection);
+    }
+  }
+
+  closeAll(): void {
+    this.connections.forEach(conn => conn.close());
+    this.connections = [];
+    this.available = [];
+    this.inUse = [];
+  }
+}
+
+class ConnectionPoolFactory {
+  static createPostgreSQLPool(config: {
+    host: string;
+    port: number;
+    database: string;
+    maxConnections?: number;
+  }): ConnectionPool {
+    const connectionString = `postgresql://${config.host}:${config.port}/${config.database}`;
+
+    return new ConnectionPool(
+      () => new DatabaseConnection(connectionString),
+      config.maxConnections || 10
+    );
+  }
+
+  static createMySQLPool(config: {
+    host: string;
+    port: number;
+    database: string;
+    maxConnections?: number;
+  }): ConnectionPool {
+    const connectionString = `mysql://${config.host}:${config.port}/${config.database}`;
+
+    return new ConnectionPool(
+      () => new DatabaseConnection(connectionString),
+      config.maxConnections || 10
+    );
+  }
+}
+
+// 사용
+const pgPool = ConnectionPoolFactory.createPostgreSQLPool({
+  host: 'localhost',
+  port: 5432,
+  database: 'mydb',
+  maxConnections: 20
+});
+
+const connection = await pgPool.getConnection();
+await connection.execute('SELECT * FROM users');
+pgPool.releaseConnection(connection);
+```
+
+## 안티패턴과 주의사항
+
+### 1. any 타입 남발
+
+**❌ 잘못된 예:**
+
+```typescript
+class BadFactory {
+  create(type: string, data: any): any {
+    // 타입 안정성 상실
+    return new (this as any)[type](data);
   }
 }
 ```
 
-UserFactory 클래스는 생성자 파라미터로 사용자 클래스를 받아 이를 userClass라는 private 변수에 저장합니다. create() 메소드는 new 키워드를 사용해 해당 사용자 클래스를 인스턴스화합니다.
-
-## 사용자 생성하기
-
-마지막으로, UserFactory를 사용하여 서로 다른 사용자 유형의 인스턴스를 생성하는 방법을 살펴보겠습니다:
+**✅ 개선된 예:**
 
 ```typescript
-const p = new UserFactory(Premium);
-p.create({ id: 'premium', name: 'premium user', type: UserKind.PREMIUM });
+type ConstructorMap<T> = {
+  [K in keyof T]: new (...args: any[]) => T[K];
+};
 
-const f = new UserFactory(Free);
-f.create({ id: 'free', name: 'free name', type: UserKind.FREE });
+class GoodFactory<T extends Record<string, any>> {
+  private constructors: ConstructorMap<T>;
+
+  constructor(constructors: ConstructorMap<T>) {
+    this.constructors = constructors;
+  }
+
+  create<K extends keyof T>(type: K, ...args: any[]): T[K] {
+    const Constructor = this.constructors[type];
+    return new Constructor(...args);
+  }
+}
 ```
 
-여기서는 Premium과 Free 사용자 클래스의 인스턴스를 생성하고 있습니다. 팩토리 패턴을 사용하면 UserFactory 생성자에 다른 클래스를 전달하여 생성할 사용자 클래스를 쉽게 변경할 수 있습니다.
+### 2. 타입 가드 누락
 
-팩토리 디자인 패턴은 타입스크립트 애플리케이션에서 다양한 유형의 사용자들을 관리하는 강력한 방법을 제공합니다. 생성 로직을 추상화하고 동작을 개별 클래스에 캡슐화함으로써 코드를 더 모듈화하고 유지보수가 용이하게 만들 수 있으며, 향후 확장을 위한 준비도 할 수 있습니다. 이 접근 방식은 다양한 사용자 역할을 관리해야 하고 각기 다른 권한과 기능이 필요한 애플리케이션에 특히 유용합니다.
+**❌ 잘못된 예:**
+
+```typescript
+function processUser(user: User) {
+  // 타입 체크 없이 접근
+  console.log(user.customDomain); // Premium에만 있는 속성
+}
+```
+
+**✅ 개선된 예:**
+
+```typescript
+function isPremiumUser(user: User): user is PremiumUser {
+  return user.type === UserKind.PREMIUM;
+}
+
+function processUser(user: User) {
+  if (isPremiumUser(user)) {
+    console.log(user.customDomain); // 타입 안전
+  }
+}
+```
+
+## 성능 최적화
+
+### 1. 싱글톤 팩토리
+
+```typescript
+class SingletonFactory<T> {
+  private static instances = new Map<any, any>();
+
+  static getInstance<T>(
+    Constructor: new (...args: any[]) => T,
+    ...args: any[]
+  ): T {
+    if (!this.instances.has(Constructor)) {
+      this.instances.set(Constructor, new Constructor(...args));
+    }
+    return this.instances.get(Constructor);
+  }
+}
+
+// 사용
+const logger1 = SingletonFactory.getInstance(Logger, '/var/log/app.log');
+const logger2 = SingletonFactory.getInstance(Logger, '/var/log/app.log');
+console.log(logger1 === logger2); // true
+```
+
+### 2. 지연 초기화
+
+```typescript
+class LazyFactory<T> {
+  private instance: T | null = null;
+  private constructor_: new () => T;
+
+  constructor(constructor_: new () => T) {
+    this.constructor_ = constructor_;
+  }
+
+  getInstance(): T {
+    if (this.instance === null) {
+      this.instance = new this.constructor_();
+    }
+    return this.instance;
+  }
+}
+```
+
+## 결론
+
+TypeScript의 팩토리 패턴은 JavaScript와 달리 **강력한 타입 시스템**을 활용하여 컴파일 타임에 오류를 잡을 수 있습니다.
+
+**핵심 장점:**
+
+1. **타입 안정성**: 컴파일 타임 타입 체크
+2. **IDE 지원**: 자동 완성 및 리팩토링
+3. **제네릭 활용**: 재사용 가능한 팩토리
+4. **조건부 타입**: 스마트한 타입 추론
+
+**적용 시기:**
+
+- 다양한 객체 타입을 동적으로 생성할 때
+- 타입 안정성을 보장하면서 유연성이 필요할 때
+- 복잡한 객체 생성 로직을 캡슐화할 때
+- 의존성 주입이 필요할 때
+
+TypeScript의 타입 시스템을 최대한 활용하여 안전하고 확장 가능한 팩토리 패턴을 구현할 수 있습니다.

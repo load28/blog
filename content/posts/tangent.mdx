@@ -1,32 +1,462 @@
 ---
-title: 'Tangent'
-description: 'Exploring the concept of the tangent and its application in mathematics'
-date: '2024-08-16'
-tags: ['math']
+title: '접선(Tangent): 미분과 곡선의 순간 변화율을 이해하는 핵심 개념'
+description: '접선의 수학적 정의부터 Bezier 곡선, 애니메이션 타이밍 함수, 그래픽스 응용까지 완벽 분석'
+date: '2024-08-16T00:00:00Z'
+tags: ['math', 'calculus', 'bezier', 'animation']
 series: 'math'
 seriesNumber: 3
 ---
 
-"접선"은 곡선의 특정 지점에서 그 곡선에 접하는 직선을 의미합니다. 접선은 그 점에서 곡선의 방향을 나타내며, 곡선이 그 지점에서 어떤 방향으로 변화하는지를 알려줍니다.
+## 접선이란?
 
-### 접선의 의미와 성질
+접선(Tangent)은 곡선의 특정 지점에서 **그 곡선에 접하는 직선**입니다. 접선은 곡선이 그 지점에서 어떤 방향으로 변화하는지, 즉 **순간적인 기울기**를 나타냅니다.
 
-1. **방향**:
+### 일상 속 접선
 
-   - 접선은 곡선의 특정 지점에서 곡선이 어떤 방향으로 진행하는지를 나타냅니다. 이는 곡선의 그 지점에서의 순간적인 기울기와 같은 개념입니다.
+```
+예: 자동차 핸들
+- 원형 핸들을 돌릴 때, 손이 닿는 점에서의 이동 방향
+→ 그 점에서 원의 접선 방향
 
-2. **미분**:
+예: 롤러코스터
+- 레일의 특정 지점에서 탑승자가 느끼는 방향
+→ 그 지점에서 레일 곡선의 접선 방향
+```
 
-   - 수학적으로, 접선은 곡선의 해당 지점에서의 미분값으로 정의됩니다. 즉, 곡선의 방정식을 $f(x)$라 할 때, $x = a$에서의 접선의 기울기는 $f'(a)$로 나타냅니다.
+## 수학적 정의
 
-3. **직관적인 이해**:
-   - 곡선 위의 한 점에서 그려지는 접선은 곡선과 오직 그 한 점에서만 접하며, 곡선이 그 지점 근처에서 어떻게 진행되는지를 가장 잘 나타냅니다. 예를 들어, 원의 한 점에서의 접선은 그 점에서 원의 곡률을 반영하여 원에 수직인 방향으로 그려집니다.
+### 접선의 기울기
 
-### Cubic Bezier 곡선에서의 접선
+함수 $f(x)$의 점 $(a, f(a))$에서의 접선 기울기는 **미분**으로 정의됩니다:
 
-Cubic Bezier 곡선에서는 접선이 제어점의 영향을 받습니다. 특정 지점 (t)에서의 접선 방향은 곡선의 제어점들, 특히 인접한 제어점들이 곡선의 형태를 어떻게 유도하는지를 보여줍니다.
+$$
+m = f'(a) = \lim_{h \to 0} \frac{f(a + h) - f(a)}{h}
+$$
 
-- $t = 0$에서의 접선은 시작점 $P_0$과 첫 번째 제어점 $P_1$ 사이의 벡터 방향과 밀접하게 관련되어 있습니다.
-- $t = 1$에서의 접선은 두 번째 제어점 $P_2$과 끝점 $P_3$ 사이의 벡터 방향과 밀접하게 관련되어 있습니다.
+**접선의 방정식:**
 
-따라서 Bezier 곡선의 접선을 통해 제어점들이 곡선의 각 부분에 어떤 영향을 미치는지 이해할 수 있으며, 곡선의 형태를 미세 조정하는 데 중요한 역할을 합니다.
+$$
+y - f(a) = f'(a) \cdot (x - a)
+$$
+
+### 예제: 포물선의 접선
+
+$f(x) = x^2$의 $x = 2$에서의 접선을 구해보겠습니다.
+
+1. **미분 계산:**
+   $$f'(x) = 2x$$
+
+2. **$x = 2$에서의 기울기:**
+   $$f'(2) = 2 \cdot 2 = 4$$
+
+3. **점:**
+   $$(2, f(2)) = (2, 4)$$
+
+4. **접선의 방정식:**
+   $$y - 4 = 4(x - 2)$$
+   $$y = 4x - 4$$
+
+## 접선의 기하학적 의미
+
+### 1. 곡선의 방향
+
+접선은 곡선이 그 지점에서 어디로 향하는지 보여줍니다.
+
+```
+원의 접선 시각화 (ASCII):
+
+      |
+  . . | . .
+ .    |    .
+.   ──┼──   .  ← 접선 (수평)
+ .    |    .
+  . . | . .
+      |
+```
+
+### 2. 속도 벡터
+
+물체가 곡선을 따라 움직일 때, 접선 방향이 **속도 벡터**입니다.
+
+$$
+\vec{v}(t) = \frac{d\vec{r}}{dt} = \left( \frac{dx}{dt}, \frac{dy}{dt} \right)
+$$
+
+## Bezier 곡선에서의 접선
+
+Cubic Bezier 곡선은 4개의 제어점 $P_0, P_1, P_2, P_3$으로 정의됩니다:
+
+$$
+B(t) = (1-t)^3 P_0 + 3(1-t)^2 t P_1 + 3(1-t) t^2 P_2 + t^3 P_3
+$$
+
+### 접선 벡터 (1차 미분)
+
+$$
+B'(t) = 3(1-t)^2 (P_1 - P_0) + 6(1-t)t (P_2 - P_1) + 3t^2 (P_3 - P_2)
+$$
+
+**특별한 경우:**
+
+$$
+\begin{align*}
+t = 0 &\Rightarrow B'(0) = 3(P_1 - P_0) \\
+t = 1 &\Rightarrow B'(1) = 3(P_3 - P_2)
+\end{align*}
+$$
+
+**의미:**
+- 시작점에서의 접선은 $P_0 \to P_1$ 방향
+- 끝점에서의 접선은 $P_2 \to P_3$ 방향
+
+### JavaScript 구현
+
+```javascript
+/**
+ * Cubic Bezier 곡선의 점과 접선 계산
+ */
+class CubicBezier {
+  constructor(p0, p1, p2, p3) {
+    this.p0 = p0; // { x, y }
+    this.p1 = p1;
+    this.p2 = p2;
+    this.p3 = p3;
+  }
+
+  // 곡선 위의 점 계산
+  point(t) {
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const t2 = t * t;
+
+    return {
+      x:
+        mt2 * mt * this.p0.x +
+        3 * mt2 * t * this.p1.x +
+        3 * mt * t2 * this.p2.x +
+        t2 * t * this.p3.x,
+      y:
+        mt2 * mt * this.p0.y +
+        3 * mt2 * t * this.p1.y +
+        3 * mt * t2 * this.p2.y +
+        t2 * t * this.p3.y,
+    };
+  }
+
+  // 접선 벡터 계산
+  tangent(t) {
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const t2 = t * t;
+
+    return {
+      x:
+        3 * mt2 * (this.p1.x - this.p0.x) +
+        6 * mt * t * (this.p2.x - this.p1.x) +
+        3 * t2 * (this.p3.x - this.p2.x),
+      y:
+        3 * mt2 * (this.p1.y - this.p0.y) +
+        6 * mt * t * (this.p2.y - this.p1.y) +
+        3 * t2 * (this.p3.y - this.p2.y),
+    };
+  }
+
+  // 정규화된 접선 (단위 벡터)
+  normalizedTangent(t) {
+    const tan = this.tangent(t);
+    const length = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
+    return {
+      x: tan.x / length,
+      y: tan.y / length,
+    };
+  }
+}
+
+// 사용 예
+const curve = new CubicBezier(
+  { x: 0, y: 0 },     // P0
+  { x: 50, y: 100 },  // P1
+  { x: 150, y: 100 }, // P2
+  { x: 200, y: 0 }    // P3
+);
+
+console.log('t=0에서의 점:', curve.point(0));
+console.log('t=0에서의 접선:', curve.tangent(0));
+console.log('t=0.5에서의 점:', curve.point(0.5));
+console.log('t=0.5에서의 접선:', curve.tangent(0.5));
+```
+
+## CSS Cubic-Bezier와 타이밍 함수
+
+CSS `transition`의 `cubic-bezier()` 함수도 접선 개념을 사용합니다.
+
+```css
+.box {
+  transition: transform 1s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+```
+
+**매개변수:** `cubic-bezier(x1, y1, x2, y2)`
+- $P_0 = (0, 0)$ (시작, 고정)
+- $P_1 = (x_1, y_1)$ (제어점 1)
+- $P_2 = (x_2, y_2)$ (제어점 2)
+- $P_3 = (1, 1)$ (끝, 고정)
+
+### JavaScript 구현
+
+```javascript
+/**
+ * CSS cubic-bezier 타이밍 함수
+ */
+function cubicBezierTiming(x1, y1, x2, y2) {
+  return function (t) {
+    // 1차원 Bezier 곡선 (y 값만 계산)
+    const mt = 1 - t;
+    return (
+      3 * mt * mt * t * y1 +
+      3 * mt * t * t * y2 +
+      t * t * t
+    );
+  };
+}
+
+// 내장 easing 함수들
+const ease = cubicBezierTiming(0.25, 0.1, 0.25, 1);
+const easeIn = cubicBezierTiming(0.42, 0, 1, 1);
+const easeOut = cubicBezierTiming(0, 0, 0.58, 1);
+const easeInOut = cubicBezierTiming(0.42, 0, 0.58, 1);
+
+// 사용 예
+for (let t = 0; t <= 1; t += 0.2) {
+  console.log(`t=${t}: ease=${ease(t).toFixed(3)}`);
+}
+```
+
+## 애니메이션 응용: 경로를 따라 이동
+
+```javascript
+/**
+ * 객체가 Bezier 곡선을 따라 이동하며 회전
+ */
+class PathFollower {
+  constructor(curve, element) {
+    this.curve = curve;
+    this.element = element;
+    this.progress = 0;
+  }
+
+  update(deltaTime) {
+    this.progress += deltaTime * 0.001; // 속도 조절
+    if (this.progress > 1) this.progress = 0;
+
+    const point = this.curve.point(this.progress);
+    const tangent = this.curve.tangent(this.progress);
+
+    // 위치 설정
+    this.element.style.left = `${point.x}px`;
+    this.element.style.top = `${point.y}px`;
+
+    // 접선 방향으로 회전
+    const angle = Math.atan2(tangent.y, tangent.x) * (180 / Math.PI);
+    this.element.style.transform = `rotate(${angle}deg)`;
+  }
+}
+
+// 사용
+const curve = new CubicBezier(
+  { x: 100, y: 100 },
+  { x: 200, y: 50 },
+  { x: 300, y: 150 },
+  { x: 400, y: 100 }
+);
+
+const follower = new PathFollower(curve, document.querySelector('.car'));
+
+let lastTime = 0;
+function animate(time) {
+  const deltaTime = time - lastTime;
+  lastTime = time;
+
+  follower.update(deltaTime);
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+```
+
+## 접선의 응용 분야
+
+### 1. 게임 개발: 캐릭터 방향
+
+```javascript
+class Character {
+  constructor() {
+    this.position = { x: 0, y: 0 };
+    this.velocity = { x: 0, y: 0 };
+  }
+
+  update(dt) {
+    // 위치 업데이트
+    this.position.x += this.velocity.x * dt;
+    this.position.y += this.velocity.y * dt;
+
+    // 속도 벡터(접선)로 회전 각도 계산
+    if (this.velocity.x !== 0 || this.velocity.y !== 0) {
+      this.angle = Math.atan2(this.velocity.y, this.velocity.x);
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.position.x, this.position.y);
+    ctx.rotate(this.angle); // 이동 방향으로 회전
+    ctx.fillRect(-10, -5, 20, 10); // 캐릭터 그리기
+    ctx.restore();
+  }
+}
+```
+
+### 2. 그래픽스: 법선 벡터
+
+접선에 수직인 **법선 벡터**는 3D 조명 계산에 필수입니다.
+
+```javascript
+/**
+ * 접선으로부터 법선 계산 (2D)
+ */
+function getNormal(tangent) {
+  // 90도 회전
+  return {
+    x: -tangent.y,
+    y: tangent.x,
+  };
+}
+
+// 정규화
+function normalize(vec) {
+  const length = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
+  return {
+    x: vec.x / length,
+    y: vec.y / length,
+  };
+}
+
+// 사용 예
+const curve = new CubicBezier(
+  { x: 0, y: 0 },
+  { x: 50, y: 100 },
+  { x: 150, y: 100 },
+  { x: 200, y: 0 }
+);
+
+const tangent = curve.tangent(0.5);
+const normal = normalize(getNormal(tangent));
+console.log('법선 벡터:', normal);
+```
+
+### 3. 데이터 시각화: 그래프 주석
+
+```javascript
+/**
+ * 그래프 위의 점에 접선 표시
+ */
+function drawTangentLine(ctx, func, x, length = 50) {
+  const y = func(x);
+  const h = 0.001;
+  const slope = (func(x + h) - func(x - h)) / (2 * h); // 수치 미분
+
+  // 접선의 시작점과 끝점
+  const x1 = x - length;
+  const y1 = y - slope * length;
+  const x2 = x + length;
+  const y2 = y + slope * length;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = 'red';
+  ctx.stroke();
+}
+
+// 사용 예: y = x^2의 접선
+const parabola = (x) => x * x;
+drawTangentLine(ctx, parabola, 2);
+```
+
+## 고급 개념: 2차 미분 (곡률)
+
+접선의 변화율인 **2차 미분**은 곡선의 휘어진 정도(곡률)를 나타냅니다.
+
+$$
+B''(t) = 6(1-t)(P_2 - 2P_1 + P_0) + 6t(P_3 - 2P_2 + P_1)
+$$
+
+```javascript
+class CubicBezier {
+  // ... (이전 메서드들)
+
+  // 2차 미분 (가속도)
+  secondDerivative(t) {
+    const mt = 1 - t;
+
+    return {
+      x:
+        6 * mt * (this.p2.x - 2 * this.p1.x + this.p0.x) +
+        6 * t * (this.p3.x - 2 * this.p2.x + this.p1.x),
+      y:
+        6 * mt * (this.p2.y - 2 * this.p1.y + this.p0.y) +
+        6 * t * (this.p3.y - 2 * this.p2.y + this.p1.y),
+    };
+  }
+
+  // 곡률 계산
+  curvature(t) {
+    const d1 = this.tangent(t);
+    const d2 = this.secondDerivative(t);
+
+    const numerator = d1.x * d2.y - d1.y * d2.x;
+    const denominator = Math.pow(d1.x * d1.x + d1.y * d1.y, 1.5);
+
+    return Math.abs(numerator / denominator);
+  }
+}
+
+// 사용: 곡선에서 가장 급격하게 휘는 지점 찾기
+const curve = new CubicBezier(
+  { x: 0, y: 0 },
+  { x: 50, y: 100 },
+  { x: 150, y: 100 },
+  { x: 200, y: 0 }
+);
+
+let maxCurvature = 0;
+let maxT = 0;
+
+for (let t = 0; t <= 1; t += 0.01) {
+  const k = curve.curvature(t);
+  if (k > maxCurvature) {
+    maxCurvature = k;
+    maxT = t;
+  }
+}
+
+console.log(`최대 곡률: ${maxCurvature.toFixed(4)} at t=${maxT.toFixed(2)}`);
+```
+
+## 정리
+
+접선(Tangent)은 다음과 같은 이유로 애니메이션과 그래픽스의 핵심입니다:
+
+1. **순간 변화율**: 곡선의 방향과 속도를 나타냄
+2. **미분의 기하학적 의미**: $f'(x)$의 직관적 이해
+3. **Bezier 곡선**: CSS cubic-bezier, SVG 경로의 기초
+4. **애니메이션**: 타이밍 함수, 경로 따라 이동, 회전
+
+**주요 활용:**
+- CSS 타이밍 함수 (`cubic-bezier`)
+- SVG 경로 애니메이션
+- 게임 캐릭터 방향 제어
+- 3D 그래픽스 조명 계산 (법선 벡터)
+- 물리 시뮬레이션 (속도, 가속도)
+
+접선을 이해하면 부드럽고 자연스러운 곡선 애니메이션을 만들 수 있으며, 미적분학과 컴퓨터 그래픽스의 다리 역할을 합니다.

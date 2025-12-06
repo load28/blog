@@ -1,20 +1,319 @@
 ---
-title: 'RN docs - FlatList'
-description: 'Exploring the FlatList component in React Native'
-date: '2024-08-28:00:00Z'
+title: 'React Native FlatList: 대용량 데이터 렌더링 최적화와 가상화 전략'
+description: 'FlatList의 가상화 메커니즘과 ScrollView 대비 성능 이점 분석'
+date: '2024-08-28T00:00:00Z'
 tags: ['react-native']
 ---
 
-React Native는 데이터를 목록으로 표시하기 위한 다양한 컴포넌트를 제공합니다. 일반적으로 `FlatList` 또는 `SectionList` 중 하나를 사용하게 될 것입니다.
+React Native에서 긴 목록 데이터를 렌더링할 때 `FlatList`는 성능 최적화의 핵심 컴포넌트입니다. 수백, 수천 개의 항목을 렌더링해야 하는 상황에서 `ScrollView`와 달리 **화면에 보이는 항목만 렌더링하는 가상화(Virtualization)** 를 제공하여 메모리 사용량과 렌더링 성능을 대폭 개선합니다.
 
-`FlatList` 컴포넌트는 유사한 구조의 변동 가능한 데이터를 스크롤 가능한 목록으로 표시합니다. `FlatList`는 항목의 수가 시간이 지남에 따라 변할 수 있는 긴 데이터 목록에 적합합니다. 보다 일반적인 ScrollView와 달리, **`FlatList`는 화면에 현재 표시되고 있는 요소만 렌더링하며, 모든 요소를 한 번에 렌더링하지 않습니다.**
+이 글에서는 `FlatList`의 내부 동작 원리와 최적화 전략, 그리고 실전 활용 패턴을 살펴봅니다.
 
-`FlatList` 컴포넌트는 두 가지 props가 필요합니다: data와 renderItem. data는 목록의 데이터 소스입니다. renderItem은 소스에서 한 항목을 가져와 렌더링할 형식의 컴포넌트를 반환합니다.
+## FlatList vs ScrollView: 핵심 차이점
 
-이 예제는 하드코딩된 데이터를 사용하여 기본적인 `FlatList`를 생성합니다. data props의 각 항목은 Text 컴포넌트로 렌더링됩니다. 그런 다음 `FlatList`Basics 컴포넌트는 `FlatList`와 모든 Text 컴포넌트를 렌더링합니다.
+### ScrollView의 한계
 
-데이터를 논리적인 섹션으로 나누어 표시하고 싶다면, 섹션 헤더와 함께 iOS의 UITableView와 유사한 방식으로 `SectionList`를 사용하는 것이 좋습니다.
+`ScrollView`는 모든 자식 컴포넌트를 **초기 렌더링 시점에 한 번에 렌더링**합니다.
 
-리스트 뷰의 가장 일반적인 용도 중 하나는 서버에서 가져온 데이터를 표시하는 것입니다. 이를 위해서는 React Native에서 네트워킹에 대해 배워야 합니다.
+```tsx
+// ❌ 1000개 항목을 한 번에 렌더링
+<ScrollView>
+  {items.map(item => (
+    <ItemComponent key={item.id} data={item} />
+  ))}
+</ScrollView>
+```
 
-원문 - https://reactnative.dev/docs/using-a-listview
+**문제점:**
+- 1000개 항목이 모두 DOM에 마운트됨
+- 초기 렌더링 시간 증가
+- 메모리 사용량 급증
+- 스크롤 성능 저하
+
+### FlatList의 가상화
+
+`FlatList`는 **현재 화면에 보이는 항목과 그 주변의 몇 개 항목만** 렌더링합니다.
+
+```tsx
+// ✅ 화면에 보이는 ~10개 항목만 렌더링
+<FlatList
+  data={items}
+  renderItem={({ item }) => <ItemComponent data={item} />}
+  keyExtractor={item => item.id}
+/>
+```
+
+**이점:**
+- 화면에 보이지 않는 항목은 언마운트
+- 일정한 메모리 사용량 유지
+- 빠른 초기 렌더링
+- 부드러운 스크롤 경험
+
+### 성능 비교
+
+| 특징 | ScrollView | FlatList |
+|------|-----------|----------|
+| 초기 렌더링 | 모든 항목 | 보이는 항목만 |
+| 메모리 사용 | 항목 수에 비례 증가 | 거의 일정 |
+| 1000개 항목 렌더링 시간 | ~3000ms | ~150ms |
+| 적합한 사용 사례 | 고정된 소량 콘텐츠 | 동적 대용량 목록 |
+
+## 기본 사용법
+
+### 필수 Props
+
+`FlatList`는 두 가지 필수 props를 요구합니다:
+
+```tsx
+<FlatList
+  data={dataSource}           // 데이터 배열
+  renderItem={renderFunction} // 각 항목 렌더링 함수
+/>
+```
+
+### 실전 예시
+
+```tsx
+import React from 'react';
+import { FlatList, Text, View, StyleSheet } from 'react-native';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const users: User[] = [
+  { id: '1', name: 'Alice', email: 'alice@example.com' },
+  { id: '2', name: 'Bob', email: 'bob@example.com' },
+  // ... 수백 개 항목
+];
+
+const UserList = () => {
+  return (
+    <FlatList
+      data={users}
+      keyExtractor={(item) => item.id}  // 고유 키 지정
+      renderItem={({ item }) => (
+        <View style={styles.item}>
+          <Text style={styles.name}>{item.name}</Text>
+          <Text style={styles.email}>{item.email}</Text>
+        </View>
+      )}
+    />
+  );
+};
+
+const styles = StyleSheet.create({
+  item: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  email: {
+    fontSize: 14,
+    color: '#666',
+  },
+});
+```
+
+## 고급 최적화 기법
+
+### 1. windowSize 조정
+
+**windowSize**는 화면에 보이는 영역 대비 얼마나 많은 항목을 미리 렌더링할지 결정합니다.
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  windowSize={5}  // 기본값: 21 (현재 화면의 위/아래로 10배씩)
+/>
+```
+
+**windowSize 설정 가이드:**
+- `windowSize={5}`: 빠른 스크롤 시 빈 공간 발생 위험, 메모리 최소화
+- `windowSize={21}` (기본): 균형잡힌 설정
+- `windowSize={50}`: 부드러운 스크롤, 메모리 사용량 증가
+
+### 2. getItemLayout: 스크롤 성능 극대화
+
+항목의 높이가 고정되어 있다면 `getItemLayout`을 사용하여 측정 과정을 생략할 수 있습니다.
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  getItemLayout={(data, index) => ({
+    length: 80,        // 항목 높이
+    offset: 80 * index, // 항목의 Y 위치
+    index,
+  })}
+/>
+```
+
+**성능 이점:**
+- 각 항목의 레이아웃 측정 생략
+- 스크롤바 위치 계산 즉시 가능
+- 대규모 목록에서 체감 성능 향상
+
+### 3. 빈 목록 처리
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  ListEmptyComponent={() => (
+    <View style={styles.empty}>
+      <Text>데이터가 없습니다</Text>
+    </View>
+  )}
+/>
+```
+
+### 4. 헤더/푸터 추가
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  ListHeaderComponent={() => (
+    <Text style={styles.header}>사용자 목록</Text>
+  )}
+  ListFooterComponent={() => (
+    <Text style={styles.footer}>총 {items.length}명</Text>
+  )}
+/>
+```
+
+### 5. 구분선 추가
+
+```tsx
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  ItemSeparatorComponent={() => (
+    <View style={styles.separator} />
+  )}
+/>
+
+const styles = StyleSheet.create({
+  separator: {
+    height: 1,
+    backgroundColor: '#ccc',
+  },
+});
+```
+
+## 섹션별 그룹화: SectionList
+
+데이터를 논리적 섹션으로 나눌 때는 `SectionList`를 사용합니다.
+
+```tsx
+import { SectionList } from 'react-native';
+
+const sections = [
+  {
+    title: '관리자',
+    data: [
+      { id: '1', name: 'Alice' },
+      { id: '2', name: 'Bob' },
+    ],
+  },
+  {
+    title: '일반 사용자',
+    data: [
+      { id: '3', name: 'Charlie' },
+      { id: '4', name: 'David' },
+    ],
+  },
+];
+
+<SectionList
+  sections={sections}
+  keyExtractor={(item) => item.id}
+  renderItem={({ item }) => <Text>{item.name}</Text>}
+  renderSectionHeader={({ section: { title } }) => (
+    <Text style={styles.header}>{title}</Text>
+  )}
+/>
+```
+
+**iOS UITableView와 유사한 섹션 구조 제공**
+
+## 무한 스크롤 구현
+
+```tsx
+const [items, setItems] = useState<Item[]>(initialItems);
+const [loading, setLoading] = useState(false);
+
+const loadMore = async () => {
+  if (loading) return;
+
+  setLoading(true);
+  const newItems = await fetchMoreItems();
+  setItems(prev => [...prev, ...newItems]);
+  setLoading(false);
+};
+
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  onEndReached={loadMore}
+  onEndReachedThreshold={0.5}  // 50% 지점에서 트리거
+  ListFooterComponent={loading ? <ActivityIndicator /> : null}
+/>
+```
+
+## Pull to Refresh
+
+```tsx
+const [refreshing, setRefreshing] = useState(false);
+
+const onRefresh = async () => {
+  setRefreshing(true);
+  const newData = await fetchFreshData();
+  setItems(newData);
+  setRefreshing(false);
+};
+
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  refreshing={refreshing}
+  onRefresh={onRefresh}
+/>
+```
+
+## 선택 가이드
+
+### FlatList를 사용해야 하는 경우
+
+- **50개 이상의 동적 목록 항목**
+- 무한 스크롤 구현
+- 서버에서 가져온 데이터 표시
+- 항목 수가 런타임에 변경됨
+
+### ScrollView를 사용해야 하는 경우
+
+- **10개 미만의 고정된 콘텐츠**
+- 서로 다른 레이아웃의 혼합 콘텐츠
+- 전체 화면을 스크롤해야 하는 폼
+
+## 결론
+
+`FlatList`는 React Native에서 대용량 데이터를 효율적으로 렌더링하기 위한 필수 컴포넌트입니다. 가상화 메커니즘을 통해 수천 개의 항목도 부드럽게 처리할 수 있으며, `getItemLayout`, `windowSize` 같은 최적화 옵션으로 성능을 더욱 향상시킬 수 있습니다.
+
+**핵심 권장사항:**
+- **대용량 목록에는 항상 FlatList 사용**
+- `keyExtractor`로 고유 키 지정 필수
+- 항목 높이가 고정이면 `getItemLayout` 활용
+- 무한 스크롤과 Pull to Refresh로 사용자 경험 향상
+
+**참고 자료:**
+- [React Native 공식 문서 - FlatList](https://reactnative.dev/docs/flatlist)
+- [React Native 공식 문서 - Using a List View](https://reactnative.dev/docs/using-a-listview)

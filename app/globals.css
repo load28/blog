@@ -109,22 +109,12 @@ p {
   font-weight: 600;
 }
 
-/* Drop cap for first paragraph */
+/* First paragraph styling */
 .prose > p:first-of-type {
   font-size: 1.25rem;
   color: var(--color-foreground);
   margin-bottom: 3rem;
   line-height: 1.625;
-}
-
-.prose > p:first-of-type::first-letter {
-  float: left;
-  font-size: 3.5rem;
-  line-height: 0.85;
-  margin: 0.1em 0.15em 0 0;
-  font-weight: 700;
-  color: var(--color-accent);
-  font-family: var(--font-display);
 }
 
 /* Links */
@@ -322,11 +312,6 @@ p {
 
 /* Mobile responsive adjustments */
 @media (max-width: 768px) {
-  .prose > p:first-of-type::first-letter {
-    font-size: 3rem;
-    margin: 0.05em 0.1em 0 0;
-  }
-
   .prose blockquote::before {
     font-size: 3rem;
     top: -1rem;

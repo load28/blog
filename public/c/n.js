@@ -13,6 +13,14 @@ function bind(el){
     a.dataset.b="1";
     var h=a.getAttribute("href");
     if(!h||h.startsWith("http")||h.startsWith("/portfolio")||a.target==="_blank")return;
+    a.addEventListener("pointerenter",function(){
+      if(!C[h])fetch(h).then(function(r){return r.text()}).then(function(html){
+        var doc=new DOMParser().parseFromString(html,"text/html");
+        var el=doc.getElementById("a");
+        var t=doc.querySelector("title");
+        C[h]={h:el?el.innerHTML:"",t:t?t.textContent:""};
+      });
+    },{once:true});
     a.addEventListener("click",function(e){
       e.preventDefault();
       go(h);

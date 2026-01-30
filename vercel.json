@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/portfolio", "destination": "/portfolio/index.html" },
+    { "source": "/c/:path*", "destination": "/c/:path*" },
+    { "source": "/p/:path*", "destination": "/p/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

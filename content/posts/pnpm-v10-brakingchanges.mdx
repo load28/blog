@@ -1,165 +1,57 @@
 ---
-title: 'PNPM v10 Breaking Changes: 호이스팅 정책 변경과 마이그레이션 전략'
-description: '자동 호이스팅 제거와 Symlink 기반 의존성 격리 강화'
+title: 'PNPM v10 braking changes'
 date: '2025-02-11T16:20'
 tags: ['pnpm']
 ---
 
-*본 글은 PNPM 공식 문서와 릴리스 노트를 바탕으로 작성되었습니다.*
+*<strong>본 글은 PNPM 문서와 조사한 자료를 바탕으로 claud.ai가 작성한 글입니다</strong>*
 
-PNPM v10에서 가장 중요한 변경사항은 **자동 호이스팅의 완전한 제거**입니다. 이전 버전에서 개발자 경험(DX)을 위해 ESLint, Prettier 등의 도구를 자동으로 호이스팅하던 정책이 보안 강화를 위해 폐지되었습니다.
+## 들어가며
 
-이 글에서는 호이스팅 메커니즘의 변화와 Symlink 기반 의존성 격리 전략, 그리고 프로젝트 마이그레이션 방법을 살펴봅니다.
+PNPM v10에서 가장 주목할 만한 변경사항 중 하나는 패키지 호이스팅 정책의 변화입니다. 이번 글에서는 이전 버전과 v10에서의 호이스팅 동작 방식 차이를 자세히 살펴보고, 실제 프로젝트에서 어떻게 대응해야 하는지 알아보겠습니다.
 
-## PNPM의 기본 철학: 엄격한 의존성 격리
+## PNPM의 기본 철학: Strict한 격리
 
-### Symlink 기반 구조
+PNPM은 기본적으로 엄격한 패키지 격리를 지향합니다. 이는 다음과 같은 특징을 가집니다:
 
-PNPM은 npm, Yarn과 달리 **Symlink 기반의 엄격한 의존성 격리**를 구현합니다.
+1. 모든 의존성은 `node_modules/.pnpm` 디렉토리에 저장
+2. 각 패키지는 `package.json`에 명시된 직접적인 의존성만 접근 가능
+3. Symlink를 통한 의존성 연결
 
-**npm/Yarn의 Flat 구조:**
-```
-node_modules/
-├── react/
-├── react-dom/
-├── lodash/          # 직접 의존성 아니어도 접근 가능
-├── axios/           # Phantom dependency
-└── ...
-```
+이러한 구조는 `node_modules` 지옥을 방지하고, 잠재적인 보안 위험을 줄여줍니다.
 
-**PNPM의 Symlink 구조:**
-```
-node_modules/
-├── .pnpm/
-│   ├── react@18.0.0/
-│   │   └── node_modules/
-│   │       └── react/
-│   ├── react-dom@18.0.0/
-│   │   └── node_modules/
-│   │       ├── react-dom/
-│   │       └── react/ → ../../react@18.0.0/node_modules/react
-│   └── lodash@4.17.21/
-│       └── node_modules/
-│           └── lodash/
-├── react/ → .pnpm/react@18.0.0/node_modules/react
-└── react-dom/ → .pnpm/react-dom@18.0.0/node_modules/react-dom
-```
+## v9까지의 호이스팅 정책
 
-### 핵심 특징
+이전 버전에서는 개발자 경험(DX)을 위해 특정 패키지들에 대해 자동 호이스팅을 제공했습니다.
 
-**1. 단일 저장소 (Single Source of Truth)**
-```
-모든 패키지는 .pnpm/ 디렉토리에만 저장
-→ 디스크 공간 절약 (같은 버전은 한 번만 저장)
-```
-
-**2. Symlink를 통한 접근 제어**
-```
-package.json에 명시된 의존성만 node_modules/ 루트에 symlink 생성
-→ 명시되지 않은 의존성은 require() 불가능
-```
-
-**3. Phantom Dependency 방지**
-```typescript
-// package.json에 lodash 없음
-import _ from 'lodash'; // [주의] Error: Cannot find module 'lodash'
-
-// npm/Yarn에서는 동작함 (다른 패키지가 설치했으면)
-// PNPM에서는 명시적으로 설치 필요
-```
-
-## v9까지의 호이스팅 정책: 개발 도구 예외
-
-### 자동 호이스팅의 배경
-
-PNPM v9 이하에서는 엄격한 격리 원칙에도 불구하고, **개발 도구에 대한 예외**를 두었습니다.
-
-**이유:**
-1. VSCode 등 IDE의 ESLint/Prettier 플러그인이 `node_modules` 루트에서 도구를 찾음
-2. TypeScript Language Server가 `@types/*` 패키지를 루트에서 탐색
-3. 개발자가 직접 호이스팅 설정하지 않아도 즉시 동작
-
-**자동 호이스팅된 패키지:**
 ```text
-node_modules/
-├── .pnpm/                  # 실제 저장소
-├── eslint/                 # 자동 호이스팅
-├── prettier/               # 자동 호이스팅
-├── @types/node/            # 자동 호이스팅
-├── @types/react/           # 자동 호이스팅
-└── typescript/             # 자동 호이스팅
+node_modules
+├── .pnpm/          # 실제 패키지들이 저장되는 위치
+├── eslint/         # 자동으로 호이스팅된 eslint
+├── prettier/       # 자동으로 호이스팅된 prettier
+└── your-project/   # 프로젝트 의존성
 ```
 
-### 패턴 매칭 규칙
+### 자동 호이스팅되는 패키지들
+- ESLint 관련 패키지
+- Prettier 관련 패키지
+- 일부 개발 도구
 
-v9의 내부 규칙:
-```javascript
-// PNPM v9 내부 로직 (simplified)
-const autoHoistPatterns = [
-  '*eslint*',
-  '*prettier*',
-  '@types/*',
-  'typescript'
-];
+이는 VSCode 등의 IDE에서 포맷터나 린터를 쉽게 찾을 수 있도록 하기 위한 것이었습니다.
+
+## v10의 변경된 호이스팅 정책
+
+v10에서는 보안 강화를 위해 자동 호이스팅을 완전히 제거했습니다.
+
+```text
+node_modules
+└── .PNPM/          # 모든 패키지가 이곳에만 저장됨
 ```
 
-**실제 동작:**
-```bash
-# package.json
-{
-  "devDependencies": {
-    "eslint": "^8.0.0",
-    "eslint-plugin-react": "^7.0.0"
-  }
-}
-
-# pnpm install 후 node_modules 구조
-node_modules/
-├── .pnpm/
-│   ├── eslint@8.0.0/
-│   └── eslint-plugin-react@7.0.0/
-├── eslint/ → .pnpm/eslint@8.0.0/node_modules/eslint
-└── eslint-plugin-react/ → .pnpm/eslint-plugin-react@7.0.0/...
-
-# VSCode ESLint 확장이 node_modules/eslint를 찾음 [권장]
-```
-
-## v10의 변경된 호이스팅 정책: Zero Tolerance
-
-### 완전한 격리 강제
-
-PNPM v10은 **모든 자동 호이스팅을 제거**했습니다.
-
-**Before (v9):**
-```bash
-pnpm install
-
-node_modules/
-├── .pnpm/
-├── eslint/ → .pnpm/eslint@8.0.0/...  # 자동 호이스팅
-└── prettier/ → .pnpm/prettier@3.0.0/...  # 자동 호이스팅
-```
-
-**After (v10):**
-```bash
-pnpm install
-
-node_modules/
-└── .pnpm/
-    ├── eslint@8.0.0/
-    └── prettier@3.0.0/
-
-# 루트에 아무것도 없음!
-# VSCode ESLint 확장: [주의] Cannot find module 'eslint'
-```
-
-### 명시적 public-hoist-pattern 필수
-
-이제 모든 호이스팅은 `package.json`에 **명시적으로 선언**해야 합니다.
+이제는 모든 호이스팅이 명시적인 설정을 통해서만 가능합니다:
 
 ```json
 {
-  "name": "my-app",
   "pnpm": {
     "public-hoist-pattern": [
       "*eslint*",
@@ -171,360 +63,47 @@ node_modules/
 }
 ```
 
-**설정 후:**
-```bash
-pnpm install
-
-node_modules/
-├── .pnpm/
-├── eslint/ → .pnpm/eslint@8.0.0/...  # 명시적 호이스팅
-├── @types/
-│   └── node/ → ../.pnpm/@types+node@20.0.0/...
-└── typescript/ → .pnpm/typescript@5.0.0/...
-```
-
-### 변경의 근거
-
-**보안 강화:**
-```typescript
-// 공격 시나리오 (v9 이하)
-// 악의적인 패키지가 auto-hoist된 eslint를 악용
-
-// 1. 공격자가 배포한 패키지
-// node_modules/malicious-pkg/index.js
-const eslint = require('eslint'); // auto-hoist로 접근 가능!
-// eslint 설정을 변조하거나 정보 탈취
-```
-
-**v10에서는 원천 차단:**
-```typescript
-// node_modules/malicious-pkg/index.js
-const eslint = require('eslint'); // [주의] Error: Cannot find module
-// package.json에 eslint가 명시되지 않으면 접근 불가
-```
-
 ## 마이그레이션 가이드
 
-### 1단계: v10으로 업그레이드
+### 1. 필요한 도구 파악하기
+먼저 프로젝트에서 호이스팅이 필요한 도구들을 파악합니다:
+- IDE 플러그인이 필요로 하는 패키지
+- 글로벌 접근이 필요한 개발 도구
+- TypeScript 관련 패키지
 
-```bash
-# package.json의 packageManager 필드 업데이트
-{
-  "packageManager": "pnpm@10.0.0"
-}
-
-# 또는 직접 설치
-npm install -g pnpm@latest
-```
-
-### 2단계: 문제 확인
-
-v10으로 업그레이드 후 `pnpm install`을 실행하면:
-
-```bash
-pnpm install
-
-# IDE에서 오류 발생
-Error: Cannot find module 'eslint'
-Error: Cannot find module 'prettier'
-Error: Cannot find module '@types/node'
-```
-
-**원인:**
-- VSCode ESLint 확장이 `node_modules/eslint`를 찾을 수 없음
-- TypeScript Language Server가 `@types/*`를 찾을 수 없음
-
-### 3단계: 호이스팅할 패키지 파악
-
-**IDE 플러그인이 필요로 하는 패키지:**
-```
-ESLint 확장 → eslint, eslint-plugin-*
-Prettier 확장 → prettier
-TypeScript → @types/*, typescript
-Stylelint 확장 → stylelint, stylelint-*
-```
-
-**프로젝트 도구:**
-```bash
-# package.json 확인
-grep -E "(eslint|prettier|typescript|@types)" package.json
-
-# 출력 예시:
-"eslint": "^8.0.0",
-"eslint-plugin-react": "^7.0.0",
-"prettier": "^3.0.0",
-"typescript": "^5.0.0",
-"@types/node": "^20.0.0",
-"@types/react": "^18.0.0"
-```
-
-### 4단계: public-hoist-pattern 설정
-
-**기본 템플릿:**
+### 2. package.json 설정하기
 ```json
 {
   "pnpm": {
     "public-hoist-pattern": [
-      // ESLint 관련
+      // 린터/포맷터
       "*eslint*",
-      "eslint-*",
-
-      // Prettier
       "*prettier*",
 
       // TypeScript
       "@types/*",
       "typescript",
 
-      // 기타 IDE 도구
-      "*stylelint*"
-    ]
-  }
-}
-```
-
-**모노레포의 경우 (루트 package.json):**
-```json
-{
-  "pnpm": {
-    "public-hoist-pattern": [
-      "*eslint*",
-      "*prettier*",
-      "@types/*",
-      "typescript",
-      // 빌드 도구
+      // 기타 개발 도구
       "*webpack*",
-      "*vite*",
-      "*rollup*"
-    ]
+      "*babel*"
+    ],
+    // 호이스팅된 패키지의 중복 설치 방지
+    "shamefully-hoist": false
   }
 }
 ```
 
-### 5단계: 재설치 및 확인
+## 변경의 의미
 
-```bash
-# node_modules 삭제 후 재설치
-rm -rf node_modules
-pnpm install
+이번 변경은 다음과 같은 의미를 가집니다:
 
-# 호이스팅 확인
-ls -la node_modules/
+1. **보안 강화**: 의도하지 않은 패키지 접근을 원천 차단
+2. **명시성 증가**: 호이스팅이 필요한 패키지를 명확히 문서화
+3. **의존성 관리 개선**: 잠재적인 충돌과 버전 불일치 방지
 
-# 출력 예시:
-eslint -> .pnpm/eslint@8.0.0/node_modules/eslint
-prettier -> .pnpm/prettier@3.0.0/node_modules/prettier
-@types/
-  node -> ../.pnpm/@types+node@20.0.0/node_modules/@types/node
-```
+## 마치며
 
-## 실전 예시: Next.js 프로젝트 마이그레이션
+PNPM v10의 호이스팅 정책 변경은 단기적으로는 추가 설정이 필요한 불편함을 가져올 수 있습니다. 하지만 장기적으로는 더 안전하고 예측 가능한 의존성 관리를 가능하게 할 것입니다. 특히 대규모 프로젝트나 모노레포 환경에서 이러한 엄격한 관리는 큰 이점이 될 수 있습니다.
 
-**1. 문제 발생:**
-```bash
-# v10으로 업그레이드 후
-pnpm install
-pnpm dev
-
-# VSCode에서 오류
-ESLint: Cannot find module 'eslint'
-TypeScript: Cannot find type definitions for 'node'
-```
-
-**2. 해결:**
-```json
-// package.json
-{
-  "name": "my-next-app",
-  "dependencies": {
-    "next": "^14.0.0",
-    "react": "^18.0.0"
-  },
-  "devDependencies": {
-    "eslint": "^8.0.0",
-    "eslint-config-next": "^14.0.0",
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.0.0"
-  },
-  "pnpm": {
-    "public-hoist-pattern": [
-      "*eslint*",
-      "@types/*",
-      "typescript"
-    ]
-  }
-}
-```
-
-**3. 재설치:**
-```bash
-rm -rf node_modules
-pnpm install
-
-# 확인
-pnpm dev
-# [권장] 정상 동작
-```
-
-## 트러블슈팅
-
-### 문제 1: IDE에서 여전히 패키지를 찾지 못함
-
-**증상:**
-```
-VSCode ESLint: Cannot find module 'eslint'
-```
-
-**해결:**
-1. VSCode 재시작 (Cmd+Shift+P → "Reload Window")
-2. ESLint 서버 재시작 (Cmd+Shift+P → "ESLint: Restart ESLint Server")
-3. `node_modules` 확인:
-   ```bash
-   ls node_modules/eslint
-   # 심볼릭 링크가 있어야 함
-   ```
-
-### 문제 2: 과도한 호이스팅으로 보안 취약
-
-**증상:**
-```json
-{
-  "pnpm": {
-    "public-hoist-pattern": ["*"]  // 모든 패키지 호이스팅
-  }
-}
-```
-
-**문제점:**
-- v10의 보안 강화 목적 무효화
-- Phantom dependency 문제 재발
-
-**해결:**
-```json
-{
-  "pnpm": {
-    "public-hoist-pattern": [
-      // 필요한 것만 명시적으로
-      "*eslint*",
-      "@types/*"
-    ]
-  }
-}
-```
-
-### 문제 3: 모노레포에서 워크스페이스별 다른 버전
-
-**증상:**
-```
-packages/app-a → eslint@8.0.0
-packages/app-b → eslint@9.0.0
-→ 어떤 버전이 호이스팅될지 불명확
-```
-
-**해결:**
-```bash
-# .npmrc 또는 .pnpmfile.cjs에서 버전 통일 강제
-# 또는 각 워크스페이스마다 명시적 설정
-```
-
-## 대안: .npmrc 설정
-
-`package.json` 대신 `.npmrc`에 설정할 수도 있습니다:
-
-```bash
-# .npmrc
-public-hoist-pattern[]=*eslint*
-public-hoist-pattern[]=*prettier*
-public-hoist-pattern[]=@types/*
-public-hoist-pattern[]=typescript
-```
-
-**장점:**
-- Git에 커밋하지 않을 수 있음 (`.gitignore`에 추가)
-- 개발자마다 다른 설정 가능
-
-**단점:**
-- 팀원 간 설정 불일치 가능
-- CI/CD 환경에서 별도 설정 필요
-
-## shamefully-hoist는 사용하지 말 것
-
-**절대 사용 금지:**
-```json
-{
-  "pnpm": {
-    "shamefully-hoist": true  // [주의] v10의 보안 강화 무효화
-  }
-}
-```
-
-**이유:**
-- 모든 패키지를 호이스팅 (npm/Yarn과 동일해짐)
-- Phantom dependency 문제 재발
-- PNPM의 핵심 장점 상실
-
-**대신 사용:**
-```json
-{
-  "pnpm": {
-    "public-hoist-pattern": ["필요한", "패키지만"]
-  }
-}
-```
-
-## 변경의 의미와 장기적 이점
-
-### 보안 강화
-
-**Before (v9):**
-```typescript
-// 악의적 패키지가 auto-hoist된 패키지 악용 가능
-const eslint = require('eslint'); // 자동으로 접근 가능
-```
-
-**After (v10):**
-```typescript
-// package.json에 명시되지 않으면 접근 불가
-const eslint = require('eslint'); // [주의] Error
-```
-
-### 명시성과 문서화
-
-**팀원이 프로젝트를 처음 볼 때:**
-```json
-{
-  "pnpm": {
-    "public-hoist-pattern": [
-      "*eslint*",  // ESLint 사용 중
-      "@types/*"   // TypeScript 사용 중
-    ]
-  }
-}
-```
-→ 한눈에 프로젝트에서 사용하는 도구를 파악 가능
-
-### 의존성 충돌 방지
-
-**모노레포에서:**
-```
-packages/app-a → lodash@4.17.0
-packages/app-b → lodash@4.17.21
-
-v9: auto-hoist로 어떤 버전이 올라올지 불명확
-v10: 명시적 설정으로 제어 가능
-```
-
-## 결론
-
-PNPM v10의 자동 호이스팅 제거는 단기적으로 설정 추가라는 불편함을 가져오지만, 장기적으로는 더 안전하고 예측 가능한 의존성 관리를 제공합니다. 특히 대규모 프로젝트나 모노레포 환경에서 명시적 호이스팅은 보안과 유지보수성을 크게 향상시킵니다.
-
-**핵심 권장사항:**
-- 필요한 패키지만 `public-hoist-pattern`에 명시
-- `shamefully-hoist`는 절대 사용하지 말 것
-- IDE 도구(ESLint, Prettier, TypeScript)는 반드시 호이스팅
-- 모노레포는 루트 `package.json`에서 중앙 관리
-
-**참고 자료:**
-- [PNPM v10 Breaking Changes](https://github.com/pnpm/pnpm/releases/tag/v10.0.0)
-- [PNPM 공식 문서 - Hoisting](https://pnpm.io/npmrc#public-hoist-pattern)
+더 자세한 내용은 [PNPM v10 Braking changes](https://github.com/pnpm/pnpm/releases/tag/v10.0.0)를 참고하시기 바랍니다.

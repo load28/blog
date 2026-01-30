@@ -1,308 +1,45 @@
 ---
-title: '팩토리 메서드 패턴: 객체 생성을 서브클래스에 위임하는 생성 패턴'
-description: '의존성을 낮추고 확장성을 높이는 팩토리 메서드 패턴의 구조와 실전 구현 가이드'
-date: '2024-09-08T09:00:00Z'
-tags: ['design-pattern', 'factory', 'creational-pattern']
+title: 'Factory method pattern'
+description: 'Exploring the Factory Method Pattern: A design pattern that provides an interface for creating objects in a superclass, but allows subclasses to alter the type of objects that will be created'
+date: '2024-09-08:09:00Z'
+tags: ['design-pattern']
 ---
 
-팩토리 메서드 패턴(Factory Method Pattern)은 객체 생성을 처리하는 인터페이스를 정의하되, 어떤 클래스의 인스턴스를 생성할지에 대한 결정은 **서브클래스가 내리도록** 하는 생성 디자인 패턴입니다. 이를 통해 객체 생성 로직을 캡슐화하고, 클라이언트 코드와 구체적인 클래스 구현을 분리할 수 있습니다.
+## 팩토리 메서드 패턴이란?
 
-이 글에서는 팩토리 메서드 패턴의 구조, 구현 방법, 실전 사례, 그리고 다른 패턴과의 차이점을 상세히 분석합니다.
+팩토리 메서드 패턴은 객체 생성을 서브클래스에 위임하는 디자인 패턴입니다. 이 패턴을 사용하면 객체 생성 로직을 캡슐화하고, 클라이언트 코드와 구체적인 클래스 구현을 분리할 수 있습니다.
 
-## 팩토리 메서드 패턴이 해결하는 문제
+### 팩토리 메서드 패턴의 주요 구성 요소
 
-### 직접 객체 생성의 문제점
+- 추상 팩토리 클래스 (Abstract Factory)
+- 구체적인 팩토리 클래스 (Concrete Factory)
+- 추상 제품 클래스 (Abstract Product)
+- 구체적인 제품 클래스 (Concrete Product)
 
-클라이언트 코드에서 직접 구체 클래스를 인스턴스화하면 여러 문제가 발생합니다.
+## 코드로 보는 팩토리 메서드 패턴
 
-**문제 상황:**
+주어진 코드를 바탕으로 팩토리 메서드 패턴의 구현을 살펴보겠습니다.
 
-```kotlin
-class OrderProcessor {
-    fun processOrder(orderType: String, items: List<Item>) {
-        val order = when (orderType) {
-            "ONLINE" -> OnlineOrder(items)
-            "OFFLINE" -> OfflineOrder(items)
-            "SUBSCRIPTION" -> SubscriptionOrder(items)
-            else -> throw IllegalArgumentException("Unknown order type")
-        }
-
-        order.validate()
-        order.calculate()
-        order.process()
-    }
-}
-```
-
-**문제점:**
-
-1. **의존성 역전 원칙(DIP) 위반**: 고수준 모듈(OrderProcessor)이 저수준 모듈(OnlineOrder 등)에 직접 의존
-2. **개방-폐쇄 원칙(OCP) 위반**: 새로운 주문 타입 추가 시 OrderProcessor 수정 필요
-3. **테스트 어려움**: 구체 클래스 의존으로 Mock 객체 주입 곤란
-4. **복잡도 증가**: when 분기가 여러 곳에 중복될 수 있음
-
-### 팩토리 메서드 패턴 적용 후
+### 추상 팩토리 클래스
 
 ```kotlin
-// 추상 팩토리 클래스
-abstract class OrderFactory {
-    abstract fun createOrder(items: List<Item>): Order
-
-    fun process(items: List<Item>) {
-        val order = createOrder(items)
-        order.validate()
-        order.calculate()
-        order.process()
-    }
-}
-
-// 구체적 팩토리들
-class OnlineOrderFactory : OrderFactory() {
-    override fun createOrder(items: List<Item>): Order {
-        return OnlineOrder(items)
-    }
-}
-
-class OfflineOrderFactory : OrderFactory() {
-    override fun createOrder(items: List<Item>): Order {
-        return OfflineOrder(items)
-    }
-}
-
-// 클라이언트 코드
-fun main() {
-    val factory: OrderFactory = OnlineOrderFactory()
-    factory.process(items) // 구체 클래스 모름
-}
-```
-
-**개선점:**
-
-- 클라이언트는 추상 타입(OrderFactory, Order)에만 의존
-- 새 주문 타입 추가 시 새 팩토리 클래스만 추가
-- Mock Factory로 쉬운 테스트
-
-## 팩토리 메서드 패턴의 구조
-
-### UML 다이어그램
-
-```
-         ┌────────────────┐
-         │    Creator     │
-         ├────────────────┤
-         │ + factoryMethod│◄────────────┐
-         │ + operation()  │              │
-         └────────────────┘              │
-                 ▲                       │ creates
-                 │                       │
-        ┌────────┴────────┐              │
-        │                 │              │
-┌───────────────┐  ┌───────────────┐    │
-│ ConcreteA     │  │ ConcreteB     │    │
-├───────────────┤  ├───────────────┤    │
-│ factoryMethod │  │ factoryMethod │    │
-│   returns A   │  │   returns B   │    │
-└───────────────┘  └───────────────┘    │
-        │                 │              │
-        └────────┬────────┘              │
-                 │                       │
-                 ▼                       │
-         ┌────────────────┐              │
-         │    Product     │◄─────────────┘
-         ├────────────────┤
-         │ + operation()  │
-         └────────────────┘
-                 ▲
-                 │
-        ┌────────┴────────┐
-        │                 │
-┌───────────────┐  ┌───────────────┐
-│  ProductA     │  │  ProductB     │
-├───────────────┤  ├───────────────┤
-│ + operation() │  │ + operation() │
-└───────────────┘  └───────────────┘
-```
-
-### 주요 구성 요소
-
-**1. Creator (추상 팩토리)**
-- `factoryMethod()`: 서브클래스에서 구현할 추상 메서드
-- `operation()`: 팩토리 메서드를 사용하는 템플릿 메서드
-
-**2. ConcreteCreator (구체적 팩토리)**
-- `factoryMethod()` 오버라이드하여 특정 Product 반환
-
-**3. Product (추상 제품)**
-- 팩토리 메서드가 생성할 객체의 인터페이스
-
-**4. ConcreteProduct (구체적 제품)**
-- Product 인터페이스 구현
-
-## 실전 구현: 결제 시스템
-
-### 문제 상황
-
-여러 결제 제공업체(Nice, Toss, KakaoPay)와 결제 방식(온라인/오프라인)을 지원하는 시스템을 설계합니다.
-
-### Product 인터페이스 및 구현
-
-```kotlin
-// 추상 제품
-abstract class Payment {
-    abstract val description: String
-    abstract val method: PaymentMethod
-
-    open fun paramValidation(): Boolean {
-        println("Validating parameters for ${description}")
-        return true
-    }
-
-    open fun transfer(): Boolean {
-        println("Processing transfer for ${description}")
-        return true
-    }
-
-    open fun sendMessage(): Boolean {
-        println("Sending message for ${description}")
-        return true
-    }
-
-    open fun refund(amount: Double): Boolean {
-        println("Refunding $amount for ${description}")
-        return true
-    }
-}
-
-enum class PaymentMethod {
-    ONLINE, OFFLINE
-}
-
-// 구체적 제품들
-class NiceOnlinePayment : Payment() {
-    override val description = "Nice Online Payment"
-    override val method = PaymentMethod.ONLINE
-
-    override fun transfer(): Boolean {
-        println("Nice: Processing online credit card transaction")
-        // Nice 특화 온라인 결제 로직
-        return super.transfer()
-    }
-
-    override fun sendMessage(): Boolean {
-        println("Nice: Sending SMS notification")
-        return super.sendMessage()
-    }
-}
-
-class NiceOfflinePayment : Payment() {
-    override val description = "Nice Offline Payment"
-    override val method = PaymentMethod.OFFLINE
-
-    override fun transfer(): Boolean {
-        println("Nice: Processing offline card terminal transaction")
-        return super.transfer()
-    }
-
-    override fun sendMessage(): Boolean {
-        println("Nice: Sending both SMS and email notification")
-        return super.sendMessage()
-    }
-}
-
-class TossOnlinePayment : Payment() {
-    override val description = "Toss Online Payment"
-    override val method = PaymentMethod.ONLINE
-
-    override fun paramValidation(): Boolean {
-        println("Toss: Validating with enhanced security")
-        return super.paramValidation()
-    }
-
-    override fun transfer(): Boolean {
-        println("Toss: Fast online transfer with Toss API")
-        return super.transfer()
-    }
-
-    override fun sendMessage(): Boolean {
-        println("Toss: Push notification via Toss app")
-        return super.sendMessage()
-    }
-}
-
-class TossOfflinePayment : Payment() {
-    override val description = "Toss Offline Payment"
-    override val method = PaymentMethod.OFFLINE
-
-    override fun transfer(): Boolean {
-        println("Toss: Offline payment with QR code")
-        return super.transfer()
-    }
-
-    // Toss 오프라인은 메시지를 보내지 않음
-    override fun sendMessage(): Boolean {
-        return true
-    }
-}
-
-class KakaoOnlinePayment : Payment() {
-    override val description = "KakaoPay Online Payment"
-    override val method = PaymentMethod.ONLINE
-
-    override fun transfer(): Boolean {
-        println("KakaoPay: Processing via Kakao platform")
-        return super.transfer()
-    }
-
-    override fun sendMessage(): Boolean {
-        println("KakaoPay: Sending KakaoTalk message")
-        return super.sendMessage()
-    }
-}
-
-class KakaoOfflinePayment : Payment() {
-    override val description = "KakaoPay Offline Payment"
-    override val method = PaymentMethod.OFFLINE
-
-    override fun transfer(): Boolean {
-        println("KakaoPay: Offline barcode payment")
-        return super.transfer()
-    }
-
-    override fun sendMessage(): Boolean {
-        println("KakaoPay: KakaoTalk notification")
-        return super.sendMessage()
-    }
-}
-```
-
-### Creator (팩토리) 구현
-
-```kotlin
-// 추상 팩토리
 abstract class PaymentFactory {
     abstract fun createPayment(method: PaymentMethod): Payment
 
-    // 템플릿 메서드: 전체 결제 프로세스
-    fun process(method: PaymentMethod, amount: Double): Boolean {
+    fun process(method: PaymentMethod) {
         val payment = createPayment(method)
-
-        if (!payment.paramValidation()) {
-            println("Parameter validation failed")
-            return false
-        }
-
-        if (!payment.transfer()) {
-            println("Transfer failed, initiating refund")
-            payment.refund(amount)
-            return false
-        }
-
+        payment.paramValidation()
+        payment.transfer()
         payment.sendMessage()
-        return true
     }
 }
+```
 
-// 구체적 팩토리들
+PaymentFactory는 추상 팩토리 클래스로, createPayment 메서드를 추상 메서드로 선언하여 서브클래스에서 구현하도록 합니다.
+
+### 구체적인 팩토리 클래스
+
+```kotlin
 class NicePaymentFactory : PaymentFactory() {
     override fun createPayment(method: PaymentMethod): Payment {
         return when (method) {
@@ -320,763 +57,113 @@ class TossPaymentFactory : PaymentFactory() {
         }
     }
 }
-
-class KakaoPaymentFactory : PaymentFactory() {
-    override fun createPayment(method: PaymentMethod): Payment {
-        return when (method) {
-            PaymentMethod.ONLINE -> KakaoOnlinePayment()
-            PaymentMethod.OFFLINE -> KakaoOfflinePayment()
-        }
-    }
-}
 ```
 
-### 사용 예시
+NicePaymentFactory와 TossPaymentFactory는 구체적인 팩토리 클래스로, createPayment 메서드를 구현하여 적절한 Payment 객체를 생성합니다.
+
+### 추상 제품 클래스
 
 ```kotlin
-fun main() {
-    val amount = 50000.0
+abstract class Payment {
+    abstract val description: String
+    abstract val method: PaymentMethod
 
-    println("=== Nice 결제 ===")
-    val niceFactory = NicePaymentFactory()
-    niceFactory.process(PaymentMethod.ONLINE, amount)
-    println()
+    open fun paramValidation(): Boolean {
+        return true
+    }
 
-    println("=== Toss 결제 ===")
-    val tossFactory = TossPaymentFactory()
-    tossFactory.process(PaymentMethod.OFFLINE, amount)
-    println()
+    open fun transfer(): Boolean {
+        return true
+    }
 
-    println("=== KakaoPay 결제 ===")
-    val kakaoFactory = KakaoPaymentFactory()
-    kakaoFactory.process(PaymentMethod.ONLINE, amount)
-}
-```
-
-**출력:**
-```
-=== Nice 결제 ===
-Validating parameters for Nice Online Payment
-Nice: Processing online credit card transaction
-Processing transfer for Nice Online Payment
-Nice: Sending SMS notification
-Sending message for Nice Online Payment
-
-=== Toss 결제 ===
-Toss: Validating with enhanced security
-Validating parameters for Toss Offline Payment
-Toss: Offline payment with QR code
-Processing transfer for Toss Offline Payment
-
-=== KakaoPay 결제 ===
-Validating parameters for KakaoPay Online Payment
-KakaoPay: Processing via Kakao platform
-Processing transfer for KakaoPay Online Payment
-KakaoPay: Sending KakaoTalk message
-Sending message for KakaoPay Online Payment
-```
-
-## TypeScript 구현: 문서 변환 시스템
-
-### 문제 정의
-
-다양한 형식(PDF, DOCX, HTML, Markdown)의 문서를 생성하는 시스템을 구현합니다.
-
-### 구현 코드
-
-```typescript
-// Product 인터페이스
-interface Document {
-  content: string;
-  format: string;
-  render(): string;
-  save(path: string): void;
-  export(): Buffer;
-}
-
-// 추상 Creator
-abstract class DocumentCreator {
-  abstract createDocument(content: string): Document;
-
-  // 템플릿 메서드
-  generateDocument(content: string, path: string): void {
-    const doc = this.createDocument(content);
-    console.log(`Rendering ${doc.format} document...`);
-    const rendered = doc.render();
-    console.log(`Saving to ${path}...`);
-    doc.save(path);
-    console.log(`Document saved successfully`);
-  }
-}
-
-// Concrete Products
-class PDFDocument implements Document {
-  content: string;
-  format = 'PDF';
-
-  constructor(content: string) {
-    this.content = content;
-  }
-
-  render(): string {
-    // PDF 렌더링 로직 (실제로는 라이브러리 사용)
-    return `%PDF-1.4\n${this.content}\n%%EOF`;
-  }
-
-  save(path: string): void {
-    console.log(`Writing PDF to ${path}`);
-    // fs.writeFileSync(path, this.export());
-  }
-
-  export(): Buffer {
-    return Buffer.from(this.render());
-  }
-}
-
-class DOCXDocument implements Document {
-  content: string;
-  format = 'DOCX';
-
-  constructor(content: string) {
-    this.content = content;
-  }
-
-  render(): string {
-    // DOCX XML 구조 생성
-    return `<?xml version="1.0"?>
-<document>
-  <body>
-    <p>${this.content}</p>
-  </body>
-</document>`;
-  }
-
-  save(path: string): void {
-    console.log(`Writing DOCX to ${path}`);
-    // 실제로는 docx 라이브러리 사용
-  }
-
-  export(): Buffer {
-    return Buffer.from(this.render());
-  }
-}
-
-class HTMLDocument implements Document {
-  content: string;
-  format = 'HTML';
-
-  constructor(content: string) {
-    this.content = content;
-  }
-
-  render(): string {
-    return `<!DOCTYPE html>
-<html>
-<head><title>Document</title></head>
-<body>
-  <div>${this.content}</div>
-</body>
-</html>`;
-  }
-
-  save(path: string): void {
-    console.log(`Writing HTML to ${path}`);
-  }
-
-  export(): Buffer {
-    return Buffer.from(this.render());
-  }
-}
-
-class MarkdownDocument implements Document {
-  content: string;
-  format = 'Markdown';
-
-  constructor(content: string) {
-    this.content = content;
-  }
-
-  render(): string {
-    // Markdown은 원본 그대로
-    return this.content;
-  }
-
-  save(path: string): void {
-    console.log(`Writing Markdown to ${path}`);
-  }
-
-  export(): Buffer {
-    return Buffer.from(this.render());
-  }
-}
-
-// Concrete Creators
-class PDFDocumentCreator extends DocumentCreator {
-  createDocument(content: string): Document {
-    return new PDFDocument(content);
-  }
-}
-
-class DOCXDocumentCreator extends DocumentCreator {
-  createDocument(content: string): Document {
-    return new DOCXDocument(content);
-  }
-}
-
-class HTMLDocumentCreator extends DocumentCreator {
-  createDocument(content: string): Document {
-    return new HTMLDocument(content);
-  }
-}
-
-class MarkdownDocumentCreator extends DocumentCreator {
-  createDocument(content: string): Document {
-    return new MarkdownDocument(content);
-  }
-}
-
-// 클라이언트 코드
-function main() {
-  const content = "# Hello World\n\nThis is a test document.";
-
-  const creators: Record<string, DocumentCreator> = {
-    pdf: new PDFDocumentCreator(),
-    docx: new DOCXDocumentCreator(),
-    html: new HTMLDocumentCreator(),
-    md: new MarkdownDocumentCreator()
-  };
-
-  // 사용자 선택에 따라 동적으로 문서 생성
-  const format = 'pdf';
-  const creator = creators[format];
-
-  if (creator) {
-    creator.generateDocument(content, `output.${format}`);
-  }
-}
-```
-
-## 팩토리 메서드 vs 다른 패턴
-
-### vs 추상 팩토리 패턴
-
-| 특징 | 팩토리 메서드 | 추상 팩토리 |
-|:---|:---|:---|
-| **목적** | 하나의 제품 생성 | 관련된 제품 군 생성 |
-| **메서드 수** | 1개 (factoryMethod) | 여러 개 (제품별 메서드) |
-| **확장 방법** | 서브클래스 추가 | 새 팩토리 클래스 추가 |
-| **복잡도** | 낮음 | 높음 |
-| **사용 시점** | 단일 제품 변형 | 제품 패밀리 |
-
-**팩토리 메서드 예시:**
-```kotlin
-abstract class ButtonFactory {
-    abstract fun createButton(): Button
-}
-
-class WindowsButtonFactory : ButtonFactory() {
-    override fun createButton() = WindowsButton()
-}
-```
-
-**추상 팩토리 예시:**
-```kotlin
-interface GUIFactory {
-    fun createButton(): Button
-    fun createCheckbox(): Checkbox
-    fun createTextbox(): Textbox
-}
-
-class WindowsGUIFactory : GUIFactory {
-    override fun createButton() = WindowsButton()
-    override fun createCheckbox() = WindowsCheckbox()
-    override fun createTextbox() = WindowsTextbox()
-}
-```
-
-### vs 심플 팩토리 (정적 팩토리)
-
-| 특징 | 팩토리 메서드 | 심플 팩토리 |
-|:---|:---|:---|
-| **확장성** | 높음 (OCP 준수) | 낮음 (조건문 수정 필요) |
-| **상속 사용** | O | X |
-| **복잡도** | 높음 | 낮음 |
-| **유연성** | 서브클래스로 확장 | 정적 메서드로 제한 |
-
-**심플 팩토리 예시:**
-```kotlin
-// 확장 시 기존 코드 수정 필요
-class PaymentFactory {
-    companion object {
-        fun create(type: String): Payment {
-            return when (type) {
-                "nice" -> NicePayment()
-                "toss" -> TossPayment()
-                else -> throw IllegalArgumentException()
-            }
-        }
+    open fun sendMessage(): Boolean {
+        return true
     }
 }
 ```
 
-### vs 빌더 패턴
+Payment는 추상 제품 클래스로, 모든 결제 방식이 공통으로 가져야 할 속성과 메서드를 정의합니다.
 
-| 특징 | 팩토리 메서드 | 빌더 |
-|:---|:---|:---|
-| **목적** | 객체 타입 선택 | 객체 구성 |
-| **매개변수** | 적음 | 많음 (복잡한 객체) |
-| **생성 방식** | 한 번에 | 단계적 |
-| **사용 시점** | 다형성 필요 | 복잡한 초기화 |
-
-## 실전 사용 사례
-
-### 1. 로깅 시스템
+### 구체적인 제품 클래스
 
 ```kotlin
-// Product
-interface Logger {
-    fun log(level: LogLevel, message: String)
-}
+class NiceOnlinePayment() : Payment() {
+    override val description = "Nice online"
+    override val method = PaymentMethod.ONLINE
 
-enum class LogLevel {
-    DEBUG, INFO, WARN, ERROR
-}
+    override fun transfer(): Boolean {
+        println(this.description)
+        return super.transfer()
+    }
 
-class ConsoleLogger : Logger {
-    override fun log(level: LogLevel, message: String) {
-        println("[$level] $message")
+    override fun sendMessage(): Boolean {
+        println("Nice - Success send message")
+        return super.sendMessage()
     }
 }
 
-class FileLogger(private val filePath: String) : Logger {
-    override fun log(level: LogLevel, message: String) {
-        // File(filePath).appendText("[$level] $message\n")
-        println("Writing to $filePath: [$level] $message")
+class NiceOfflinePayment() : Payment() {
+    override val description = "Nice offline"
+    override val method = PaymentMethod.OFFLINE
+
+    override fun transfer(): Boolean {
+        println(this.description)
+        return super.transfer()
+    }
+
+    // Nice 인 경우에는 offline도 메세지를 보냄
+    override fun sendMessage(): Boolean {
+        println("Nice - Success send message")
+        return super.sendMessage()
     }
 }
 
-class RemoteLogger(private val endpoint: String) : Logger {
-    override fun log(level: LogLevel, message: String) {
-        // HTTP POST to endpoint
-        println("Sending to $endpoint: [$level] $message")
+class TossOnlinePayment() : Payment() {
+    override val description = "Toss online"
+    override val method = PaymentMethod.ONLINE
+
+    override fun transfer(): Boolean {
+        println(this.description)
+        return super.transfer()
+    }
+
+    override fun sendMessage(): Boolean {
+        println("Toss - Success send message")
+        return super.sendMessage()
     }
 }
 
-// Creator
-abstract class LoggerFactory {
-    abstract fun createLogger(): Logger
+class TossOfflinePayment() : Payment() {
+    override val description = "Toss offline"
+    override val method = PaymentMethod.OFFLINE
 
-    fun log(level: LogLevel, message: String) {
-        val logger = createLogger()
-        logger.log(level, message)
+    override fun transfer(): Boolean {
+        println(this.description)
+        return super.transfer()
     }
-}
-
-class ConsoleLoggerFactory : LoggerFactory() {
-    override fun createLogger() = ConsoleLogger()
-}
-
-class FileLoggerFactory(private val filePath: String) : LoggerFactory() {
-    override fun createLogger() = FileLogger(filePath)
-}
-
-class RemoteLoggerFactory(private val endpoint: String) : LoggerFactory() {
-    override fun createLogger() = RemoteLogger(endpoint)
-}
-
-// 환경에 따라 로거 선택
-fun getLoggerFactory(): LoggerFactory {
-    return when (System.getenv("ENV")) {
-        "production" -> RemoteLoggerFactory("https://logs.example.com")
-        "development" -> ConsoleLoggerFactory()
-        else -> FileLoggerFactory("/tmp/app.log")
-    }
-}
-
-fun main() {
-    val logger = getLoggerFactory()
-    logger.log(LogLevel.INFO, "Application started")
-    logger.log(LogLevel.ERROR, "Connection failed")
 }
 ```
 
-### 2. 데이터베이스 커넥션
+이러한 클래스들은 구체적인 제품 클래스로, Payment 클래스를 상속받아 특정 결제 방식에 맞는 동작을 구현합니다.
 
-```typescript
-// Product
-interface DatabaseConnection {
-  connect(): void;
-  disconnect(): void;
-  executeQuery(query: string): any[];
-}
-
-class MySQLConnection implements DatabaseConnection {
-  private connectionString: string;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-  }
-
-  connect(): void {
-    console.log(`Connecting to MySQL: ${this.connectionString}`);
-  }
-
-  disconnect(): void {
-    console.log('Disconnecting from MySQL');
-  }
-
-  executeQuery(query: string): any[] {
-    console.log(`MySQL executing: ${query}`);
-    return [];
-  }
-}
-
-class PostgreSQLConnection implements DatabaseConnection {
-  private connectionString: string;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-  }
-
-  connect(): void {
-    console.log(`Connecting to PostgreSQL: ${this.connectionString}`);
-  }
-
-  disconnect(): void {
-    console.log('Disconnecting from PostgreSQL');
-  }
-
-  executeQuery(query: string): any[] {
-    console.log(`PostgreSQL executing: ${query}`);
-    return [];
-  }
-}
-
-class MongoDBConnection implements DatabaseConnection {
-  private connectionString: string;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-  }
-
-  connect(): void {
-    console.log(`Connecting to MongoDB: ${this.connectionString}`);
-  }
-
-  disconnect(): void {
-    console.log('Disconnecting from MongoDB');
-  }
-
-  executeQuery(query: string): any[] {
-    console.log(`MongoDB executing: ${query}`);
-    return [];
-  }
-}
-
-// Creator
-abstract class DatabaseFactory {
-  protected connectionString: string;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-  }
-
-  abstract createConnection(): DatabaseConnection;
-
-  query(query: string): any[] {
-    const connection = this.createConnection();
-    connection.connect();
-    const results = connection.executeQuery(query);
-    connection.disconnect();
-    return results;
-  }
-}
-
-class MySQLFactory extends DatabaseFactory {
-  createConnection(): DatabaseConnection {
-    return new MySQLConnection(this.connectionString);
-  }
-}
-
-class PostgreSQLFactory extends DatabaseFactory {
-  createConnection(): DatabaseConnection {
-    return new PostgreSQLConnection(this.connectionString);
-  }
-}
-
-class MongoDBFactory extends DatabaseFactory {
-  createConnection(): DatabaseConnection {
-    return new MongoDBConnection(this.connectionString);
-  }
-}
-
-// 설정 기반 팩토리 선택
-function getDatabaseFactory(config: { type: string; connectionString: string }): DatabaseFactory {
-  switch (config.type) {
-    case 'mysql':
-      return new MySQLFactory(config.connectionString);
-    case 'postgresql':
-      return new PostgreSQLFactory(config.connectionString);
-    case 'mongodb':
-      return new MongoDBFactory(config.connectionString);
-    default:
-      throw new Error(`Unsupported database type: ${config.type}`);
-  }
-}
-
-// 사용
-const dbFactory = getDatabaseFactory({
-  type: 'postgresql',
-  connectionString: 'postgresql://localhost:5432/mydb'
-});
-
-dbFactory.query('SELECT * FROM users');
-```
-
-### 3. UI 컴포넌트 생성
+### 테스트
 
 ```kotlin
-// Product
-interface Dialog {
-    fun render()
-    fun onClick(handler: () -> Unit)
-}
+    fun test() {
+        val nicePaymentFactory = NicePaymentFactory()
+        nicePaymentFactory.process(PaymentMethod.OFFLINE)
 
-class WindowsDialog : Dialog {
-    override fun render() {
-        println("Rendering Windows-style dialog with sharp corners")
+        val tossPaymentFactory = TossPaymentFactory()
+        tossPaymentFactory.process(PaymentMethod.OFFLINE)
     }
-
-    override fun onClick(handler: () -> Unit) {
-        println("Windows dialog clicked")
-        handler()
-    }
-}
-
-class MacOSDialog : Dialog {
-    override fun render() {
-        println("Rendering macOS-style dialog with rounded corners")
-    }
-
-    override fun onClick(handler: () -> Unit) {
-        println("macOS dialog clicked")
-        handler()
-    }
-}
-
-class LinuxDialog : Dialog {
-    override fun render() {
-        println("Rendering Linux GTK dialog")
-    }
-
-    override fun onClick(handler: () -> Unit) {
-        println("Linux dialog clicked")
-        handler()
-    }
-}
-
-// Creator
-abstract class DialogFactory {
-    abstract fun createDialog(): Dialog
-
-    fun showDialog(message: String, onConfirm: () -> Unit) {
-        val dialog = createDialog()
-        dialog.render()
-        println("Dialog message: $message")
-        dialog.onClick(onConfirm)
-    }
-}
-
-class WindowsDialogFactory : DialogFactory() {
-    override fun createDialog() = WindowsDialog()
-}
-
-class MacOSDialogFactory : DialogFactory() {
-    override fun createDialog() = MacOSDialog()
-}
-
-class LinuxDialogFactory : DialogFactory() {
-    override fun createDialog() = LinuxDialog()
-}
-
-// OS 감지 후 팩토리 선택
-fun getDialogFactory(): DialogFactory {
-    val osName = System.getProperty("os.name").lowercase()
-    return when {
-        osName.contains("windows") -> WindowsDialogFactory()
-        osName.contains("mac") -> MacOSDialogFactory()
-        osName.contains("linux") -> LinuxDialogFactory()
-        else -> WindowsDialogFactory() // 기본값
-    }
-}
-
-fun main() {
-    val dialogFactory = getDialogFactory()
-    dialogFactory.showDialog("Do you want to save changes?") {
-        println("Changes saved!")
-    }
-}
 ```
 
-## 안티패턴과 주의사항
+구체적인 팩토리 클래스 인스턴스를 생성 후 메서드를 호출하면 전체 프로세스는 동일하지만 세부 구현은 다르게 실행 할 수 있습니다.
+예시 코드에서는 Nice의 경우 online, offline 모두 메세지를 출력하게 합니다.
 
-### 1. 과도한 추상화
+## 팩토리 메서드 패턴의 장점
 
-**[주의] 잘못된 예:**
-
-```kotlin
-// 단순한 객체 생성에 불필요한 팩토리 계층
-abstract class StringFactory {
-    abstract fun createString(value: String): String
-}
-
-class UpperCaseStringFactory : StringFactory() {
-    override fun createString(value: String) = value.uppercase()
-}
-
-// 이 경우 확장 함수가 더 적절
-fun String.toUpperCaseString() = this.uppercase()
-```
-
-### 2. 팩토리 메서드에서 조건문 사용
-
-**[주의] 잘못된 예:**
-
-```kotlin
-class PaymentFactory : PaymentFactoryBase() {
-    override fun createPayment(method: PaymentMethod): Payment {
-        // 팩토리 메서드 안에 분기문 → 잘못된 사용
-        return when (method) {
-            PaymentMethod.ONLINE -> OnlinePayment()
-            PaymentMethod.OFFLINE -> OfflinePayment()
-        }
-    }
-}
-```
-
-**[권장] 개선된 예:**
-
-```kotlin
-// 각 결제 방식마다 별도 팩토리
-class OnlinePaymentFactory : PaymentFactoryBase() {
-    override fun createPayment(method: PaymentMethod) = OnlinePayment()
-}
-
-class OfflinePaymentFactory : PaymentFactoryBase() {
-    override fun createPayment(method: PaymentMethod) = OfflinePayment()
-}
-```
-
-### 3. 제품 간 의존성
-
-**[주의] 잘못된 예:**
-
-```kotlin
-// Product A가 Product B에 의존
-class ProductA(private val productB: ProductB) {
-    // ...
-}
-
-class FactoryA : Factory() {
-    override fun createProduct(): ProductA {
-        // 다른 팩토리에 의존
-        val productB = FactoryB().createProduct()
-        return ProductA(productB)
-    }
-}
-```
-
-**[권장] 개선 방법:**
-
-이 경우 추상 팩토리 패턴으로 전환하거나 의존성 주입 사용
-
-## 성능 고려사항
-
-### 1. 팩토리 인스턴스 재사용
-
-```kotlin
-// 상태 없는 팩토리는 싱글톤으로 재사용
-object NicePaymentFactory : PaymentFactory() {
-    override fun createPayment(method: PaymentMethod): Payment {
-        return when (method) {
-            PaymentMethod.ONLINE -> NiceOnlinePayment()
-            PaymentMethod.OFFLINE -> NiceOfflinePayment()
-        }
-    }
-}
-
-// 사용
-val payment = NicePaymentFactory.createPayment(PaymentMethod.ONLINE)
-```
-
-### 2. 제품 객체 풀링
-
-```kotlin
-class PooledPaymentFactory : PaymentFactory() {
-    private val pool = mutableMapOf<PaymentMethod, MutableList<Payment>>()
-
-    override fun createPayment(method: PaymentMethod): Payment {
-        val available = pool[method]?.removeFirstOrNull()
-        return available ?: createNewPayment(method)
-    }
-
-    private fun createNewPayment(method: PaymentMethod): Payment {
-        return when (method) {
-            PaymentMethod.ONLINE -> NiceOnlinePayment()
-            PaymentMethod.OFFLINE -> NiceOfflinePayment()
-        }
-    }
-
-    fun releasePayment(payment: Payment) {
-        pool.getOrPut(payment.method) { mutableListOf() }.add(payment)
-    }
-}
-```
-
-### 3. 지연 초기화
-
-```kotlin
-abstract class LazyPaymentFactory {
-    private var cachedPayment: Payment? = null
-
-    protected abstract fun createPaymentInstance(method: PaymentMethod): Payment
-
-    fun createPayment(method: PaymentMethod): Payment {
-        if (cachedPayment == null || cachedPayment!!.method != method) {
-            cachedPayment = createPaymentInstance(method)
-        }
-        return cachedPayment!!
-    }
-}
-```
-
-## 팩토리 메서드 체크리스트
-
-- [ ] 객체 생성 로직이 복잡하거나 자주 변경되는가?
-- [ ] 여러 구체 클래스 중 하나를 선택해야 하는가?
-- [ ] 클라이언트가 구체 클래스에 의존하지 않아야 하는가?
-- [ ] 서브클래스에서 생성 로직을 커스터마이징해야 하는가?
-- [ ] 단위 테스트에서 Mock 객체 주입이 필요한가?
-
-모두 "예"라면 팩토리 메서드 패턴이 적합합니다.
-
-## 결론
-
-팩토리 메서드 패턴은 객체 생성을 캡슐화하고 확장 가능한 코드를 작성하는 강력한 방법입니다.
-
-**핵심 장점:**
-
-1. **확장성**: 새 제품 추가 시 기존 코드 수정 불필요 (OCP)
-2. **캡슐화**: 객체 생성 로직이 팩토리에 집중
-3. **유연성**: 런타임에 팩토리 선택 가능
-4. **단일 책임**: 생성 로직과 비즈니스 로직 분리
-5. **테스트 용이성**: Mock 팩토리로 쉬운 테스트
-
-**적용 시기:**
-
-- 컴파일 타임에 정확한 타입을 알 수 없을 때
-- 객체 생성 로직이 복잡할 때
-- 프레임워크나 라이브러리 개발 시 확장 포인트 제공
-- 구체 클래스가 아닌 인터페이스에 의존해야 할 때
-
-팩토리 메서드 패턴을 적절히 활용하면 변경에 유연하고 테스트하기 쉬운 코드를 작성할 수 있습니다.
+- 확장성: 새로운 결제 방식이나 제공업체를 추가할 때, 기존 코드를 수정하지 않고 새로운 팩토리와 제품 클래스를 추가하기만 하면 됩니다.
+- 캡슐화: 객체 생성 로직이 팩토리 클래스에 캡슐화되어 있어, 클라이언트 코드는 구체적인 클래스 구현을 알 필요가 없습니다.
+- 유연성: 런타임에 어떤 객체를 생성할지 결정할 수 있어 유연한 설계가 가능합니다.
+- 단일 책임 원칙: 객체 생성 책임을 팩토리 클래스로 분리하여 각 클래스의 책임을 명확히 합니다.

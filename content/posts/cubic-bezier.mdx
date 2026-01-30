@@ -1,6 +1,6 @@
 ---
-title: 'Cubic-bezier 함수의 수학적 원리와 CSS 애니메이션 적용'
-description: '선형 보간을 통한 Cubic-bezier 곡선 생성 원리와 CSS 애니메이션에서의 활용'
+title: 'Cubic-bezier'
+description: 'Description of the cubic-bezier curve function'
 date: '2024-08-13'
 tags: ['math']
 series: 'math'
@@ -11,7 +11,7 @@ Cubic-bezier 함수는 CSS 애니메이션에서 자주 사용되는 곡선 함�
 
 Cubic-bezier 함수는 `0 ≤ x ≤ 1` 범위에서의 값을 입력받아, `0 ≤ y ≤ 1` 범위에서의 값을 출력하는 곡선을 생성합니다. 이때, $x$ 값은 애니메이션의 진행 정도(시간)이며, $y$ 값은 애니메이션이 실제로 변화한 정도를 나타냅니다.
 
-## Cubic-bezier와 선형 보간
+### Cubic-bezier와 선형 보간 (Linear Interpolation)
 
 Cubic-bezier 곡선은 네 개의 제어점을 기반으로 하는데, 이 제어점들은 다음과 같이 표현할 수 있습니다:
 
@@ -22,70 +22,24 @@ Cubic-bezier 곡선은 네 개의 제어점을 기반으로 하는데, 이 제�
 
 Cubic-bezier 곡선은 각 점 사이의 선형 보간을 여러 번 반복하여 최종적인 곡선을 생성합니다. 이 과정은 다음과 같이 설명될 수 있습니다:
 
-### 1차 보간 (Linear Interpolation)
+1. **1차 보간 (Linear Interpolation)**:
 
-$t$는 시간에 따라 0에서 1 사이의 값을 가집니다. 첫 번째 제어점 간의 보간:
+   - t는 시간에 따라 0에서 1 사이의 값을 가집니다.
+   - 첫 번째 제어점 간의 보간:
+     - $Q0 = (1-t) * P0 + t * P1$
+     - $Q1 = (1-t) * P1 + t * P2$
+     - $Q2 = (1-t) * P2 + t * P3$
 
-- $Q0 = (1-t) \cdot P0 + t \cdot P1$
-- $Q1 = (1-t) \cdot P1 + t \cdot P2$
-- $Q2 = (1-t) \cdot P2 + t \cdot P3$
+2. **2차 보간 (Linear Interpolation of Q)**:
 
-### 2차 보간 (Linear Interpolation of Q)
+   - Q0, Q1, Q2 간의 보간:
+     - $R0 = (1-t) * Q0 + t * Q1$
+     - $R1 = (1-t) * Q1 + t * Q2$
 
-Q0, Q1, Q2 간의 보간:
-
-- $R0 = (1-t) \cdot Q0 + t \cdot Q1$
-- $R1 = (1-t) \cdot Q1 + t \cdot Q2$
-
-### 3차 보간 (Final Linear Interpolation)
-
-R0와 R1 간의 보간을 통해 최종적으로 곡선 상의 점을 계산:
-
-- $B(t) = (1-t) \cdot R0 + t \cdot R1$
+3. **3차 보간 (Final Linear Interpolation)**:
+   - R0와 R1 간의 보간을 통해 최종적으로 곡선 상의 점을 계산:
+     - $B(t) = (1-t) * R0 + t * R1$
 
 위의 과정을 통해, 각 시간 $t$에 대해 곡선상의 점 $B(t)$를 계산할 수 있습니다. 이 곡선은 네 개의 제어점 $P0, P1, P2, P3$에 의해 정의된 cubic-bezier 곡선을 따릅니다.
 
-## CSS 애니메이션에서의 활용
-
-Cubic-bezier 곡선은 제어점들을 기반으로 여러 단계의 선형 보간을 통해 생성되며, 이 곡선은 애니메이션의 시간에 따른 변화 비율을 정의하는 데 사용됩니다.
-
-### 주요 사전 정의 곡선
-
-CSS는 자주 사용되는 cubic-bezier 값을 키워드로 제공합니다:
-
-- `ease`: `cubic-bezier(0.25, 0.1, 0.25, 1.0)` — 천천히 시작하여 중간에 빨라진 후 다시 느려집니다.
-- `ease-in`: `cubic-bezier(0.42, 0, 1.0, 1.0)` — 천천히 시작하여 점차 빨라집니다.
-- `ease-out`: `cubic-bezier(0, 0, 0.58, 1.0)` — 빠르게 시작하여 점차 느려집니다.
-- `ease-in-out`: `cubic-bezier(0.42, 0, 0.58, 1.0)` — 천천히 시작하고 천천히 끝납니다.
-
-### 실전 예시
-
-```css
-.smooth-transition {
-  /* 자연스러운 움직임 */
-  transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1.0);
-}
-
-.bounce-effect {
-  /* 튕기는 효과 (y값이 1을 초과할 수 있음) */
-  transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
-
-.custom-timing {
-  /* 커스텀 타이밍 함수 */
-  animation: slide 1s cubic-bezier(0.4, 0.0, 0.2, 1);
-}
-```
-
-## 곡선 시각화 도구
-
-Cubic-bezier 곡선을 시각적으로 조정하고 미리보기 위한 도구:
-
-- [cubic-bezier.com](https://cubic-bezier.com) — 실시간으로 곡선을 조정하고 CSS 코드를 생성할 수 있습니다.
-- Chrome DevTools — Styles 패널에서 cubic-bezier 값을 클릭하면 시각적 편집기가 나타납니다.
-
-## 결론
-
-Cubic-bezier 함수는 네 개의 제어점과 선형 보간의 반복적 적용을 통해 부드러운 곡선을 생성합니다. CSS 애니메이션에서 이 함수를 활용하면 단순한 선형 움직임을 넘어 자연스럽고 역동적인 애니메이션을 구현할 수 있습니다.
-
-제어점의 $y$ 값이 0과 1을 벗어날 수 있다는 점을 활용하면 튕기는 효과나 오버슈팅과 같은 고급 애니메이션 효과도 표현할 수 있습니다.
+결과적으로, Cubic-bezier 곡선은 제어점들을 기반으로 여러 단계의 선형 보간을 통해 생성되며, 이 곡선은 애니메이션의 시간에 따른 변화 비율을 정의하는 데 사용됩니다. 예를 들어, `cubic-bezier(0.25, 0.1, 0.25, 1.0)`은 천천히 시작하여 중간에 느려진후 다시 빨라지는 형태로 동작합니다.

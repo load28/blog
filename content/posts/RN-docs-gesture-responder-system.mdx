@@ -1,408 +1,64 @@
 ---
-title: 'React Native Gesture Responder System: 터치 이벤트 처리와 응답자 협상 메커니즘'
-description: '제스처 응답 시스템의 생명 주기와 다중 컴포넌트 간 터치 이벤트 협상 전략'
-date: '2024-08-27T00:00:00Z'
+title: 'RN docs - Gesture responder system'
+description: 'Exploring the Gesture Responder System in React Native'
+date: '2024-08-27:00:00Z'
 tags: ['react-native']
 ---
 
-React Native에서 복잡한 터치 상호작용을 처리할 때, 여러 컴포넌트가 동시에 같은 터치 이벤트에 반응하려고 할 수 있습니다. 스크롤뷰 내부의 버튼을 탭할 때, 또는 드래그 가능한 요소 위에서 스와이프 제스처를 수행할 때, 앱은 **어떤 컴포넌트가 해당 터치에 응답할 권한을 가질지** 결정해야 합니다.
+### 제스처 응답 시스템(Gesture Responder System)
 
-Gesture Responder System은 이러한 복잡한 터치 협상을 관리하는 React Native의 핵심 메커니즘입니다. 부모-자식 컴포넌트 간의 명시적인 참조 없이도, 표준화된 생명 주기 메서드를 통해 터치 이벤트를 효율적으로 처리합니다.
+제스처 응답 시스템은 앱 내에서 제스처의 생명 주기를 관리합니다. 사용자의 터치가 어떤 의도인지 파악하는 과정에서 터치는 여러 단계를 거칠 수 있습니다. 예를 들어, 앱은 터치가 스크롤을 위한 것인지, 위젯을 슬라이드하는 것인지, 혹은 탭을 하는 것인지 결정해야 합니다. 심지어 터치 도중에도 이러한 의도가 변할 수 있습니다. 또한, 여러 개의 터치가 동시에 발생할 수도 있습니다.
 
-## Gesture Responder System의 필요성
+이러한 터치 상호작용을 부모 또는 자식 컴포넌트에 대한 추가적인 정보 없이도 컴포넌트들이 협상할 수 있도록 하기 위해 터치 응답 시스템이 필요합니다.
 
-### 복잡한 터치 시나리오
+### 베스트 프랙티스
 
-사용자의 단일 터치 동작도 여러 의도로 해석될 수 있습니다:
+앱의 사용성을 높이기 위해 각 액션은 다음과 같은 속성을 가져야 합니다:
 
-**시나리오 1: 스크롤뷰 내부의 버튼**
-```tsx
-<ScrollView>
-  <Button onPress={handlePress} />
-</ScrollView>
-```
-- 사용자가 버튼을 터치했을 때: 버튼 클릭인가? 스크롤 시작인가?
-- 터치 후 손가락을 움직였을 때: 버튼 클릭 취소? 스크롤 시작?
+**피드백/하이라이트** - 사용자가 터치를 통해 어떤 요소가 반응하고 있는지, 제스처를 해제했을 때 어떤 일이 일어날지를 시각적으로 보여주어야 합니다.<br/>
+**취소 가능성** - 사용자가 액션을 실행할 때, 터치 중간에 손가락을 다른 곳으로 드래그하여 액션을 취소할 수 있어야 합니다.<br/>
+이러한 기능들은 사용자가 앱을 사용할 때 실수에 대한 두려움 없이 실험하고 상호작용할 수 있도록 하여 더 편안하게 느끼게 만듭니다.
 
-**시나리오 2: 드래그 가능한 카드**
-```tsx
-<DraggableCard>
-  <Swipeable>
-    <Button />
-  </Swipeable>
-</DraggableCard>
-```
-- 여러 제스처 핸들러가 중첩됨
-- 어떤 컴포넌트가 터치에 응답할지 동적으로 결정 필요
+### TouchableHighlight와 Touchable\*
 
-### 해결책: 응답자 협상 메커니즘
+응답자 시스템은 복잡할 수 있기 때문에, 우리는 "탭할 수 있는" 요소들을 위한 추상적인 Touchable 구현을 제공하고 있습니다. 이 구현은 응답자 시스템을 사용하며, 탭 상호작용을 선언적으로 구성할 수 있게 해줍니다. 웹에서 버튼이나 링크를 사용할 때와 동일한 방식으로 TouchableHighlight를 사용할 수 있습니다.
 
-Gesture Responder System은 다음을 제공합니다:
-- **협상 프로토콜**: 컴포넌트들이 터치 응답권을 요청하고 양보
-- **생명 주기 이벤트**: 터치의 각 단계를 추적
-- **계층 구조 독립성**: 부모/자식 관계 없이 동작
+### 응답자 생명 주기(Responder Lifecycle)
 
-## 사용자 경험 베스트 프랙티스
+View는 적절한 협상 메서드를 구현함으로써 터치 응답자가 될 수 있습니다. View가 응답자가 되기를 원하는지 묻기 위해 두 가지 메서드를 사용할 수 있습니다:
 
-모든 터치 인터랙션은 다음 원칙을 따라야 합니다:
+View.props.onStartShouldSetResponder: evt => true - 이 View가 터치 시작 시 응답자가 되기를 원하는가?<br/>
+View.props.onMoveShouldSetResponder: evt => true - View가 응답자가 아닐 때, 터치가 이동할 때마다 호출됩니다. 이 View가 터치 응답성을 "요청"하기를 원하는가?<br/>
+만약 View가 true를 반환하고 응답자가 되려고 시도하면, 다음 중 하나가 발생합니다:<br/>
 
-### 1. 시각적 피드백 제공
+View.props.onResponderGrant: evt => {} - 이제 View가 터치 이벤트에 응답합니다. 이 시점에서 하이라이트를 표시하여 사용자가 무슨 일이 일어나고 있는지 보여줄 수 있습니다.<br/>
+View.props.onResponderReject: evt => {} - 현재 다른 요소가 응답자이며, 이를 해제하지 않을 것입니다.<br/>
+View가 응답자일 경우, 다음 핸들러들이 호출될 수 있습니다:
 
-사용자가 터치한 요소가 반응하고 있음을 명확히 표시해야 합니다.
+View.props.onResponderMove: evt => {} - 사용자가 손가락을 움직이고 있습니다.<br/>
+View.props.onResponderRelease: evt => {} - 터치가 종료될 때, 즉 "터치업" 시점에 호출됩니다.<br/>
+View.props.onResponderTerminationRequest: evt => true - 다른 요소가 응답자가 되기를 원합니다. 이 View가 응답자를 해제해야 할까요? true를 반환하면 해제가 허용됩니다.<br/>
+View.props.onResponderTerminate: evt => {} - View에서 응답자가 해제되었습니다. onResponderTerminationRequest 호출 이후 다른 View가 응답자가 될 수 있으며, iOS에서 제어 센터나 알림 센터로 인해 시스템에서 강제로 해제될 수도 있습니다.<br/>
 
-```tsx
-<View
-  onResponderGrant={() => {
-    // 터치 시작 시 하이라이트 표시
-    setHighlighted(true);
-  }}
-  onResponderRelease={() => {
-    // 터치 종료 시 하이라이트 제거
-    setHighlighted(false);
-  }}
-  style={[styles.button, highlighted && styles.highlighted]}
->
-  <Text>버튼</Text>
-</View>
+evt는 다음과 같은 형태의 합성 터치 이벤트입니다:<br/>
+**nativeEvent**<br/>
+changedTouches - 마지막 이벤트 이후 변경된 모든 터치 이벤트의 배열 <br/>
+identifier - 터치의 ID<br/>
+locationX - 요소에 상대적인 터치의 X 위치<br/>
+locationY - 요소에 상대적인 터치의 Y 위치<br/>
+pageX - 루트 요소에 상대적인 터치의 X 위치<br/>
+pageY - 루트 요소에 상대적인 터치의 Y 위치<br/>
+target - 터치 이벤트를 수신하는 요소의 노드 ID<br/>
+timestamp - 터치의 시간 식별자, 속도 계산에 유용합니다.<br/>
+touches - 화면의 현재 모든 터치의 배열<br/>
+캡처 ShouldSet 핸들러<br/>
+onStartShouldSetResponder와 onMoveShouldSetResponder는 가장 깊은 노드가 먼저 호출되는 버블링 패턴으로 호출됩니다. 이는 여러 View가 \*ShouldSetResponder 핸들러에 대해 true를 반환할 때 가장 깊은 컴포넌트가 응답자가 된다는 것을 의미합니다. 이는 대부분의 경우에 바람직한데, 그 이유는 모든 컨트롤과 버튼이 사용 가능하도록 보장해주기 때문입니다.
+
+하지만, 부모 컴포넌트가 반드시 응답자가 되도록 하고 싶을 때도 있습니다. 이 경우 캡처 단계를 사용하여 처리할 수 있습니다. 응답자 시스템이 가장 깊은 컴포넌트에서 버블링되기 전에 캡처 단계가 실행되며, 이때 on\*ShouldSetResponderCapture가 호출됩니다. 따라서 부모 View가 자식이 터치 시작 시 응답자가 되는 것을 막고 싶다면, onStartShouldSetResponderCapture 핸들러를 사용해 true를 반환해야 합니다.
+
+```bash
+View.props.onStartShouldSetResponderCapture: evt => true,
+View.props.onMoveShouldSetResponderCapture: evt => true,
 ```
 
-### 2. 취소 가능성 보장
-
-사용자가 터치 도중 손가락을 드래그하여 액션을 취소할 수 있어야 합니다.
-
-```tsx
-<View
-  onResponderMove={(evt) => {
-    const { locationX, locationY } = evt.nativeEvent;
-    // 터치가 영역을 벗어나면 취소
-    if (locationX < 0 || locationY < 0) {
-      setHighlighted(false);
-    }
-  }}
->
-  <Text>드래그로 취소 가능한 버튼</Text>
-</View>
-```
-
-**이점:** 사용자가 실수 없이 자유롭게 인터랙션을 실험할 수 있어 신뢰감 향상
-
-## Touchable 컴포넌트: 고수준 추상화
-
-Gesture Responder System은 강력하지만 복잡합니다. 단순한 탭 인터랙션에는 **Touchable 컴포넌트**를 사용하는 것이 권장됩니다.
-
-### 사용 가능한 Touchable 컴포넌트
-
-```tsx
-import {
-  TouchableOpacity,    // 터치 시 투명도 변경
-  TouchableHighlight,  // 터치 시 배경색 변경
-  TouchableWithoutFeedback, // 시각적 피드백 없음
-  Pressable,          // 현대적인 통합 API (권장)
-} from 'react-native';
-
-// 현대적 방식: Pressable 사용
-<Pressable
-  onPress={handlePress}
-  style={({ pressed }) => [
-    styles.button,
-    pressed && styles.pressed
-  ]}
->
-  <Text>Press Me</Text>
-</Pressable>
-```
-
-**웹의 `<button>`이나 `<a>` 태그와 동일한 역할**
-
-## 응답자 생명 주기
-
-### 1단계: 응답자 요청
-
-View가 터치 이벤트에 응답할지 여부를 결정합니다.
-
-```tsx
-<View
-  onStartShouldSetResponder={(evt) => {
-    // 터치 시작 시 응답자가 될까요?
-    return true;
-  }}
-  onMoveShouldSetResponder={(evt) => {
-    // 터치가 이동할 때 응답자를 요청할까요?
-    return true;
-  }}
->
-  <Text>터치 가능한 영역</Text>
-</View>
-```
-
-**호출 시점:**
-- `onStartShouldSetResponder`: 터치 시작 시 (touch down)
-- `onMoveShouldSetResponder`: 터치가 이동할 때 (응답자가 아닌 경우)
-
-### 2단계: 응답자 승인/거부
-
-요청 결과에 따라 승인 또는 거부 핸들러가 호출됩니다.
-
-```tsx
-<View
-  onResponderGrant={(evt) => {
-    // [권장] 응답자가 되었습니다!
-    // 시각적 피드백 표시
-    console.log('응답자 승인');
-  }}
-  onResponderReject={(evt) => {
-    // [주의] 다른 컴포넌트가 응답자입니다
-    console.log('응답자 거부');
-  }}
->
-  <Text>버튼</Text>
-</View>
-```
-
-### 3단계: 응답자 동작 중
-
-응답자가 된 후 터치 이동과 종료를 추적합니다.
-
-```tsx
-<View
-  onResponderMove={(evt) => {
-    // 터치가 이동 중
-    const { locationX, locationY } = evt.nativeEvent;
-    console.log('이동:', locationX, locationY);
-  }}
-  onResponderRelease={(evt) => {
-    // 터치 종료 (touch up)
-    console.log('터치 종료');
-  }}
->
-  <Text>드래그 가능</Text>
-</View>
-```
-
-### 4단계: 응답자 해제
-
-다른 컴포넌트가 응답자를 요청하거나 시스템이 강제로 해제할 수 있습니다.
-
-```tsx
-<View
-  onResponderTerminationRequest={(evt) => {
-    // 다른 컴포넌트가 응답자를 요청합니다
-    // true 반환 시 응답자 양도
-    return true;
-  }}
-  onResponderTerminate={(evt) => {
-    // 응답자가 해제되었습니다
-    // (다른 컴포넌트에 양도 또는 시스템 강제 해제)
-    console.log('응답자 해제됨');
-  }}
->
-  <Text>컨텐츠</Text>
-</View>
-```
-
-**강제 해제 시나리오:**
-- iOS 제어 센터/알림 센터 표시
-- 전화 수신
-- 다른 앱으로 전환
-
-## 이벤트 객체 구조
-
-### nativeEvent 속성
-
-```typescript
-interface TouchEvent {
-  nativeEvent: {
-    changedTouches: Touch[];  // 변경된 터치들
-    identifier: number;       // 터치 ID (멀티터치 구분)
-    locationX: number;        // 컴포넌트 기준 X 좌표
-    locationY: number;        // 컴포넌트 기준 Y 좌표
-    pageX: number;           // 화면 기준 X 좌표
-    pageY: number;           // 화면 기준 Y 좌표
-    target: number;          // 이벤트 대상 노드 ID
-    timestamp: number;       // 터치 시간 (속도 계산용)
-    touches: Touch[];        // 현재 모든 터치들
-  };
-}
-```
-
-### 실전 사용 예시
-
-```tsx
-<View
-  onResponderMove={(evt) => {
-    const {
-      locationX,
-      locationY,
-      pageX,
-      pageY,
-      timestamp
-    } = evt.nativeEvent;
-
-    // 컴포넌트 내부 좌표로 드래그 처리
-    setPosition({ x: locationX, y: locationY });
-
-    // 화면 전체 좌표로 전역 제스처 처리
-    updateGlobalGesture({ x: pageX, y: pageY });
-
-    // 속도 계산 (스와이프 제스처)
-    const velocity = calculateVelocity(timestamp);
-  }}
->
-  <Text>드래그 가능한 요소</Text>
-</View>
-```
-
-## 캡처 단계: 버블링 제어
-
-### 기본 동작: 버블링 (자식 → 부모)
-
-기본적으로 `onStartShouldSetResponder`는 **가장 깊은 자식부터** 호출됩니다.
-
-```tsx
-<View onStartShouldSetResponder={() => true}>
-  {/* 부모 */}
-  <View onStartShouldSetResponder={() => true}>
-    {/* 자식 - 이 컴포넌트가 먼저 응답자가 됨 */}
-    <Text>버튼</Text>
-  </View>
-</View>
-```
-
-**결과:** 자식 View가 응답자가 됩니다 (모든 버튼과 컨트롤이 동작하도록 보장)
-
-### 캡처 단계: 부모 우선권 (부모 → 자식)
-
-부모가 먼저 응답자가 되도록 하려면 **Capture** 핸들러를 사용합니다.
-
-```tsx
-<View
-  onStartShouldSetResponderCapture={() => {
-    // 부모가 먼저 평가됨
-    return true; // 자식의 응답자 요청을 차단
-  }}
->
-  {/* 부모가 응답자가 됨 */}
-  <View onStartShouldSetResponder={() => true}>
-    {/* 자식은 응답자가 될 수 없음 */}
-    <Text>버튼</Text>
-  </View>
-</View>
-```
-
-### 실전 사용 사례: 스와이프로 삭제
-
-```tsx
-// 스와이프 컨테이너가 우선권을 가져야 함
-<SwipeableRow
-  onMoveShouldSetResponderCapture={(evt) => {
-    const { dx } = getGesture(evt);
-    // 수평 스와이프 시 응답자 획득
-    return Math.abs(dx) > 10;
-  }}
->
-  {/* 버튼 클릭은 여전히 동작 */}
-  <Button onPress={handlePress} />
-</SwipeableRow>
-```
-
-## 실전 구현 예시
-
-### 드래그 가능한 박스
-
-```tsx
-const DraggableBox = () => {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-
-  return (
-    <View
-      onStartShouldSetResponder={() => true}
-      onResponderGrant={() => {
-        setDragging(true);
-      }}
-      onResponderMove={(evt) => {
-        const { pageX, pageY } = evt.nativeEvent;
-        setPosition({ x: pageX, y: pageY });
-      }}
-      onResponderRelease={() => {
-        setDragging(false);
-      }}
-      style={[
-        styles.box,
-        {
-          left: position.x,
-          top: position.y,
-          opacity: dragging ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Text>드래그하세요</Text>
-    </View>
-  );
-};
-```
-
-### 스와이프 제스처 감지
-
-```tsx
-const SwipeDetector = ({ onSwipe }) => {
-  const startX = useRef(0);
-
-  return (
-    <View
-      onStartShouldSetResponder={() => true}
-      onResponderGrant={(evt) => {
-        startX.current = evt.nativeEvent.pageX;
-      }}
-      onResponderRelease={(evt) => {
-        const endX = evt.nativeEvent.pageX;
-        const distance = endX - startX.current;
-
-        if (distance > 100) {
-          onSwipe('right');
-        } else if (distance < -100) {
-          onSwipe('left');
-        }
-      }}
-    >
-      <Text>좌우로 스와이프하세요</Text>
-    </View>
-  );
-};
-```
-
-## 선택 가이드
-
-### Gesture Responder System을 사용해야 하는 경우
-
-- **커스텀 제스처 구현** (드래그, 스와이프, 핀치 등)
-- 여러 컴포넌트 간 터치 이벤트 협상 필요
-- 정밀한 터치 좌표와 타이밍 제어
-- 멀티터치 처리
-
-### Touchable/Pressable을 사용해야 하는 경우
-
-- **단순한 탭/클릭 인터랙션**
-- 버튼, 링크 등의 기본 UI 요소
-- 시각적 피드백만 필요한 경우
-- 빠른 개발 우선
-
-### react-native-gesture-handler를 고려해야 하는 경우
-
-- **복잡한 제스처 조합** (pan + pinch + rotate)
-- 네이티브 제스처 성능 필요
-- Animated API와의 긴밀한 통합
-- 대규모 인터랙티브 UI
-
-## 결론
-
-Gesture Responder System은 React Native에서 복잡한 터치 인터랙션을 처리하는 강력한 메커니즘입니다. 응답자 생명 주기와 캡처/버블링 메커니즘을 이해하면, 여러 컴포넌트가 중첩된 상황에서도 정확한 터치 처리를 구현할 수 있습니다.
-
-**핵심 권장사항:**
-- **단순 탭에는 Pressable/Touchable 사용**
-- 커스텀 제스처는 Gesture Responder System 활용
-- 시각적 피드백과 취소 가능성을 항상 제공
-- 복잡한 제스처는 react-native-gesture-handler 고려
-
-**참고 자료:**
-- [React Native 공식 문서 - Gesture Responder System](https://reactnative.dev/docs/gesture-responder-system)
+이러한 방식을 통해 부모 컴포넌트가 자식보다 우선적으로 응답자가 되도록 제어할 수 있습니다.

@@ -1,0 +1,64 @@
+<p>Next.js는 많은 기능을 제공합니다. 그 중 우연히 발견한 최적화 과정에 대해 알아보겠습니다.</p>
+
+<h2>MSW와 앱 라우터 연동 문제</h2>
+
+<p>Next.js의 앱 라우터에서 MSW를 연동하고자 했습니다. 그러나 앱 라우터로 변경되면서 MSW를 연동하는데 문제가 있었는데, </p>
+<p>SSR 동작시 그 전에 MSW 서버가 동작해서 mock api를 활성화 해야하는 문제였습니다. </p>
+
+<p>MSW 자체에서는 노드 패키지를 제공해서 서버를 실행 시킬수 있었으나, Next.js의 SSR 동작 이전에 해당 서버를 정확히 동작 시킬 방법이 없었습니다.</p>
+<p>그래서 여러가지 이슈를 찾아보았으나 임시방편의 해결방법 뿐이였습니다.</p>
+
+<h2>해결 방법 발견</h2>
+
+<p>MSW 예제 레포지토리에서 앱 라우터 환경에 대한 PR이 올라와 있었습니다. 해당 PR은 아직 머지가 안되었지만 </p>
+<p>해당 접근 방식으로 어느정도 문제가 해결되었습니다.</p>
+
+<p>해결방식은 아래와 같습니다. 코드를 보면 window 객체를 이용해 서버와 클라이언트를 판별하고 이렇게 설정하면 SSR로 응답이 오기전에 항상 MSW 서버가 실행이 보장됩니다.</p>
+
+<pre><code class="language-typescript">'use client';
+
+import { PropsWithChildren, use } from 'react';
+
+const shouldMockRequest = (url: string) =&gt; {
+  return !url.includes('_rsc') &amp;&amp; !url.includes('/_next/') &amp;&amp; url.includes('api');
+};
+
+const mockingEnabledPromise =
+  typeof window !== 'undefined'
+    ? import('./browser').then(async ({ worker }) =&gt; {
+        await worker.start({
+          onUnhandledRequest: (request, print) =&gt; {
+            if (shouldMockRequest(request.url)) {
+              print.warning();
+            }
+          },
+        });
+      })
+    : import('./mocks/server').then(async ({ server }) =&gt; {
+        await server.listen({
+          onUnhandledRequest: (request, print) =&gt; {
+            if (shouldMockRequest(request.url)) {
+              print.warning();
+            }
+          },
+        });
+      });</code></pre>
+
+<h2>Next.js의 숨겨진 최적화 발견</h2>
+
+<p>이 코드를 보고 Next.js에서는 내부에서 렌더링을 하기 전에 이런 코드를 어떻게 평가할 것인지에 대해서 궁금증이 생겼습니다.</p>
+<p>그러다가 Next.js의 SSR 프로세스의 코드 중에 아래와 같은 코드를 발견했습니다.</p>
+
+<pre><code class="language-typescript">await Promise((res) =&gt; setTimeout(() =&gt; res()));</code></pre>
+
+<p>이 코드는 자바스크립트 엔진의 이벤트 루프를 한번 건너뛰고 다음 이벤트 루프에 동작하도록 보장하는 코드입니다.</p>
+<p>그리고 주석으로 Next.js는 동기적인 렌더링 프로세스를 원하는건 아니지만 preload와 관련된 최적화를 수행하기 위해 렌더링을 일부러 지연한다는 내용이였습니다.  </p>
+
+<p>즉, 다이나믹 임포트와 같은 동작이 마이크로태스크로 수행될때 이러한 동작이 먼저 수행되어서 Next.js에서 어떤 리소스들을 개발자가 임포트했는지 분석하고 최적화 하기 위함이였습니다.</p>
+
+<p>Next.js는 이렇게 수집한 정보를 통해 메인 페이지를 반환하는 응답 헤더로 preload 속성을 넣어서 HTML 파싱하지 않고 브라우저가 어떤 리소스를 다운 받아야 할지 제공하므로써 최적화를 수행합니다.</p>
+
+<p>이런 내용은 공식문서에 제공되지 않아서 직접 찾아보지 않으면 알지 못하는 내용이였습니다.  </p>
+
+<p>이처럼 Next.js는 우리가 알지못하는 최적화를 내부적으로 많이 수행합니다. </p>
+<p>그래서 이런 프레임워크는 실제로 많이 사용해보지 않으면 예상치 동작을 맞이 할 수 있기 때문에 유의해야 합니다.</p>

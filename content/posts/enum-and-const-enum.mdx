@@ -1,19 +1,17 @@
 ---
-title: 'TypeScript Enum vs Const Enum vs 객체 리터럴: 타입 안전한 상수 관리 전략'
-description: 'Enum, Const Enum, 객체 리터럴의 컴파일 동작 비교와 최적의 선택 가이드'
+title: 'Enum and const enum'
+description: 'Comparing enum and const enum in TypeScript: How to choose the best option for your project'
 date: '2024-08-28T16:00:00Z'
 tags: ['typescript']
 ---
 
-TypeScript 프로젝트에서 상수 집합을 관리할 때 `enum`, `const enum`, 객체 리터럴 중 어떤 방식을 선택해야 할지 고민하게 됩니다. 각 방식은 컴파일 결과, 타입 안전성, 런타임 동작에서 뚜렷한 차이를 보이며, 잘못된 선택은 번들 크기 증가나 모듈 경계 문제를 초래할 수 있습니다.
+TypeScript는 코드에서 상수 집합을 관리하기 위해 `enum`을 제공합니다. `enum`은 코드의 가독성을 높이고, 특정 값의 집합을 의미 있게 정의하는 데 매우 유용합니다. 그러나 `enum`에는 `const enum`이라는 최적화된 버전이 있으며, 이를 선택하는 것은 프로젝트의 성능 및 유지보수에 큰 영향을 미칠 수 있습니다. 이번 글에서는 `enum`과 `const enum`의 차이를 비교하고, 이 둘을 대체할 수 있는 방법을 제안해 보겠습니다.
 
-이 글에서는 세 가지 방식의 컴파일 동작을 비교하고, 프로젝트 상황에 맞는 최적의 선택 기준을 제시합니다.
+## enum과 const enum의 차이점
 
-## Enum의 컴파일 동작과 특징
+### 1. enum의 동작 방식
 
-### 양방향 매핑 객체로 변환
-
-TypeScript 컴파일러는 `enum`을 런타임에 존재하는 JavaScript 객체로 변환합니다. 이 객체는 키에서 값으로, 값에서 키로의 양방향 조회를 지원하는 특수한 구조를 가집니다.
+`enum`을 사용하면 TypeScript는 이를 실제 JavaScript 객체로 변환합니다. 각`enum`멤버는 이 객체의 속성이 되며, 이 속성을 통해 값에 접근할 수 있습니다. 이 방식은 코드의 가독성을 높이고, 런타임에서도 `enum`의 멤버를 동적으로 사용할 수 있게 합니다.
 
 ```typescript
 enum Direction {
@@ -36,28 +34,9 @@ var Direction;
 })(Direction || (Direction = {}));
 ```
 
-양방향 매핑 덕분에 키와 값 모두로 조회가 가능합니다:
+### 2. const enum의 동작 방식
 
-```typescript
-console.log(Direction.Up); // 0
-console.log(Direction[0]); // "Up"
-```
-
-### 런타임 객체의 장단점
-
-**장점:**
-- 런타임에 동적으로 enum 멤버를 순회하거나 조회할 수 있습니다.
-- 디버깅 시 값 대신 의미 있는 키 이름을 확인할 수 있습니다.
-
-**단점:**
-- 추가적인 JavaScript 코드가 생성되어 번들 크기가 증가합니다.
-- 모든 enum마다 IIFE(즉시 실행 함수)가 생성됩니다.
-
-## Const Enum의 컴파일 동작과 특징
-
-### 인라인 최적화
-
-`const enum`은 컴파일 시점에 모든 참조를 상수 값으로 치환합니다. 런타임에는 어떠한 객체도 생성되지 않습니다.
+반면, `const enum`은 컴파일 시 모든 참조가 상수 값으로 인라인 처리됩니다. 결과적으로, `const enum`은 런타임에 실제 객체로 존재하지 않으며, 컴파일된 코드의 크기가 줄어들고 성능이 최적화됩니다. 그러나 `const enum`은 모듈 경계를 넘어 사용할 수 없으며, 디버깅 시 어려움을 겪을 수 있습니다.
 
 ```typescript
 const enum Direction {
@@ -66,64 +45,25 @@ const enum Direction {
   Left,
   Right,
 }
-
-const direction = Direction.Up;
 ```
 
-컴파일 결과는 다음과 같이 값만 남습니다:
+위 코드는 컴파일 후 다음과 같이 인라인된 상수로 변환됩니다:
 
 ```typescript
-const direction = 0; /* Up */
+var direction = 0; /* Up */
 ```
 
-### Const Enum의 치명적인 한계
+## enum과 const enum의 단점
 
-**모듈 경계 문제:**
+두 방식 모두 장단점이 있지만, 다음과 같은 단점도 고려해야 합니다.
 
-`const enum`은 같은 파일 내에서만 안전하게 동작합니다. 외부 모듈에서 import하면 타입 정보는 유지되지만 컴파일러가 값을 인라인할 수 없어 런타임 에러가 발생할 수 있습니다.
+- 모듈 경계 문제 - `const enum`은 모듈 간의 상호작용이 어려워 모듈화된 코드에서는 사용하기 까다롭습니다.<br/>
+- 디버깅 문제 - `const enum`을 사용할 경우, 디버깅 시 값이 인라인된 숫자로 표시되어 문제를 추적하기 어려울 수 있습니다.<br/>
+- 런타임 오버헤드 - 일반 `enum`은 객체를 생성하기 때문에 런타임 오버헤드가 발생할 수 있습니다.
 
-```typescript
-// constants.ts
-export const enum Status {
-  Active = 'active',
-  Inactive = 'inactive'
-}
+## 대체 코드: 객체 리터럴을 사용한 enum 구현
 
-// app.ts
-import { Status } from './constants';
-console.log(Status.Active); // 컴파일 에러 또는 undefined
-```
-
-**isolatedModules 설정과의 충돌:**
-
-`tsconfig.json`에서 `isolatedModules: true`로 설정하면(Babel, esbuild 사용 시 권장) `const enum`은 경고를 발생시킵니다. 각 파일이 독립적으로 컴파일되는 환경에서는 cross-module inlining이 불가능하기 때문입니다.
-
-**디버깅의 어려움:**
-
-런타임에 숫자 상수로만 보이므로 값의 의미를 파악하기 어렵습니다:
-
-```typescript
-// 디버거에서 보이는 내용
-direction = 0  // 이게 Up인지 Down인지 알 수 없음
-```
-
-## Enum vs Const Enum 비교표
-
-| 특징 | Enum | Const Enum |
-|------|------|------------|
-| 컴파일 결과 | JavaScript 객체 생성 | 값으로 인라인 치환 |
-| 번들 크기 | 증가 (IIFE 코드 포함) | 최소화 |
-| 런타임 접근 | 가능 | 불가능 |
-| 양방향 매핑 | 지원 | 지원 안 함 |
-| 모듈 간 사용 | 안전 | 위험 (에러 가능) |
-| 디버깅 | 쉬움 (키 이름 확인) | 어려움 (숫자만 보임) |
-| isolatedModules | 호환 | 경고 발생 |
-
-## 대체 방식: 객체 리터럴과 as const
-
-### 현대적인 TypeScript 패턴
-
-TypeScript 3.4에서 도입된 `as const` assertion을 활용하면 enum의 장점을 취하면서도 단점을 제거할 수 있습니다.
+이러한 단점을 피하면서도 비슷한 기능을 구현하기 위해, 객체 리터럴을 사용한 방법을 고려할 수 있습니다. 이 방법은 런타임 오버헤드를 없애고, `const enum`과 유사한 최적화를 제공하면서도, 보다 유연한 구조를 유지할 수 있습니다.
 
 ```typescript
 const Direction = {
@@ -136,230 +76,4 @@ const Direction = {
 type Direction = (typeof Direction)[keyof typeof Direction];
 ```
 
-### 컴파일 결과 비교
-
-객체 리터럴은 단순한 객체로 컴파일되며, enum보다 훨씬 간결합니다:
-
-```javascript
-// 컴파일 결과
-const Direction = {
-  Up: 0,
-  Down: 1,
-  Left: 2,
-  Right: 3,
-};
-```
-
-IIFE나 양방향 매핑 코드가 생성되지 않아 번들 크기가 작습니다.
-
-### 타입 안전성과 자동완성
-
-`as const`를 사용하면 각 속성이 리터럴 타입으로 추론됩니다:
-
-```typescript
-const Direction = {
-  Up: 0,
-  Down: 1,
-} as const;
-
-// Direction.Up의 타입은 0 (number가 아닌 리터럴 타입 0)
-// Direction.Down의 타입은 1
-
-type Direction = (typeof Direction)[keyof typeof Direction];
-// type Direction = 0 | 1
-
-function move(direction: Direction) {
-  // 타입 안전한 함수
-}
-
-move(Direction.Up); // [권장] 통과
-move(0); // [권장] 통과
-move(2); // [주의] 타입 에러
-```
-
-### 객체 리터럴 방식의 장점
-
-| 장점 | 설명 |
-|------|------|
-| **모듈 안전성** | import/export로 안전하게 공유 가능 |
-| **타입 안전성** | 리터럴 타입으로 엄격한 타입 체크 |
-| **번들 최적화** | 단순 객체로 컴파일되어 크기 최소화 |
-| **런타임 접근** | 객체로 존재하여 순회/조회 가능 |
-| **확장성** | 메타데이터나 메서드 추가 용이 |
-| **호환성** | isolatedModules와 충돌 없음 |
-| **디버깅** | 의미 있는 키 이름으로 확인 가능 |
-
-### 실전 활용 예시
-
-**런타임 순회가 필요한 경우:**
-
-```typescript
-const HttpStatus = {
-  OK: 200,
-  Created: 201,
-  BadRequest: 400,
-  Unauthorized: 401,
-  NotFound: 404,
-} as const;
-
-type HttpStatus = (typeof HttpStatus)[keyof typeof HttpStatus];
-
-// 모든 성공 응답 코드 확인
-const successCodes = Object.values(HttpStatus).filter(code => code < 300);
-// [200, 201]
-
-// 상태 코드에서 이름 찾기
-function getStatusName(code: HttpStatus): string {
-  const entry = Object.entries(HttpStatus).find(([_, value]) => value === code);
-  return entry ? entry[0] : 'Unknown';
-}
-
-console.log(getStatusName(200)); // "OK"
-```
-
-**메타데이터 확장:**
-
-```typescript
-const LogLevel = {
-  Debug: { value: 0, color: 'gray' },
-  Info: { value: 1, color: 'blue' },
-  Warn: { value: 2, color: 'yellow' },
-  Error: { value: 3, color: 'red' },
-} as const;
-
-type LogLevelKey = keyof typeof LogLevel;
-type LogLevelValue = (typeof LogLevel)[LogLevelKey]['value'];
-
-function log(level: LogLevelKey, message: string) {
-  const { value, color } = LogLevel[level];
-  console.log(`[${level}:${value}] ${message}`, `color: ${color}`);
-}
-
-log('Error', 'Something went wrong'); // [Error:3] Something went wrong
-```
-
-## 세 가지 방식 종합 비교
-
-| 특징 | Enum | Const Enum | 객체 리터럴 (as const) |
-|------|------|------------|----------------------|
-| 컴파일 결과 | IIFE 객체 | 인라인 치환 | 단순 객체 |
-| 번들 크기 | 큼 | 최소 | 작음 |
-| 런타임 접근 | [지원] 가능 | [미지원] 불가능 | [지원] 가능 |
-| 양방향 매핑 | [지원] 지원 | [미지원] 불가능 | [부분] 수동 구현 가능 |
-| 모듈 간 사용 | [지원] 안전 | [미지원] 위험 | [지원] 안전 |
-| isolatedModules | [지원] 호환 | [미지원] 경고 | [지원] 호환 |
-| 타입 안전성 | [지원] 강함 | [지원] 강함 | [지원] 강함 |
-| 확장성 | [부분] 제한적 | [미지원] 불가능 | [지원] 자유로움 |
-| 디버깅 | [지원] 쉬움 | [미지원] 어려움 | [지원] 쉬움 |
-| 추천도 (2024+) | [부분] 제한적 | [미지원] 권장 안 함 | [지원] 권장 |
-
-## 선택 가이드
-
-### Enum을 사용하는 경우
-
-```typescript
-// [권장] 양방향 매핑이 필요한 경우
-enum Color {
-  Red,
-  Green,
-  Blue
-}
-
-function getColorName(value: number): string {
-  return Color[value]; // 값으로 이름 조회
-}
-```
-
-**추천 시나리오:**
-- 레거시 코드베이스와의 호환성 유지
-- 양방향 조회가 빈번한 경우
-- 번들 크기가 중요하지 않은 서버 사이드 코드
-
-### Const Enum을 사용하는 경우
-
-```typescript
-// [참고] 단일 파일 내에서만 사용
-const enum InternalFlag {
-  None = 0,
-  Active = 1 << 0,
-  Pending = 1 << 1,
-}
-
-// 같은 파일 내에서만 사용
-const flags = InternalFlag.Active | InternalFlag.Pending;
-```
-
-**추천 시나리오:**
-- 단일 파일 내부의 private 상수
-- 극도의 번들 크기 최적화가 필요한 경우
-- export하지 않는 내부 구현
-
-### 객체 리터럴 (as const)을 사용하는 경우
-
-```typescript
-// [권장] 대부분의 경우 권장되는 현대적 패턴
-export const ApiEndpoint = {
-  Users: '/api/users',
-  Posts: '/api/posts',
-  Comments: '/api/comments',
-} as const;
-
-export type ApiEndpoint = (typeof ApiEndpoint)[keyof typeof ApiEndpoint];
-```
-
-**추천 시나리오:**
-- 모듈 간 공유되는 상수 (가장 일반적)
-- 확장 가능한 구조가 필요한 경우
-- 현대적인 TypeScript 프로젝트 (권장)
-- Babel, esbuild 같은 트랜스파일러 사용 시
-
-## 마이그레이션 가이드
-
-### Enum → 객체 리터럴 변환
-
-```typescript
-// Before
-enum Status {
-  Active = 'active',
-  Inactive = 'inactive',
-}
-
-// After
-const Status = {
-  Active: 'active',
-  Inactive: 'inactive',
-} as const;
-
-type Status = (typeof Status)[keyof typeof Status];
-```
-
-### Const Enum → 객체 리터럴 변환
-
-```typescript
-// Before
-export const enum Priority {
-  Low = 0,
-  Medium = 1,
-  High = 2,
-}
-
-// After
-export const Priority = {
-  Low: 0,
-  Medium: 1,
-  High: 2,
-} as const;
-
-export type Priority = (typeof Priority)[keyof typeof Priority];
-```
-
-## 결론
-
-TypeScript에서 상수 집합을 관리하는 방식은 프로젝트의 특성에 따라 선택해야 합니다. 2024년 현재, 대부분의 경우 **객체 리터럴과 `as const`를 활용하는 방식**이 가장 권장됩니다.
-
-**핵심 권장사항:**
-- **기본 선택**: 객체 리터럴 + `as const` (모듈 안전성, 확장성, 호환성)
-- **제한적 사용**: Enum (양방향 매핑이 반드시 필요한 경우)
-- **피해야 함**: Const Enum (모듈 경계 문제와 isolatedModules 충돌)
-
-프로젝트의 요구사항과 팀의 코딩 스타일을 고려하여 일관된 방식을 선택하고, 코드베이스 전체에 적용하는 것이 중요합니다. 특히 라이브러리를 개발하는 경우, 외부 모듈에서 안전하게 사용할 수 있는 객체 리터럴 방식을 강력히 권장합니다.
+TypeScript에서 `enum`과 `const enum`은 코드의 가독성을 높이고 성능을 최적화하는 유용한 도구입니다. 하지만 각각의 단점도 존재하므로, 특정 상황에서는 이들 대신 객체 리터럴을 사용한 대체 코드를 고려하는 것이 좋습니다. 객체 리터럴은 런타임 오버헤드를 피하면서도 유사한 기능을 제공하며, 모듈화된 코드에서도 안정적으로 사용할 수 있습니다. 프로젝트의 요구 사항에 따라 적절한 방식을 선택하여 더 나은 코드를 작성해보세요.

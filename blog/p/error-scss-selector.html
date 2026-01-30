@@ -1,0 +1,40 @@
+<pre><code class="language-scss">.test {
+  &amp;.test1 {
+    width: 100px;
+    height: 100px;
+    background-color: black;
+  }
+}
+-&gt; .test.test1
+
+.test2 {
+  .test3 {
+    width: 100px;
+    height: 100px;
+    background-color: yellow;
+  }
+}
+-&gt; .test2 .test3</code></pre>
+
+<p>이렇게 작성했을때 <code>test</code>와 <code>test1</code>은 형제 관계이며</p>
+<p><code>test2</code>와 <code>test3</code>은 부모 자식의 관계를 가져야함</p>
+
+<p>단 아래와 같이 공백을 넣으면 부모자식 관계를 가지도록 컴파일 할 수가 있음.</p>
+<p>다만 일반적으로 <code>&</code> 다음에 공백을 넣으면 가독성이 떨어지므로</p>
+<p><code>&</code>은 형제와 가상선택자일때만 사용함</p>
+
+<pre><code class="language-scss">.test {
+	&amp; .test1 {
+	}
+}
+-&gt; .test .test1</code></pre>
+
+<p>부모 관계를 나타내고 싶으면 아래와 같이 사용하는것이 구분하기 쉬움</p>
+
+<pre><code class="language-scss">.test {
+  .test1 {
+  }
+}
+
+.test .test1 {
+}</code></pre>

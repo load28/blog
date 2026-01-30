@@ -1,0 +1,45 @@
+<h2>의존성 관리</h2>
+
+<p>모노 레포에서는 패키지 간의 의존성을 관리하는 것이 중요합니다. 이를 위해 다음과 같은 규칙을 정의하였습니다.</p>
+
+<ul><li>library 패키지에서는 feature 패키지를 불가능.</li><li>feature 패키지에서는 다른 feature 패키지를 참조 불가능.</li><li>feature 패키지에서는 library 패키지를 참조 가능.</li></ul>
+<h2>ESLint 설정</h2>
+
+<p>이와 같은 규칙을 모두가 이해하고 있다고 하여도 실수를 방지하기 위해 ESLint를 사용해보기로 했습니다.</p>
+
+<h4>ESLint 플러그인 동작 방식</h4>
+
+<p>ESLint는 플러그인을 <code>eslint-plugin-<plugin-name></code>이라는 이름의 npm 패키지를 찾아서 사용합니다.  </p>
+<p>따라서 <code>npm 배포 또는 npm link</code>를 통해서 ESLint 플러그인을 사용할 수 있습니다.  </p>
+<p>배포나 link 없이 사용하려면 <a href="https://www.npmjs.com/package/eslint-plugin-local" target=_blank>eslint-plugin-local</a>을 사용하면 됩니다.</p>
+
+<h4>ESLint plugin 구현하기</h4>
+
+<p><a href="https://eslint.org/docs/latest/extend/plugins/" target=_blank>ESLint 사이트</a> 에서 플러그인 구현 방법을 참고합니다.  </p>
+<p>플러그인 스펙은 아래와 같습니다.</p>
+
+<ul><li>package.json에 패키지 간의 상관관계를 인지 할 수 있는 필드를 파싱</li><li>파일의 import 경로가 타입스크립트 path alias 또는 상대경로인지 파악하여 절대경로로 변환</li><li>위의 파싱된 정보를 기반으로 에러 여부를 판단</li></ul>
+<p>ESLint에서 파일을 파싱할때 import을 발견하는 경우 ImportDeclaration 함수를 호출하므로 해당 함수에 로직을 구현합니다.  </p>
+<p>구현한 코드는 <a href="https://github.com/load28/eslint-plugin-check-import" target=_blank>eslint-plugin-check-import</a>에서 확인 할 수 있습니다.</p>
+
+<h2>동작 확인해보기</h2>
+
+<p>ESLint cli를 통해서 정상 동작하는 것은 확인했습니다.  </p>
+<p>그러나 타입스크립트 paths로 설정된 import는 intellij에서 에러로 표시가 되지 않았습니다.</p>
+
+<p>이유는 intellij는 가장 가까운 ESLint 설정 파일을 찾아서 발생하는 문제였습니다.  </p>
+<p>여러개의 ESLint 설정 파일과 tsconfig 파일이 존재할 때에는 ESLint의 작업 디렉토리를 명시해주어야 합니다.  </p>
+<p><code>eslint -> manual eslint config -> working directory</code>를 <code>./</code>으로 변경하면 됩니다.</p>
+
+<p>이렇게 바꾸어주고 ESLint 에러가 visaul studio code와 intellij 모두 잘 표시되었습니다.</p>
+
+<h2>이미 누군가는 만들었다</h2>
+
+<p>이러한 종류의 ESLint 플러그인은 <code>@nx/eslint-plugin</code>과 <code>eslint-plugin-boundaries</code>가 많이 쓰입니다.  </p>
+<p>그래서 직접 구현할때에도 <code>eslint-plugin-boundaries</code> 라이브러리와 동일하게 <code>minimatch</code> 라는 라이브러리를 활용하여 만들었습니다.</p>
+
+<p>직접 구현한 것, nx, eslint-plugin-boundaries 중에 무엇을 사용 할지 고민하다가  </p>
+<p>@nx/eslint-plugin는 nx 라이브러리 자체에 의지하고 있어서 회사 내에서는 nx를 사용 할 수 없어 배제하였고  </p>
+<p><code>eslint-plugin-boundaries</code>는 디버깅 모드와 capture와 같은 기능도 제공하여 이것을 사용하기로 하였습니다.</p>
+
+<p>결국 직접 구현한 것은 사용하지 않았지만 동작 과정을 이해하게 되는 것만으로도 좋은 경험이였습니다.</p>

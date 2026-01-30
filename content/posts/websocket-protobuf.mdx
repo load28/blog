@@ -1,66 +1,62 @@
 ---
-title: '실시간 협업을 위한 WebSocket과 Protocol Buffers 아키텍처'
+title: 'WebSocket with Protocol Buffers'
 date: '2025-03-21'
 tags: ['websocket', 'protobuf', 'grpc']
 ---
 
-최근 실시간 협업 서비스를 개발하면서 기존 REST API 기반 아키텍처의 한계를 명확히 인지하게 되었습니다. 실시간 데이터 동기화가 필수적인 협업 도구에서 이러한 한계는 사용자 경험에 직접적인 영향을 미쳤고, 이를 해결하기 위한 대안을 찾아야 했습니다.
+최근 실시간 협업 서비스를 개발했던 경험을 토대로 기존 REST API 기반 아키텍처로는 몇 가지 심각한 한계에 대해 인지하게 되었습니다.  
 
-이 글에서는 REST API의 한계를 극복하고 실시간 협업 서비스의 성능을 개선하기 위해 WebSocket과 Protocol Buffers를 활용한 아키텍처를 설계하고 구현한 경험을 공유합니다.
+실시간 데이터 동기화가 필수적인 협업 도구에서 이러한 한계는 사용자 경험에 직접적인 영향을 주었고, 이를 해결하기 위한 대안을 찾아야 했습니다.
 
-## REST API의 한계와 실시간 통신의 필요성
+## REST API의 근본적인 한계
 
 REST API는 웹 서비스 개발에 널리 사용되는 아키텍처이지만, 실시간 협업 서비스에서는 다음과 같은 한계점을 드러냈습니다.
 
-**높은 네트워크 비용**: 매 요청마다 HTTP 헤더와 같은 부가 정보가 포함되어 실제 데이터 외에도 많은 네트워크 트래픽이 발생합니다. 특히 작은 크기의 실시간 업데이트가 자주 발생하는 환경에서 이 오버헤드는 무시할 수 없습니다.
+- **높은 네트워크 비용**: 매 요청마다 HTTP 헤더와 같은 부가 정보가 포함되어 실제 데이터 외에도 많은 네트워크 트래픽이 발생했습니다. 특히 작은 크기의 실시간 업데이트가 자주 발생하는 환경에서 이 오버헤드는 무시할 수 없었습니다.
 
-**연결 오버헤드**: REST API는 매 요청마다 새로운 연결을 맺고 끊는 과정이 필요합니다. 이러한 연결 설정 비용은 실시간성이 중요한 협업 서비스에서 심각한 지연을 초래합니다.
+- **연결 오버헤드**: REST API는 매 요청마다 새로운 연결을 맺고 끊는 과정이 필요합니다. 이러한 연결 설정 비용은 실시간성이 중요한 협업 서비스에서 심각한 지연을 초래했습니다.
 
 이러한 문제들은 단순한 최적화로는 해결하기 어려웠고, 보다 근본적인 아키텍처 변경이 필요했습니다.
 
-## 실시간 협업 도구의 통신 전략 분석
+## 슬랙에게 배우기
 
-해결책을 찾기 위해 대표적인 협업 도구인 Slack의 통신 방식을 분석했습니다. Slack은 WebSocket을 기반으로 바이너리 데이터를 주고받는 방식을 사용하고 있었습니다.
+해결책을 찾기 위해 협업 도구인 슬랙(Slack)의 통신 방식을 분석해보았습니다. 슬랙은 웹소켓을 기반으로 바이너리 데이터를 주고받는 방식을 사용하고 있었습니다.
 
-Slack의 통신 아키텍처는 다음과 같은 특징을 보입니다:
-- WebSocket을 통한 지속적인 연결 유지
+슬랙의 통신 방식은 다음과 같은 특징을 보였습니다
+- 웹소켓을 통한 지속적인 연결 유지
 - 바이너리 형식의 데이터 전송으로 효율성 향상
 - 실시간 양방향 통신 지원
 
-바이너리 데이터 전송 방식이 JSON 같은 텍스트 기반 형식보다 효율적이라는 점에 주목했습니다.
+바이너리 데이터 전송 방식이 JSON 같은 텍스트 기반 형식보다 효율적이라는 점이 흥미로웠습니다.
 
-## WebSocket과 Protocol Buffers 아키텍처 설계
+## 시도해보기
 
-Slack의 접근 방식에서 영감을 받아, WebSocket을 통신 채널로 사용하고 Protocol Buffers를 데이터 직렬화 형식으로 활용하는 아키텍처를 설계했습니다.
+슬랙의 접근 방식에서 영감을 받아, 웹소켓을 통신 채널로 사용하고 Protocol Buffers를 데이터 직렬화 형식으로 활용하는 것을 고민해보고 테스트 해보기로 했습니다.
 
-### 아키텍처 구성
-
-테스트 프로젝트의 구성 요소는 다음과 같습니다:
+테스트 프로젝트의 구성 요소는 다음과 같습니다
 - **클라이언트**: React 기반 웹 애플리케이션
-- **WebSocket 서버**: 클라이언트와 지속적인 연결을 유지하는 Node.js 서버
+- **웹소켓 서버**: 클라이언트와 지속적인 연결을 유지하는 Node.js 서버
 - **gRPC 서버**: 내부 서비스 및 데이터 처리를 담당하는 서버
 
-### 핵심 설계 원칙
+여기서 중요한 점은 **통신 채널과 데이터 형식의 분리**입니다:
 
-이 아키텍처의 핵심은 **통신 채널과 데이터 형식의 분리**입니다:
+1. **통신 채널**: 클라이언트와 서버 간에는 **웹소켓** 연결을 사용합니다. 이를 통해 지속적인 연결을 유지하고 양방향 통신이 가능해집니다.
 
-1. **통신 채널**: 클라이언트와 서버 간에는 WebSocket 연결을 사용합니다. 이를 통해 지속적인 연결을 유지하고 양방향 통신이 가능해집니다.
+2. **데이터 형식**: 웹소켓을 통해 전송되는 데이터는 **Protocol Buffers**로 직렬화된 바이너리 형식입니다. 이는 JSON보다 효율적인 데이터 전송을 가능하게 합니다.
 
-2. **데이터 형식**: WebSocket을 통해 전송되는 데이터는 Protocol Buffers로 직렬화된 바이너리 형식입니다. 이는 JSON보다 효율적인 데이터 전송을 가능하게 합니다.
+3. **내부 서비스 통신**: 웹소켓 서버와 다른 백엔드 서비스 간에는 **gRPC**를 사용하여 효율적으로 통신합니다.
 
-3. **내부 서비스 통신**: WebSocket 서버와 다른 백엔드 서비스 간에는 gRPC를 사용하여 효율적으로 통신합니다.
+이 구조는 브라우저에서 직접 gRPC를 사용할 수 없는 제약을 웹소켓으로 우회하면서도, Protocol Buffers의 효율성을 활용할 수 있게 해줍니다.
 
-이 구조는 브라우저에서 직접 gRPC를 사용할 수 없는 제약을 WebSocket으로 우회하면서도, Protocol Buffers의 효율성을 활용할 수 있게 합니다.
+## Protocol Buffers
 
-## Protocol Buffers: 효율적인 데이터 직렬화
-
-Protocol Buffers는 Google에서 개발한 언어 중립적이고 플랫폼 중립적인 직렬화 메커니즘으로, 다음과 같은 특징을 가집니다:
+Protocol Buffers는 구글에서 개발한 언어 중립적이고 플랫폼 중립적인 직렬화 메커니즘으로, 다음과 같은 특징을 가집니다
 
 1. **스키마 기반 접근 방식**: `.proto` 파일에 명확한 데이터 구조를 정의합니다.
 2. **효율적인 바이너리 인코딩**: 텍스트 기반 형식보다 크기가 작고 처리 속도가 빠릅니다.
 3. **언어 중립성**: 다양한 프로그래밍 언어에서 사용할 수 있는 코드를 자동 생성합니다.
 
-아래는 테스트 프로젝트에 사용되는 메시지 타입을 정의한 `.proto` 파일입니다:
+아래는 테스트 프로젝트에 사용되는 메시지 타입을 정의한 `.proto` 파일입니다.
 
 ```protobuf
 syntax = "proto3";
@@ -93,19 +89,30 @@ message UserList {
 
 이 `.proto` 파일은 클라이언트와 서버 양쪽에서 공유되어, 일관된 메시지 구조를 보장합니다.
 
-## 핵심 구현 패턴
+## 구현 세부사항
 
 ### 클라이언트 측 구현 (React)
 
-클라이언트에서는 WebSocket 연결을 설정하고, Protocol Buffers를 사용하여 데이터를 직렬화/역직렬화합니다. 핵심 패턴은 다음과 같습니다:
-
-**데이터 역직렬화 패턴:**
+클라이언트에서는 웹소켓 연결을 설정하고, Protocol Buffers를 사용하여 데이터를 직렬화/역직렬화하는 코드를 구현했습니다
 
 ```typescript
-// 바이너리 데이터를 자바스크립트 객체로 변환
+import * as protobuf from "protobufjs";
+
+// 사용자 타입 정의
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  age: number;
+  role: string;
+}
+
+// 바이너리 데이터 역직렬화 함수
 private deserializeMessage(buffer: Uint8Array, messageType: string): any {
   try {
+    // Protobuf 디코딩
     const decodedMessage = MessageType.decode(buffer);
+    // 자바스크립트 객체로 변환
     return MessageType.toObject(decodedMessage, {
       longs: String,
       enums: String,
@@ -117,127 +124,190 @@ private deserializeMessage(buffer: Uint8Array, messageType: string): any {
 }
 ```
 
-**요청 전송 패턴:**
-
 ```typescript
-// 사용자 정보 요청 예시
-public getUserById(userId: string): Promise<User> {
-  return new Promise((resolve, reject) => {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      reject(new Error("WebSocket이 연결되어 있지 않습니다"));
-      return;
-    }
+export class WebSocketClient {
+  // getUserById 요청 예시
+  public getUserById(userId: string): Promise<User> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        reject(new Error("WebSocket이 연결되어 있지 않습니다"));
+        return;
+      }
 
-    // 요청 타입(1바이트) + 데이터를 결합하여 전송
-    const requestType = new Uint8Array([1]);
-    const userIdBytes = new TextEncoder().encode(userId);
-    const requestData = new Uint8Array(requestType.length + userIdBytes.length);
-    requestData.set(requestType);
-    requestData.set(userIdBytes, requestType.length);
+      const requestType = new Uint8Array([1]); // 요청 타입 1 (유저 정보 요청)
+      const userIdBytes = new TextEncoder().encode(userId);
+      const requestData = new Uint8Array(
+        requestType.length + userIdBytes.length
+      );
+      requestData.set(requestType);
+      requestData.set(userIdBytes, requestType.length);
 
-    this.messageCallbacks.set(1, (data) => resolve(data as User));
-    this.socket.send(requestData);
-  });
+      this.messageCallbacks.set(1, (data) => {
+        resolve(data as User);
+      });
+
+      this.socket.send(requestData);
+    });
+  }
 }
 ```
 
-### 서버 측 구현 (Node.js)
+### 서버 구현
 
-WebSocket 서버는 클라이언트와의 연결을 관리하고, Protocol Buffers로 직렬화된 메시지를 처리합니다. 필요에 따라 gRPC를 통해 백엔드 서비스와 통신합니다.
-
-**메시지 직렬화 패턴:**
+웹소켓 서버는 클라이언트와의 연결을 관리하고, Protocol Buffers로 직렬화된 메시지를 처리합니다. 
+그리고 필요에 따라 gRPC를 통해 백엔드 서비스와 통신합니다.
 
 ```typescript
+import * as grpc from "@grpc/grpc-js";
+import * as protoLoader from "@grpc/proto-loader";
+import * as path from "path";
+import * as protobuf from "protobufjs";
+import * as WebSocket from "ws";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  age: number;
+  role: string;
+}
+
+const PROTO_PATH = path.resolve(__dirname, "../../proto/user.proto");
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+});
+
+const proto = grpc.loadPackageDefinition(packageDefinition);
+let protoRoot: protobuf.Root | null = null;
+
+try {
+  protoRoot = protobuf.loadSync(PROTO_PATH);
+  console.log("Protobuf 정의가 성공적으로 로드되었습니다.");
+} catch (error) {
+  console.error("Protobuf 정의 로드 중 오류:", error);
+}
+
 function serializeMessage(message: any, messageType: string): Buffer {
   try {
     if (!protoRoot) {
+      console.warn("Protobuf 정의가 로드되지 않았습니다. JSON으로 폴백합니다.");
       return Buffer.from(JSON.stringify(message), "utf8");
     }
 
     const MessageType = protoRoot.lookupType("user." + messageType);
-    const verificationError = MessageType.verify(message);
 
+    const verificationError = MessageType.verify(message);
     if (verificationError) {
-      console.warn(`메시지 검증 오류: ${verificationError}`);
+      console.warn(
+        `메시지 검증 오류 (${messageType}): ${verificationError}. JSON으로 폴백합니다.`
+      );
       return Buffer.from(JSON.stringify(message), "utf8");
     }
 
     const protoMessage = MessageType.create(message);
     const encodedMessage = MessageType.encode(protoMessage).finish();
+
     return Buffer.from(encodedMessage);
   } catch (error) {
-    console.error(`메시지 직렬화 중 오류:`, error);
+    console.error(`메시지 직렬화 중 오류 (${messageType}):`, error);
     return Buffer.from(JSON.stringify(message), "utf8");
   }
 }
+
+function startWebSocketServer() {
+  const wss = new WebSocket.Server({ port: 8080 });
+
+  wss.on("connection", (ws) => {
+    console.log("새로운 WebSocket 연결 설정됨");
+
+    ws.on("message", async (message) => {
+      try {
+        const requestBuffer = Buffer.from(message as Buffer);
+        const requestType = requestBuffer.readUInt8(0);
+        const requestData = requestBuffer.subarray(1); // 나머지는 요청 데이터
+
+        const client = new (proto as any).user.UserService(
+          "localhost:50051",
+          grpc.credentials.createInsecure()
+        );
+
+        let response: Buffer;
+
+        switch (requestType) {
+          case 1: // 사용자 정보 요청
+            const userId = requestData.toString("utf8");
+            console.log(`사용자 ID(${userId}) 정보 요청 수신`);
+
+            const user = await getUserById(client, userId);
+            const userBinary = serializeMessage(user, "User");
+            response = Buffer.concat([Buffer.from([1]), userBinary]);
+
+            break;
+
+          case 2: // 사용자 목록 요청
+            console.log("사용자 목록 요청 수신");
+
+            const userList = await listAllUsers(client);
+            const userListBinary = serializeMessage(userList, "UserList");
+            response = Buffer.concat([Buffer.from([2]), userListBinary]);
+
+            break;
+
+          default:
+            console.warn(`알 수 없는 요청 타입: ${requestType}`);
+            response = Buffer.from([0, 0]);
+            break;
+        }
+
+        ws.send(response);
+      } catch (error) {
+        console.error("메시지 처리 중 오류 발생:", error);
+        const errorResponse = Buffer.concat([
+          Buffer.from([255]), // 255는 에러 응답 타입
+          Buffer.from(JSON.stringify({ error: "요청 처리 실패" })),
+        ]);
+        ws.send(errorResponse);
+      }
+    });
+  });
+
+  console.log("WebSocket 서버가 포트 8080에서 실행 중입니다");
+  return wss;
+}
 ```
 
-**메시지 라우팅 패턴:**
+## 데이터 흐름 이해하기
 
-```typescript
-ws.on("message", async (message) => {
-  try {
-    const requestBuffer = Buffer.from(message as Buffer);
-    const requestType = requestBuffer.readUInt8(0);  // 첫 바이트: 요청 타입
-    const requestData = requestBuffer.subarray(1);    // 나머지: 요청 데이터
+이 아키텍처에서 데이터가 어떻게 흐르는지 살펴보겠습니다.
 
-    let response: Buffer;
-
-    switch (requestType) {
-      case 1: // 사용자 정보 요청
-        const userId = requestData.toString("utf8");
-        const user = await getUserById(client, userId);
-        const userBinary = serializeMessage(user, "User");
-        response = Buffer.concat([Buffer.from([1]), userBinary]);
-        break;
-
-      case 2: // 사용자 목록 요청
-        const userList = await listAllUsers(client);
-        const userListBinary = serializeMessage(userList, "UserList");
-        response = Buffer.concat([Buffer.from([2]), userListBinary]);
-        break;
-
-      default:
-        response = Buffer.from([0, 0]);
-        break;
-    }
-
-    ws.send(response);
-  } catch (error) {
-    console.error("메시지 처리 중 오류:", error);
-    ws.send(Buffer.concat([
-      Buffer.from([255]),
-      Buffer.from(JSON.stringify({ error: "요청 처리 실패" }))
-    ]));
-  }
-});
-```
-
-전체 구현 코드는 [GitHub 저장소](https://github.com/load28/websocket-with-grpc)에서 확인할 수 있습니다.
-
-### 데이터 흐름 이해하기
-
-이 아키텍처에서 데이터가 어떻게 흐르는지 단계별로 살펴보겠습니다:
-
-1. **클라이언트에서 메시지 전송 시**:
+1. 클라이언트가 메시지를 전송하려면
    - Protocol Buffers로 메시지를 인코딩
    - 메시지 타입 식별자를 추가
-   - WebSocket을 통해 서버로 전송
+   - 웹소켓을 통해 서버로 전송
 
-2. **WebSocket 서버의 처리 과정**:
+2. 웹소켓 서버는
    - 메시지 타입을 식별
    - Protocol Buffers로 메시지를 디코딩
    - gRPC 클라이언트를 통해 백엔드 서비스에 요청
-   - 응답을 Protocol Buffers로 인코딩
-   - WebSocket을 통해 클라이언트에 전송
+   - 웹소켓을 통해 클라이언트에 전송
 
-이 흐름에서 중요한 점은 **통신 채널은 WebSocket**, **데이터 형식은 Protocol Buffers**, **내부 서비스 통신은 gRPC**를 사용한다는 점입니다.
+이 흐름에서 중요한 점은
+- **통신 채널은 웹소켓**입니다. 이는 지속적인 연결을 유지하며 양방향 통신을 가능하게 합니다.
+- **데이터 형식은 Protocol Buffers**입니다. 이는 효율적인 바이너리 직렬화를 제공합니다.
+- **내부 서비스 통신은 gRPC**를 사용합니다. 이는 서비스 간 통신에 최적화되어 있습니다.
 
-## 성능 최적화 효과 분석
+## 패킷 수준 최적화
 
-이 아키텍처가 기존 REST API 대비 어떤 이점을 가지는지 구체적으로 살펴보겠습니다.
+이 아키텍처가 기존 REST API 대비 어떤 이점을 가지는지 살펴보았습니다.
 
-### WebSocket vs REST API 연결 패턴
+### REST API vs WebSocket
+
+REST API는 각 요청마다 새로운 TCP 연결을 설정하거나, keep-alive를 사용하더라도 요청/응답 패턴으로 인한 오버헤드가 있습니다.
+물론 기존 HTTP/1.1 프로토콜에서는 이러한 오버헤드를 HTTP/2.0 프로토콜로 개선할 수 있습니다.
 
 **REST API (HTTP/1.1)의 연결 패턴:**
 1. TCP 연결 설정 (3-way handshake)
@@ -245,14 +315,14 @@ ws.on("message", async (message) => {
 3. HTTP 응답 수신
 4. 연결 종료 또는 유지
 
-각 요청마다 최소 1번의 왕복 시간(RTT)이 필요하며, 헤더 중복과 같은 오버헤드가 발생합니다. HTTP/2를 사용하면 이러한 오버헤드를 줄일 수 있지만, 요청/응답 패턴의 근본적인 한계는 여전히 존재합니다.
+이러한 패턴은 각 요청마다 최소 1번의 왕복 시간(RTT)이 필요하며, 헤더 중복과 같은 오버헤드가 발생합니다.
 
 **WebSocket의 연결 패턴:**
 1. 초기 TCP 연결 및 WebSocket 핸드셰이크 (한 번만 수행)
 2. 양방향 메시지 교환 (별도의 연결 설정 없음)
 3. 세션 종료 시 연결 종료
 
-### Protocol Buffers vs JSON 크기 비교
+### JSON vs Protocol Buffers
 
 동일한 정보를 표현할 때, Protocol Buffers는 JSON보다 훨씬 효율적입니다.
 
@@ -268,12 +338,12 @@ ws.on("message", async (message) => {
 }
 ```
 
-**Protocol Buffers 형식 (약 167 바이트):**
+**Protocol Buffers 형식 (167 바이트):**
 ```
-0A 06 75 73 65 72 31 32 33 12 07 72 6F 6F 6D 34 35 36 1A 24 48 65 6C 6C 6F 2C ...
+0A 06 75 73 65 72 31 32 33 12 07 72 6F 6F 6D 34 35 36 1A 24 48 65 6C 6C 6F 2C 20 68 6F 77 20 69 73 20 65 76 65 72 79 6F 6E 65 20 64 6F 69 6E 67 20 74 6F 64 61 79 3F 20 DD DF 97 B8 9E 06 2A 06 6D 73 67 37 38 39
 ```
 
-Protocol Buffers가 크기를 줄이는 방식:
+Protocol Buffers가 어떻게 크기를 줄이는지 자세히 살펴보면
 
 1. **필드 태그 사용**: 문자열 키 대신 숫자 태그를 사용합니다.
    - "userId"(7바이트) → 필드 번호 1(1바이트)
@@ -286,15 +356,15 @@ Protocol Buffers가 크기를 줄이는 방식:
    - "user123" → 길이(1바이트) + 데이터(6바이트)
 
 4. **불필요한 구문 생략**: JSON의 따옴표, 콜론, 중괄호, 쉼표 등을 생략합니다.
-   - JSON 구문 오버헤드(약 40바이트) → 없음(0바이트)
+   - JSON 구문 오버헤드(~40바이트) → 없음(0바이트)
 
-### Protocol Buffers의 추가 장점
+## Protocol Buffers의 장점
 
 Protocol Buffers는 단순한 바이너리 직렬화(예: MessagePack, BSON)와 비교해도 여러 가지 중요한 장점을 제공합니다.
 
-**스키마 기반 설계**
+### 1. 스키마 기반 설계
 
-Protocol Buffers는 명확하게 정의된 스키마를 사용합니다:
+Protocol Buffers는 명확하게 정의된 스키마를 사용합니다.
 
 ```protobuf
 message Person {
@@ -304,55 +374,39 @@ message Person {
 }
 ```
 
-이 스키마는 데이터 구조를 명확하게 문서화하고, 타입 안전성을 보장하며, 코드 생성을 통한 개발 편의성을 제공하고, 버전 관리를 용이하게 합니다.
+이 스키마는
+- 데이터 구조를 명확하게 문서화
+- 타입 안전성 보장
+- 코드 생성을 통한 개발 편의성 제공
+- 버전 관리 용이성
 
-**효율적인 인코딩 전략**
+일반적인 바이너리 직렬화는 스키마가 없거나 덜 명시적이어서 타입 오류와 버전 호환성 문제가 발생하기 쉽습니다.
+
+### 2. 효율적인 인코딩 전략
+
+Protocol Buffers는 최적화된 인코딩 전략을 사용합니다
 
 - **필드 번호 체계**: 필드명 대신 숫자를 사용하여 공간을 절약합니다.
 - **가변 길이 정수(Varint)**: 작은 숫자는 적은 바이트를 사용합니다.
   - 1~127 범위의 숫자: 1바이트
   - 128~16383 범위의 숫자: 2바이트
-  - 예: 숫자 300은 JSON에서 3바이트이지만, Protocol Buffers에서는 2바이트로 인코딩됩니다.
+  
+  예시: 숫자 300은 JSON에서 3바이트(`300`)이지만, Protocol Buffers에서는 2바이트(`AC 02`)로 인코딩됩니다.
 
-**하위 호환성 보장**
+### 3. 하위 호환성 보장
 
 Protocol Buffers는 처음부터 하위 호환성을 고려한 설계를 가지고 있습니다:
 
-- 새로운 필드를 추가해도 기존 클라이언트는 해당 필드를 무시하고 계속 작동합니다.
-- 필드 번호는 한 번 할당되면 변경하지 않는 규칙이 있습니다.
-- 선택적 필드와 필수 필드의 개념을 지원합니다.
+- 새로운 필드를 추가해도 기존 클라이언트는 해당 필드를 무시하고 계속 작동
+- 필드 번호는 한 번 할당되면 변경하지 않는 규칙
+- 선택적 필드와 필수 필드의 개념
 
 이러한 특성은 API 버전 관리가 복잡한 대규모 시스템에서 특히 중요합니다.
 
-## 결론 및 적용 고려사항
+## 마치며
 
-REST API의 한계를 극복하기 위해 WebSocket을 통신 채널로, Protocol Buffers를 데이터 형식으로 사용하는 아키텍처를 설계하고 테스트했습니다.
+REST API의 한계를 극복하기 위해 웹소켓을 통신 채널로, Protocol Buffers를 데이터 형식으로 사용하는 새로운 아키텍처를 테스트해보았습니다.  
 
-### 핵심 결론
+슬랙과 같이 데이터가 자주 변경되는 환경에서는 이 아키텍처가 더 나은 성능을 보여줄 수 있는 것이 검증되었으므로 상황에 따라 좋은 전략이 되리라 생각합니다.  
 
-Slack과 같이 실시간 데이터 동기화가 중요한 협업 도구에서는 이 아키텍처가 더 나은 성능을 제공할 수 있습니다. 특히 다음과 같은 환경에서 효과적입니다:
-
-- 빈번한 작은 크기의 메시지 교환이 필요한 경우
-- 실시간 양방향 통신이 필수적인 경우
-- 네트워크 대역폭을 최적화해야 하는 경우
-
-### 적용 시 고려사항
-
-이 아키텍처를 실제 프로젝트에 적용할 때 다음 사항을 고려해야 합니다:
-
-**초기 개발 비용**: Protocol Buffers 스키마 정의와 코드 생성 과정이 필요하므로, 초기 개발 비용이 증가할 수 있습니다.
-
-**디버깅 복잡도**: 바이너리 데이터는 사람이 읽을 수 없어 디버깅이 어려울 수 있습니다. 적절한 로깅과 모니터링 도구가 필요합니다.
-
-**브라우저 호환성**: WebSocket은 대부분의 현대 브라우저에서 지원되지만, 오래된 브라우저에서는 폴백 메커니즘이 필요할 수 있습니다.
-
-**연결 관리**: WebSocket 연결의 재연결, 타임아웃, 에러 처리 등을 적절히 구현해야 합니다.
-
-### 다음 단계
-
-테스트 프로젝트의 전체 코드는 [GitHub](https://github.com/load28/websocket-with-grpc)에서 확인할 수 있습니다. 실제 프로젝트에 적용하기 전에 다음 사항을 추가로 고려하는 것을 권장합니다:
-
-- 인증 및 권한 관리 메커니즘 추가
-- 메시지 큐잉 및 재전송 로직 구현
-- 모니터링 및 로깅 시스템 구축
-- 부하 테스트를 통한 성능 검증
+테스트 프로젝트는 [깃허브](https://github.com/load28/websocket-with-grpc)에서 확인할 수 있습니다.

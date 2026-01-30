@@ -1,145 +1,13 @@
 ---
-title: 'Rust 동시성 타입: Send와 Sync로 보장하는 스레드 안전성'
-description: 'Rust의 소유권 시스템과 타입 시스템을 활용한 컴파일 타임 동시성 안전성 보장 메커니즘 완벽 분석'
-date: '2024-11-19T12:19:00Z'
-tags: ['rust', 'concurrency', 'thread-safety', 'ownership']
+title: 'Understanding Concurrency Types in Rust'
+description: 'Exploring the concurrency types in Rust'
+date: '2024-11-19:12:19Z'
+tags: ['rust']
 ---
-
-## Rust 동시성의 철학: Fearless Concurrency
-
-Rust는 "Fearless Concurrency"라는 슬로건 아래 **컴파일 타임에 동시성 버그를 방지**하는 독특한 접근 방식을 취합니다. 대부분의 언어가 런타임에 동시성 문제를 감지하는 것과 달리, Rust는 타입 시스템과 소유권 시스템을 통해 데이터 레이스를 컴파일 단계에서 차단합니다.
-
-### 전통적인 동시성 문제
-
-다른 언어에서 흔히 발생하는 동시성 버그들:
-
-```cpp
-// C++: 데이터 레이스 발생 가능
-std::vector<int> data;
-
-std::thread t1([&data]() {
-    data.push_back(1); // 동시 접근으로 크래시 가능
-});
-
-std::thread t2([&data]() {
-    data.push_back(2); // 동시 접근으로 크래시 가능
-});
-```
-
-```java
-// Java: 동기화 누락으로 가시성 문제 발생
-public class Counter {
-    private int count = 0; // volatile 누락
-
-    public void increment() {
-        count++; // 원자적이지 않음
-    }
-}
-```
-
-### Rust의 접근 방식: 컴파일 타임 보장
-
-```rust
-let mut data = vec![1, 2, 3];
-
-// 컴파일 에러: 여러 스레드에서 가변 참조 불가능
-std::thread::spawn(|| {
-    data.push(4); // Error: `data`의 소유권이 없음
-});
-
-std::thread::spawn(|| {
-    data.push(5); // Error: 동시 가변 참조 불가능
-});
-```
-
-Rust 컴파일러가 제공하는 에러 메시지:
-```
-error[E0373]: closure may outlive the current function, but it borrows `data`
-error[E0499]: cannot borrow `data` as mutable more than once at a time
-```
-
-## 핵심 개념: Send와 Sync 트레잇
-
-Rust의 동시성 안전성은 두 가지 마커 트레잇으로 구현됩니다.
-
-### Send: 스레드 간 소유권 이동
-
-`Send` 트레잇은 타입이 **다른 스레드로 안전하게 이동될 수 있음**을 표시합니다.
-
-```rust
-// Send가 구현된 타입
-fn send_example() {
-    let data = vec![1, 2, 3]; // Vec<T>는 Send
-
-    std::thread::spawn(move || {
-        println!("{:?}", data); // 소유권이 스레드로 이동
-    });
-
-    // println!("{:?}", data); // Error: 소유권이 이동됨
-}
-```
-
-**Send가 자동으로 구현되는 타입들:**
-- 모든 기본 타입 (`i32`, `f64`, `bool` 등)
-- `String`, `Vec<T>` (T가 Send일 때)
-- `Box<T>`, `Arc<T>` (T가 Send일 때)
-
-**Send가 구현되지 않는 타입들:**
-- `Rc<T>`: 비원자적 참조 카운팅으로 스레드 안전하지 않음
-- `*const T`, `*mut T`: 원시 포인터는 안전성을 보장할 수 없음
-- `MutexGuard<T>`: 락이 획득된 스레드에서만 해제되어야 함
-
-### Sync: 스레드 간 참조 공유
-
-`Sync` 트레잇은 타입이 **여러 스레드에서 불변 참조로 안전하게 공유될 수 있음**을 표시합니다.
-
-**정의:** `T`가 `Sync`이면 `&T`가 `Send`입니다.
-
-```rust
-use std::sync::Arc;
-
-// Sync가 구현된 타입
-fn sync_example() {
-    let data = Arc::new(vec![1, 2, 3]); // Arc<Vec<i32>>는 Sync
-
-    let data1 = Arc::clone(&data);
-    let data2 = Arc::clone(&data);
-
-    std::thread::spawn(move || {
-        println!("{:?}", data1); // 불변 참조 공유
-    });
-
-    std::thread::spawn(move || {
-        println!("{:?}", data2); // 불변 참조 공유
-    });
-}
-```
-
-**Sync가 자동으로 구현되는 타입들:**
-- 불변 타입 (`i32`, `String`, `Vec<T>` 등)
-- `Arc<T>` (T가 Sync일 때)
-- `Mutex<T>`, `RwLock<T>` (T가 Send일 때)
-
-**Sync가 구현되지 않는 타입들:**
-- `RefCell<T>`: 런타임 대여 검사가 스레드 안전하지 않음
-- `Rc<T>`: 비원자적 참조 카운팅
-- `Cell<T>`: 내부 가변성이 스레드 안전하지 않음
-
-### Send와 Sync의 관계
-
-| 타입 조합 | Send | Sync | 설명 |
-|---------|------|------|------|
-| `T` | O | O | 대부분의 불변 타입 |
-| `&T` where T: Sync | O | - | Sync 타입의 참조 |
-| `&mut T` where T: Send | O | X | 가변 참조는 Sync 불가 |
-| `Rc<T>` | X | X | 단일 스레드 전용 |
-| `Arc<T>` where T: Sync + Send | O | O | 스레드 간 공유 가능 |
-| `Mutex<T>` where T: Send | O | O | 내부 가변성 + 동기화 |
-| `RefCell<T>` | O | X | 단일 스레드 내부 가변성 |
 
 ## 동시성 타입 비교
 
-러스트는 안전한 동시성 처리를 위해 다양한 타입을 제공합니다. 각 타입은 특정 상황에 최적화되어 있습니다.
+러스트는 안전한 동시성 처리를 위해 다양한 타입을 제공합니다. 각 타입은 특정 상황에 최적화되어 있으며, 다음과 같은 주요 타입들이 있습니다.
 
 | 특징           | RefCell\<T>                  | Rc\<T>                       | Mutex\<T>               | Arc\<T>                          |
 | -------------- | ---------------------------- | ---------------------------- | ----------------------- | -------------------------------- |
@@ -147,66 +15,42 @@ fn sync_example() {
 | 소유권 관리    | 단일 소유권                  | 다중 소유권 (참조 카운팅)    | 단일 소유권             | 다중 소유권 (원자적 참조 카운팅) |
 | 접근 방식      | borrow()/borrow_mut()        | clone()                      | lock()                  | clone()                          |
 | 스레드 안전성  | 단일 스레드만                | 단일 스레드만                | 다중 스레드 안전        | 다중 스레드 안전                 |
-| Send 구현      | O                            | X                            | O (T: Send)             | O (T: Send + Sync)               |
-| Sync 구현      | X                            | X                            | O (T: Send)             | O (T: Send + Sync)               |
 | 안전성 검사    | 런타임 대여 규칙             | 컴파일 타임                  | 락 기반 동기화          | 원자적 연산                      |
 | 메모리 관리    | 일반 해제                    | 참조 카운트 0 시 해제        | 일반 해제               | 원자적 참조 카운트 0 시 해제     |
 | 주요 사용 사례 | 단일 스레드 가변 데이터      | 단일 스레드 공유 데이터      | 멀티스레드 가변 데이터  | 멀티스레드 공유 데이터           |
 | 성능 특성      | 런타임 검사 오버헤드         | 가벼운 참조 카운팅           | 락 획득/해제 오버헤드   | 원자적 연산 오버헤드             |
 
-## 싱글스레드 환경: Rc와 RefCell
+## 실행 환경별 타입 선택
 
-### Rc\<T>: 단일 스레드 참조 카운팅
+### 싱글스레드 환경
 
-`Rc` (Reference Counted)는 **비원자적 참조 카운팅**을 사용하여 단일 스레드에서 다중 소유권을 제공합니다.
+싱글스레드 환경에서는 `Rc<T>`와 `RefCell<T>`의 조합이 주로 사용됩니다.
 
-#### 내부 구조
-
-```rust
-// Rc의 내부 구조 (단순화)
-struct RcBox<T> {
-    strong: Cell<usize>,  // 비원자적 카운터
-    weak: Cell<usize>,
-    value: T,
-}
-
-pub struct Rc<T> {
-    ptr: NonNull<RcBox<T>>,
-    phantom: PhantomData<RcBox<T>>,
-}
-```
-
-**왜 Send/Sync가 아닌가?**
-- `Cell<usize>`는 원자적이지 않아 여러 스레드에서 동시에 증감하면 데이터 레이스 발생
-- 컴파일러가 `Rc<T>`를 다른 스레드로 이동하거나 공유하는 것을 차단
-
-#### 기본적인 가변 데이터 공유
+#### 1. 기본적인 가변 데이터 공유
 
 ```rust
 use std::rc::Rc;
 use std::cell::RefCell;
 
 fn main() {
-    // RefCell로 내부 가변성 제공
+    // 기본적인 가변 데이터 공유 예시
     let data = Rc::new(RefCell::new(vec![1, 2, 3]));
     let data_clone = Rc::clone(&data);
 
     // RefCell을 통한 가변 접근
     data.borrow_mut().push(4);
-    println!("원본 데이터: {:?}", data.borrow()); // [1, 2, 3, 4]
+    println!("원본 데이터: {:?}", data.borrow());
 
     // 복제된 참조를 통한 접근
     data_clone.borrow_mut().push(5);
-    println!("수정된 데이터: {:?}", data.borrow()); // [1, 2, 3, 4, 5]
+    println!("수정된 데이터: {:?}", data.borrow());
 
     // Rc의 강한 참조 수 확인
-    println!("참조 카운트: {}", Rc::strong_count(&data)); // 2
+    println!("참조 카운트: {}", Rc::strong_count(&data));
 }
 ```
 
-#### 순환 참조 구조와 Weak 참조
-
-순환 참조는 메모리 누수를 발생시킵니다. `Weak<T>`로 해결할 수 있습니다.
+#### 2. 순환 참조 구조와 해결 방법
 
 ```rust
 use std::rc::{Rc, Weak};
@@ -214,7 +58,7 @@ use std::cell::RefCell;
 
 struct Node {
     next: Option<Rc<RefCell<Node>>>,
-    prev: Option<Weak<RefCell<Node>>>, // Weak 참조로 순환 방지
+    prev: Option<Weak<RefCell<Node>>>, // Weak 참조 사용
     value: i32,
 }
 
@@ -229,6 +73,7 @@ impl Node {
 }
 
 fn main() {
+    // 노드 생성
     let first = Node::new(1);
     let second = Node::new(2);
 
@@ -237,7 +82,7 @@ fn main() {
         let mut first_ref = first.borrow_mut();
         let mut second_ref = second.borrow_mut();
 
-        // first -> second (강한 참조)
+        // first -> second
         first_ref.next = Some(Rc::clone(&second));
         // second -> first (약한 참조)
         second_ref.prev = Some(Rc::downgrade(&first));
@@ -247,48 +92,11 @@ fn main() {
     println!("첫 번째 노드: {}", first.borrow().value);
     if let Some(next) = &first.borrow().next {
         println!("두 번째 노드: {}", next.borrow().value);
-
-        // 이전 노드 확인
-        if let Some(prev_weak) = &next.borrow().prev {
-            if let Some(prev) = prev_weak.upgrade() {
-                println!("이전 노드: {}", prev.borrow().value);
-            }
-        }
     }
-
-    println!("first strong count: {}", Rc::strong_count(&first)); // 1
-    println!("second strong count: {}", Rc::strong_count(&second)); // 2
 }
 ```
 
-**Weak 참조의 동작:**
-- `Rc::downgrade()`: 강한 참조 → 약한 참조
-- `Weak::upgrade()`: 약한 참조 → `Option<Rc<T>>` (대상이 살아있으면 Some)
-- 약한 참조는 참조 카운트를 증가시키지 않아 순환 참조 방지
-
-### RefCell\<T>: 런타임 대여 규칙 검사
-
-`RefCell`은 **컴파일 타임 대신 런타임에 대여 규칙을 검사**합니다.
-
-#### 대여 규칙 복습
-
-```rust
-// 컴파일 타임 규칙 (일반 참조)
-let mut x = 5;
-let r1 = &x;     // OK: 불변 참조
-let r2 = &x;     // OK: 여러 불변 참조 가능
-// let r3 = &mut x; // Error: 불변 참조가 존재하는 동안 가변 참조 불가
-
-// 런타임 규칙 (RefCell)
-use std::cell::RefCell;
-
-let x = RefCell::new(5);
-let r1 = x.borrow();     // OK
-let r2 = x.borrow();     // OK
-// let r3 = x.borrow_mut(); // Panic! 불변 참조가 존재하는 동안 가변 참조 불가
-```
-
-#### 복잡한 데이터 구조 예제
+#### 3. 복잡한 데이터 구조
 
 ```rust
 use std::rc::Rc;
@@ -319,26 +127,16 @@ impl Document {
     fn get_history(&self) -> Vec<String> {
         self.revisions.clone()
     }
-
-    fn rollback(&mut self) -> Result<(), &'static str> {
-        if let Some(prev_content) = self.revisions.pop() {
-            self.content = prev_content;
-            self.version -= 1;
-            Ok(())
-        } else {
-            Err("No revisions to rollback")
-        }
-    }
 }
 
 fn main() {
     let doc = Document::new("초기 내용");
 
-    // 문서 수정 (스코프로 대여 명확히 종료)
+    // 문서 수정
     {
         let mut doc_mut = doc.borrow_mut();
         doc_mut.update_content("첫 번째 수정");
-    } // borrow_mut 해제
+    }
 
     {
         let mut doc_mut = doc.borrow_mut();
@@ -350,53 +148,21 @@ fn main() {
     println!("현재 내용: {}", doc_ref.content);
     println!("버전: {}", doc_ref.version);
     println!("수정 이력: {:?}", doc_ref.get_history());
-    drop(doc_ref); // 명시적 해제
-
-    // 롤백
-    {
-        let mut doc_mut = doc.borrow_mut();
-        doc_mut.rollback().unwrap();
-    }
-
-    println!("롤백 후: {}", doc.borrow().content);
 }
 ```
 
 **주의사항:**
 
-- `RefCell`의 런타임 검사는 성능에 영향을 줄 수 있습니다 (약 10-20% 오버헤드)
-- 중첩된 `borrow_mut()` 호출은 패닉을 일으킵니다
-- 순환 참조는 메모리 누수의 원인이 되므로 `Weak<T>` 사용 필수
-- `borrow()`와 `borrow_mut()`의 반환값은 스코프가 끝나면 자동 해제됨
+- `RefCell`의 런타임 검사는 성능에 영향을 줄 수 있습니다.
+- 중첩된 `borrow_mut()` 호출은 패닉을 일으킬 수 있습니다.
+- 순환 참조는 메모리 누수의 원인이 될 수 있으므로 주의해야 합니다.
+- `Weak<T>`를 사용하여 순환 참조 문제를 해결할 수 있습니다.
 
-## 멀티스레드 환경: Arc와 Mutex
+### 멀티스레드 환경
 
-### Arc\<T>: 원자적 참조 카운팅
+멀티스레드 환경에서는 `Arc<T>`와 `Mutex<T>`의 조합이 필요합니다.
 
-`Arc` (Atomic Reference Counted)는 **원자적 연산**을 사용하여 멀티스레드에서 안전한 다중 소유권을 제공합니다.
-
-#### 내부 구조
-
-```rust
-// Arc의 내부 구조 (단순화)
-struct ArcInner<T> {
-    strong: AtomicUsize,  // 원자적 카운터
-    weak: AtomicUsize,
-    data: T,
-}
-
-pub struct Arc<T> {
-    ptr: NonNull<ArcInner<T>>,
-    phantom: PhantomData<ArcInner<T>>,
-}
-```
-
-**Rc vs Arc 성능 차이:**
-- `Rc`: 일반 정수 연산 (`usize += 1`)
-- `Arc`: 원자적 연산 (`fetch_add(1, Ordering::SeqCst)`)
-- `Arc`는 약 2-3배 느리지만 멀티스레드 안전성 보장
-
-#### 기본적인 스레드 간 데이터 공유
+#### 1. 기본적인 스레드 간 데이터 공유
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -415,7 +181,7 @@ fn main() {
             let mut data = data_clone.lock().unwrap();
             data.push(i + 4);
             println!("스레드 {}: {:?}", i, *data);
-        }); // lock() 스코프 종료로 자동 해제
+        });
         handles.push(handle);
     }
 
@@ -429,28 +195,7 @@ fn main() {
 }
 ```
 
-### Mutex\<T>: 상호 배제 락
-
-`Mutex` (Mutual Exclusion)는 한 번에 하나의 스레드만 데이터에 접근할 수 있도록 보장합니다.
-
-#### 내부 동작 원리
-
-```rust
-// Mutex의 내부 구조 (단순화)
-pub struct Mutex<T> {
-    inner: sys::Mutex,  // OS 레벨 락 (pthread_mutex_t 등)
-    poison: Flag,       // 패닉 발생 시 오염 표시
-    data: UnsafeCell<T>, // 내부 가변성
-}
-```
-
-**락 획득 과정:**
-1. `lock()` 호출 → OS 레벨 락 획득 시도
-2. 락이 이미 획득됨 → 현재 스레드 블로킹
-3. 락 획득 성공 → `MutexGuard<T>` 반환
-4. 스코프 종료 → `MutexGuard` Drop → 락 자동 해제
-
-#### 복잡한 동시성 시나리오
+#### 2. 복잡한 동시성 시나리오
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -470,25 +215,25 @@ fn main() {
     }));
 
     // 읽기 스레드
-    let state_reader = Arc::clone(&state);
+    let state_clone = Arc::clone(&state);
     let reader = thread::spawn(move || {
         for _ in 0..5 {
             {
-                let state = state_reader.lock().unwrap();
+                let state = state_clone.lock().unwrap();
                 if !state.messages.is_empty() {
                     println!("읽기: {:?}", state.messages);
                 }
-            } // 락 자동 해제 (중요!)
+            } // 락 자동 해제
             thread::sleep(Duration::from_millis(100));
         }
     });
 
     // 쓰기 스레드
-    let state_writer = Arc::clone(&state);
+    let state_clone = Arc::clone(&state);
     let writer = thread::spawn(move || {
         for i in 0..5 {
             {
-                let mut state = state_writer.lock().unwrap();
+                let mut state = state_clone.lock().unwrap();
                 state.counter += 1;
                 state.messages.push(format!("메시지 {}", i));
                 println!("쓰기: 카운터 = {}", state.counter);
@@ -507,503 +252,50 @@ fn main() {
 }
 ```
 
-### RwLock\<T>: 읽기-쓰기 락
+**주의사항:**
 
-여러 읽기 또는 하나의 쓰기만 허용하는 락입니다.
+- `Mutex` 락은 가능한 짧게 유지해야 합니다.
+- 데드락을 피하기 위해 락 획득 순서를 일관되게 유지해야 합니다.
+- `lock()` 호출 실패 처리를 항상 고려해야 합니다.
+- 긴 작업은 락 밖에서 수행하는 것이 좋습니다.
 
-```rust
-use std::sync::{Arc, RwLock};
-use std::thread;
+## 동시성 패턴과 사용 사례
 
-fn main() {
-    let data = Arc::new(RwLock::new(vec![1, 2, 3]));
-    let mut handles = vec![];
-
-    // 여러 읽기 스레드 (동시 실행 가능)
-    for i in 0..5 {
-        let data = Arc::clone(&data);
-        handles.push(thread::spawn(move || {
-            let read_guard = data.read().unwrap();
-            println!("읽기 {}: {:?}", i, *read_guard);
-        }));
-    }
-
-    // 쓰기 스레드 (독점 접근)
-    let data_writer = Arc::clone(&data);
-    handles.push(thread::spawn(move || {
-        let mut write_guard = data_writer.write().unwrap();
-        write_guard.push(99);
-        println!("쓰기 완료: {:?}", *write_guard);
-    }));
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
-}
-```
-
-**Mutex vs RwLock 선택 기준:**
-
-| 특징 | Mutex | RwLock |
-|------|-------|--------|
-| 읽기 동시성 | X | O |
-| 쓰기 독점성 | O | O |
-| 오버헤드 | 낮음 | 중간 (읽기-쓰기 구분) |
-| 사용 사례 | 짧은 크리티컬 섹션 | 읽기가 많고 쓰기가 적음 |
-
-## 고급 동시성 패턴
-
-### 채널을 통한 메시지 전달
-
-```rust
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
-
-fn main() {
-    let (tx, rx) = mpsc::channel();
-
-    // 여러 생산자
-    for i in 0..3 {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let msg = format!("메시지 {}", i);
-            tx.send(msg).unwrap();
-            thread::sleep(Duration::from_millis(100));
-        });
-    }
-    drop(tx); // 원본 송신자 드롭
-
-    // 단일 소비자
-    for received in rx {
-        println!("수신: {}", received);
-    }
-}
-```
-
-### 생산자-소비자 패턴 (Bounded Channel)
-
-```rust
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
-
-fn main() {
-    let (tx, rx) = mpsc::sync_channel(2); // 버퍼 크기 2
-
-    // 생산자
-    let producer = thread::spawn(move || {
-        for i in 0..5 {
-            println!("생성: {}", i);
-            tx.send(i).unwrap(); // 버퍼가 가득 차면 블로킹
-            thread::sleep(Duration::from_millis(50));
-        }
-    });
-
-    // 소비자 (느린 처리)
-    let consumer = thread::spawn(move || {
-        for received in rx {
-            println!("소비: {}", received);
-            thread::sleep(Duration::from_millis(200)); // 느린 처리
-        }
-    });
-
-    producer.join().unwrap();
-    consumer.join().unwrap();
-}
-```
-
-### 원자적 타입 (Atomics)
-
-락 없이 원자적 연산을 수행합니다.
-
-```rust
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::thread;
-
-fn main() {
-    let counter = Arc::new(AtomicUsize::new(0));
-    let mut handles = vec![];
-
-    for _ in 0..10 {
-        let counter = Arc::clone(&counter);
-        handles.push(thread::spawn(move || {
-            for _ in 0..1000 {
-                counter.fetch_add(1, Ordering::SeqCst);
-            }
-        }));
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
-    println!("최종 카운터: {}", counter.load(Ordering::SeqCst)); // 10000
-}
-```
-
-**Ordering 옵션:**
-
-| Ordering | 설명 | 사용 사례 |
-|----------|------|-----------|
-| `Relaxed` | 최소 보장, 순서 보장 없음 | 단순 카운터 |
-| `Acquire` | 이후 읽기/쓰기가 재배치되지 않음 | 락 획득 |
-| `Release` | 이전 읽기/쓰기가 재배치되지 않음 | 락 해제 |
-| `AcqRel` | Acquire + Release | 읽기-수정-쓰기 |
-| `SeqCst` | 순차 일관성, 가장 강력 | 기본 선택 |
-
-## 다른 언어와의 비교
-
-### Go의 고루틴 vs Rust 스레드
-
-**Go:**
-```go
-// Go: 채널과 고루틴
-ch := make(chan int)
-go func() {
-    ch <- 42 // 타입 안전하지만 데이터 레이스 가능
-}()
-value := <-ch
-```
-
-**Rust:**
-```rust
-// Rust: 채널과 스레드
-use std::sync::mpsc;
-let (tx, rx) = mpsc::channel();
-std::thread::spawn(move || {
-    tx.send(42).unwrap(); // 컴파일 타임 안전성
-});
-let value = rx.recv().unwrap();
-```
-
-**차이점:**
-- Go: 런타임 스케줄러, 경량 고루틴 (2KB 스택)
-- Rust: OS 스레드, 무거움 (8MB 스택) → 하지만 안전성 보장
-
-### Java의 동시성 vs Rust
-
-**Java:**
-```java
-// Java: synchronized 또는 Lock
-public class Counter {
-    private int count = 0;
-
-    public synchronized void increment() {
-        count++; // 런타임 동기화
-    }
-}
-```
-
-**Rust:**
-```rust
-// Rust: Mutex<T>
-use std::sync::Mutex;
-
-struct Counter {
-    count: Mutex<i32>, // 컴파일 타임 강제
-}
-
-impl Counter {
-    fn increment(&self) {
-        let mut count = self.count.lock().unwrap();
-        *count += 1;
-    }
-}
-```
-
-**차이점:**
-- Java: `synchronized` 누락 시 런타임 버그
-- Rust: `Mutex` 없이 접근 불가능 (컴파일 에러)
-
-### C++의 std::mutex vs Rust
-
-**C++:**
-```cpp
-// C++: 수동 락 관리
-std::mutex mtx;
-int data = 0;
-
-{
-    std::lock_guard<std::mutex> lock(mtx);
-    data++; // 보호됨
-}
-// data++; // 보호되지 않음 (컴파일러가 체크 안 함)
-```
-
-**Rust:**
-```rust
-// Rust: 타입 시스템으로 강제
-use std::sync::Mutex;
-let data = Mutex::new(0);
-
-{
-    let mut guard = data.lock().unwrap();
-    *guard += 1; // 보호됨
-}
-// data += 1; // Error: Mutex 없이 접근 불가능
-```
-
-**차이점:**
-- C++: 락과 데이터가 분리되어 실수 가능
-- Rust: `Mutex<T>`가 데이터를 감싸서 락 없이 접근 불가능
-
-## 성능 최적화 전략
-
-### 락 경합 최소화
-
-**나쁜 예: 락을 오래 유지**
-```rust
-let state = Arc::new(Mutex::new(State::new()));
-
-// 나쁨: 긴 작업 동안 락 유지
-let mut data = state.lock().unwrap();
-data.update();
-expensive_computation(); // 락을 유지한 채로 무거운 작업
-data.finalize();
-```
-
-**좋은 예: 락을 짧게 유지**
-```rust
-let state = Arc::new(Mutex::new(State::new()));
-
-// 좋음: 필요한 부분만 락
-{
-    let mut data = state.lock().unwrap();
-    data.update();
-} // 락 해제
-
-expensive_computation(); // 락 없이 작업
-
-{
-    let mut data = state.lock().unwrap();
-    data.finalize();
-}
-```
-
-### 세밀한 락 범위 (Fine-Grained Locking)
-
-```rust
-// 나쁨: 전체 구조체를 하나의 Mutex로 보호
-struct CoarseGrained {
-    data: Arc<Mutex<(Vec<i32>, HashMap<String, i32>)>>,
-}
-
-// 좋음: 독립적인 데이터는 별도 Mutex
-struct FineGrained {
-    vec_data: Arc<Mutex<Vec<i32>>>,
-    map_data: Arc<Mutex<HashMap<String, i32>>>,
-}
-```
-
-### Lock-Free 알고리즘
-
-```rust
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-// Compare-and-Swap을 사용한 락 없는 카운터
-fn increment_lock_free(counter: &AtomicUsize) {
-    let mut current = counter.load(Ordering::Relaxed);
-    loop {
-        match counter.compare_exchange_weak(
-            current,
-            current + 1,
-            Ordering::SeqCst,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => break,
-            Err(x) => current = x,
-        }
-    }
-}
-```
-
-## 베스트 프랙티스
-
-### 1. 타입 시스템 활용
-
-```rust
-// 좋음: 타입으로 스레드 안전성 표현
-struct ThreadSafe<T: Send + Sync> {
-    data: Arc<Mutex<T>>,
-}
-
-// 나쁨: 문서에만 의존
-// "주의: 이 타입은 스레드 안전하지 않습니다"
-struct NotSafe {
-    data: Rc<RefCell<i32>>,
-}
-```
-
-### 2. 스코프로 락 관리
-
-```rust
-// 좋음: 스코프로 락 수명 명확화
-{
-    let data = mutex.lock().unwrap();
-    process(&*data);
-} // 자동 해제
-
-// 나쁨: 명시적 drop 필요
-let data = mutex.lock().unwrap();
-process(&*data);
-drop(data); // 수동 해제
-```
-
-### 3. Poisoned Lock 처리
+### 생산자-소비자 패턴
 
 ```rust
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-let data = Arc::new(Mutex::new(0));
-let data_clone = Arc::clone(&data);
+let queue = Arc::new(Mutex::new(Vec::new()));
+let queue_clone = Arc::clone(&queue);
 
-let handle = thread::spawn(move || {
-    let mut data = data_clone.lock().unwrap();
-    *data += 1;
-    panic!("스레드 패닉!"); // Mutex 오염
+// 생산자 스레드
+let producer = thread::spawn(move || {
+    let mut queue = queue_clone.lock().unwrap();
+    queue.push(1);
 });
 
-let _ = handle.join();
-
-// Poisoned lock 처리
-match data.lock() {
-    Ok(guard) => println!("데이터: {}", *guard),
-    Err(poisoned) => {
-        let guard = poisoned.into_inner(); // 복구
-        println!("오염된 데이터: {}", *guard);
+// 소비자 스레드
+let consumer = thread::spawn(move || {
+    let mut queue = queue.lock().unwrap();
+    if let Some(item) = queue.pop() {
+        println!("처리된 아이템: {}", item);
     }
-}
-```
-
-### 4. 데드락 방지
-
-```rust
-// 나쁨: 데드락 가능성
-let mutex1 = Arc::new(Mutex::new(0));
-let mutex2 = Arc::new(Mutex::new(0));
-
-// 스레드 1: mutex1 → mutex2
-let m1 = Arc::clone(&mutex1);
-let m2 = Arc::clone(&mutex2);
-thread::spawn(move || {
-    let _g1 = m1.lock().unwrap();
-    let _g2 = m2.lock().unwrap(); // 데드락!
-});
-
-// 스레드 2: mutex2 → mutex1
-thread::spawn(move || {
-    let _g2 = mutex2.lock().unwrap();
-    let _g1 = mutex1.lock().unwrap(); // 데드락!
-});
-
-// 좋음: 일관된 락 순서
-// 항상 mutex1 먼저, mutex2 나중에
-```
-
-## 트러블슈팅 가이드
-
-### 문제 1: "cannot be sent between threads safely"
-
-**에러:**
-```
-error[E0277]: `Rc<RefCell<i32>>` cannot be sent between threads safely
-```
-
-**원인:** `Rc`나 `RefCell`을 스레드 간 전달 시도
-
-**해결:**
-```rust
-// 나쁨
-let data = Rc::new(RefCell::new(0));
-thread::spawn(move || { // Error!
-    data.borrow_mut();
-});
-
-// 좋음
-let data = Arc::new(Mutex::new(0));
-thread::spawn(move || {
-    let mut guard = data.lock().unwrap();
-    *guard += 1;
 });
 ```
 
-### 문제 2: "already borrowed: BorrowMutError"
+## 성능 고려사항
 
-**에러:**
-```
-thread 'main' panicked at 'already borrowed: BorrowMutError'
-```
+### 락 경합 최소화
 
-**원인:** `RefCell`에서 불변 참조가 살아있는 동안 가변 참조 시도
+- 락 보유 시간 최소화
+- 세밀한 락 범위 설정
+- 필요한 경우에만 락 사용
 
-**해결:**
-```rust
-use std::cell::RefCell;
+### 메모리 사용 최적화
 
-let data = RefCell::new(vec![1, 2, 3]);
+- 불필요한 클론 피하기
+- 적절한 타입 선택으로 오버헤드 최소화
 
-// 나쁨
-let r1 = data.borrow();
-let r2 = data.borrow_mut(); // Panic!
-
-// 좋음
-{
-    let r1 = data.borrow();
-    println!("{:?}", *r1);
-} // r1 스코프 종료
-let r2 = data.borrow_mut(); // OK
-```
-
-### 문제 3: Deadlock 디버깅
-
-**증상:** 프로그램이 멈춤
-
-**디버깅 방법:**
-```rust
-use std::sync::Mutex;
-use std::time::Duration;
-
-let mutex = Mutex::new(0);
-
-// timeout 사용
-if let Ok(guard) = mutex.try_lock() {
-    println!("락 획득: {}", *guard);
-} else {
-    println!("락 획득 실패 - 데드락 가능성");
-}
-
-// 또는 parking_lot 크레이트 사용 (try_lock_for)
-```
-
-### 문제 4: 성능 병목 찾기
-
-```rust
-use std::time::Instant;
-
-let start = Instant::now();
-{
-    let _guard = mutex.lock().unwrap();
-    // 크리티컬 섹션
-}
-let duration = start.elapsed();
-if duration.as_millis() > 10 {
-    eprintln!("락 대기 시간 너무 김: {:?}", duration);
-}
-```
-
-## 정리
-
-Rust의 동시성 모델은 다음과 같은 핵심 원칙을 기반으로 합니다:
-
-1. **소유권 시스템**: 데이터 레이스를 컴파일 타임에 방지
-2. **Send/Sync 트레잇**: 타입 시스템으로 스레드 안전성 보장
-3. **타입별 선택**:
-   - 싱글스레드: `Rc<RefCell<T>>`
-   - 멀티스레드: `Arc<Mutex<T>>` 또는 `Arc<RwLock<T>>`
-4. **락 관리**: RAII로 자동 해제, 스코프로 수명 관리
-5. **성능**: 필요한 곳에만 동기화, 락 경합 최소화
-
-이러한 메커니즘을 통해 Rust는 "Fearless Concurrency"를 실현하며, 런타임 오버헤드 없이 컴파일 타임에 동시성 안전성을 보장합니다.
+러스트의 동시성 타입은 각각의 사용 사례에 맞게 선택되어야 합니다. 싱글스레드와 멀티스레드 환경에 따라 적절한 타입을 선택하고, 성능과 안전성을 모두 고려하여 구현하는 것이 중요합니다.

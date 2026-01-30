@@ -1,308 +1,278 @@
 ---
-title: 'Effect를 활용한 타입 안전한 의존성 주입과 에러 처리'
+title: 'Effect functional programming'
 date: '2025-03-19'
 tags: ['effect', 'typescript', 'functional programming']
 ---
 
-React 애플리케이션을 개발하면서 Angular나 Nest.js와 같은 프레임워크에서 제공하는 의존성 주입(DI) 패턴을 활용할 수 없다는 한계를 명확히 인지하게 되었습니다. 이러한 프레임워크들은 의존성 주입을 통해 확장 가능하고 테스트 가능한 코드를 작성할 수 있지만, TypeScript나 React 환경에서는 이러한 패턴을 표준적으로 사용하기 어렵습니다.
+주변의 개발자 분들과 리액트와 DI에 대한 이야기를 한 적이 있습니다.
+Angular, Nest.js, Spring과 같은 프레임워크에서 의존성 주입을 통해 확장성 있게 개발이 가능한데 비해
+리액트와 같은 라이브러리에서는 의존성 주입을 도입할 수 없다는 이야기를 했었습니다.  
 
-또한 TypeScript의 try/catch는 암시적인 에러 전파로 인해 에러 처리를 명시적으로 관리하기 어렵습니다. 함수 시그니처만으로는 어떤 에러가 발생할 수 있는지 알 수 없어, 런타임 에러를 사전에 방지하기 어려운 상황이었습니다.
+그렇게 관련 자료를 찾다가 Effect라는 타입스크립트 기반의 함수형 프로그래밍 라이브러리를 알게 되었는데 
+이것은 함수형 프로그래밍을 기반으로 의존성 주입 개념을 도입할 수 있었습니다. 그래서 간단하게 Effect로 구현해보았습니다.
 
-Effect는 함수형 프로그래밍 기반의 TypeScript 라이브러리로, 이러한 문제들을 해결합니다. Context 기반 의존성 주입과 타입 안전한 에러 처리를 통해 확장 가능하고 유지보수 가능한 코드를 작성할 수 있습니다. 이 글에서는 Effect를 활용하여 저장소 패턴을 구현하고, 전통적인 TypeScript 방식과 비교하여 그 장점을 살펴보겠습니다.
+### 저장소 구현하기
 
-## 전통적인 TypeScript 접근법의 한계
+다음과 같은 저장소를 구현하는 코드를 작성해봅시다.
+1. 프로그램은 저장소에서 유저 정보를 획득한다.
+2. 저장소는 상황에 따라 로컬스토리지 기반의 저장소와 인 메모리 저장소를 사용한다.
 
-### 암시적 에러 처리의 문제
+#### 인터페이스 작성
 
-전통적인 TypeScript에서 try/catch는 에러를 암시적으로 전파합니다. 함수 시그니처만으로는 어떤 에러가 발생할 수 있는지 알 수 없어, 에러 처리를 누락하기 쉽습니다. 에러는 가장 가까운 try/catch 블록에서 처리되지만, 이러한 처리 위치가 코드에 명시되지 않습니다. 결과적으로 에러 전파 경로를 추적하기 어렵고, 예상치 못한 에러가 상위 레벨로 전파될 수 있습니다.
+Effect로 코드를 작성할 때에는 인터페이스 기반의 프로그래밍을 추구합니다. 
+그렇기 때문에 각 기능에 대해 인터페이스를 명시하고 해당 인터페이스에 대한 구현체를 작성합니다.
+아래의 코드에서는 유저 저장소와 로컬스토리지 저장소의 인터페이스를 선언하고 각 인터페이스에서 사용되는 에러 타입을 정의합니다.
 
 ```typescript
-// Traditional TypeScript - 에러 타입이 불명확
-async function getUser(id: number): Promise<User | undefined> {
-  try {
-    const data = localStorage.getItem('users');
-    if (!data) return undefined;
-    const users = JSON.parse(data); // 어떤 에러가 발생할 수 있는가?
-    return users.find(u => u.id === id);
-  } catch (error) {
-    // LocalStorageError? ParseError? 알 수 없음
-    console.error(error);
-    return undefined;
+class UserRepositoryError extends Error {
+  readonly _tag = "UserRepositoryError"
+  constructor(message: string) {
+    super(`UserRepositoryError: ${message}`)
+    this.name = "UserRepositoryError"
+  }
+
+  static readonly NotFound = (id: number) => {
+    return new UserRepositoryError(`User with id ${id} not found`)
   }
 }
 
-// Effect - 에러 타입이 명시적
-function getUser(id: number): Effect.Effect<User | undefined, LocalStorageError> {
-  return localStorageService.getItem<User[]>('users').pipe(
-    Effect.map(users => users?.find(u => u.id === id))
-  );
-}
-// 반환 타입에 LocalStorageError 명시 - 컴파일러가 에러 처리를 강제
-```
-
-### 의존성 관리의 문제
-
-구현체에 직접 의존하는 코드는 테스트와 확장이 어렵습니다. 인터페이스 기반 프로그래밍을 위해서는 별도의 DI 컨테이너 설정이나 수동 주입 코드가 필요합니다. 이는 코드의 복잡도를 높이고, 런타임에 의존성을 변경하기 어렵게 만듭니다.
-
-```typescript
-// Traditional - 구현체에 직접 의존
-class UserService {
-  private storage = new LocalStorageImpl(); // 구현체에 직접 의존
-
-  getUser(id: number) {
-    return this.storage.getItem('users'); // 테스트 시 Mock 주입 어려움
-  }
-}
-
-// Effect - 인터페이스에 의존
-const userService = Effect.gen(function* () {
-  const storage = yield* LocalStorageService; // 인터페이스에 의존
-  // 런타임에 구현체 주입 가능
-});
-```
-
-## Effect의 핵심 개념
-
-### Effect 타입 시스템
-
-Effect는 세 가지 타입 매개변수로 구성됩니다: 성공 타입(Success), 에러 타입(Error), 요구사항 타입(Requirements)입니다. 이를 통해 함수 시그니처만으로 성공 케이스, 실패 케이스, 필요한 의존성을 명확히 표현할 수 있습니다.
-
-타입스크립트 컴파일러는 이 정보를 활용하여 에러 처리 누락을 컴파일 타임에 검출합니다. 또한 필요한 의존성이 제공되지 않으면 컴파일 에러가 발생하여, 런타임 에러를 사전에 방지합니다.
-
-```typescript
-// Effect 타입의 구조
-Effect.Effect<Success, Error, Requirements>
-
-// 예시: 사용자 조회 함수
-function findUser(id: number): Effect.Effect<
-  User | undefined,           // Success: 성공 시 User 또는 undefined
-  LocalStorageError,          // Error: 발생 가능한 에러 타입
-  LocalStorageService         // Requirements: 필요한 의존성
-> {
-  // 구현...
-}
-```
-
-### Context 기반 의존성 주입
-
-Effect의 Context는 타입 안전한 의존성 주입을 제공합니다. 인터페이스를 Context.Tag로 정의하고, 실제 구현체는 런타임에 주입합니다. 이를 통해 인터페이스 기반 프로그래밍이 가능하며, 테스트나 환경별로 다른 구현체를 쉽게 교체할 수 있습니다.
-
-```typescript
-// 에러 타입 정의
 class LocalStorageError extends Error {
-  readonly _tag = "LocalStorageError";
+  readonly _tag = "LocalStorageError"
+  constructor(message: string) {
+    super(`LocalStorageError: ${message}`)
+    this.name = "LocalStorageError"
+  }
+
+  static readonly parseError = (error: unknown) => {
+    if (error instanceof Error) {
+      return new LocalStorageError(error.message)
+    }
+
+    return new LocalStorageError("Unknown error")
+  }
+
+  static readonly stringifyError = (error: unknown) => {
+    if (error instanceof Error) {
+      return new LocalStorageError(error.message)
+    }
+
+    return new LocalStorageError("Unknown error")
+  }
+
+  static readonly NotFound = (key: string) => {
+    return new LocalStorageError(`LocalStorage key ${key} not found`)
+  }
 }
 
-// Context 정의 (인터페이스)
 class LocalStorageService extends Context.Tag("LocalStorageService")<
   LocalStorageService,
   {
     getItem<T>(key: string): Effect.Effect<T | undefined, LocalStorageError>
     setItem<T>(key: string, value: T): Effect.Effect<void, LocalStorageError>
+    removeItem(key: string): Effect.Effect<void, LocalStorageError>
   }
 >() {}
 
 class UserRepository extends Context.Tag("UserRepository")<
   UserRepository,
   {
-    findById: (id: number) => Effect.Effect<User | undefined, LocalStorageError>
-    findAll: () => Effect.Effect<User[], LocalStorageError>
+    update: (user: User) => Effect.Effect<void, UserRepositoryError>
+    findById: (id: number) => Effect.Effect<User | undefined, UserRepositoryError>
+    findAll: () => Effect.Effect<Array<User>, UserRepositoryError>
   }
 >() {}
 ```
 
-## 핵심 구현 패턴
-
-### 서비스 정의와 구현
-
-서비스를 구현하는 패턴은 인터페이스 정의와 구현체 작성의 두 단계로 구성됩니다. Effect.try를 사용하면 기존의 예외를 발생시키는 코드를 Effect로 감싸고, 에러를 타입 안전하게 처리할 수 있습니다. 이를 통해 암시적인 에러 전파를 명시적인 에러 타입으로 변환합니다.
+Effect는 정상적으로 반환되는 데이터, 에러 타입, 요구사항으로 구분되는 기본적인 인터페이스를 가지고 있습니다.
+아래의 함수의 반환값을 예시로 성공일 때에는 T 또는 undefined를 반환하고 에러일 때에는 로컬스토리지 에러 타입을 반환합니다.
 
 ```typescript
-// LocalStorageService 구현체
-const localStorageServiceImpl = LocalStorageService.of({
+    getItem<T>(key: string): Effect.Effect<T | undefined, LocalStorageError>
+    update: (user: User) => Effect.Effect<void, UserRepositoryError>
+```
+
+
+### 구현체 작성
+
+이제는 인터페이스를 이용해 각 구현체를 작성해봅시다.
+
+#### 로컬스토리지 서비스 구현체
+
+LocalStorageService 인터페이스에 대한 실제 구현을 구현합니다.
+자체적인 try/catch 함수가 있어 기존의 try/catch 방식을 대신할 수 있습니다. try/catch 문을 이렇게 작성하면 좋은 점은 무엇일까요?  
+
+기존의 문법은 에러가 전파될 때 가장 가까운 try/catch에서 해결됩니다. 
+이것은 암시적으로 해결되며 어디서 어떤 에러를 반환하는지 파악할 수 없게 합니다.  
+
+하지만 Effect.try 메서드를 이용하면 해당 함수의 반환값으로 에러가 반환될 수 있음을 나타내기 때문에 
+명시적으로 에러 처리가 반드시 필요합니다.
+
+```typescript
+const localStorageServiceLive = LocalStorageService.of({
   getItem: <T>(key: string) =>
     Effect.try<T | undefined, LocalStorageError>({
       try: () => {
-        const item = localStorage.getItem(key);
-        if (!item) return undefined;
-        return JSON.parse(item) as T;
-      },
-      catch: (error) => new LocalStorageError("Parse error")
-    }),
+        const item = localStorage.getItem(key)
+        if (!item) {
+          return undefined
+        }
 
+        return JSON.parse(item) as T
+      },
+      catch: (error) => LocalStorageError.parseError(error)
+    }),
   setItem: <T>(key: string, value: T) =>
     Effect.try<void, LocalStorageError>({
       try: () => {
-        localStorage.setItem(key, JSON.stringify(value));
+        const stringifiedValue = JSON.stringify(value)
+        localStorage.setItem(key, stringifiedValue)
       },
-      catch: (error) => new LocalStorageError("Stringify error")
+      catch: (error) => LocalStorageError.stringifyError(error)
+    }),
+  removeItem: (key: string) =>
+    Effect.try<void, LocalStorageError>({
+      try: () => localStorage.removeItem(key),
+      catch: (error) => LocalStorageError.parseError(error)
     })
-});
+})
 ```
 
-### 의존성 주입 패턴
+#### 로컬스토리지 저장소 구현체
 
-구현체는 다른 서비스를 의존성으로 요구할 수 있습니다. Effect.gen과 yield*를 사용하여 필요한 의존성을 주입받고, 이를 조합하여 새로운 서비스를 구현합니다. pipe 메서드를 사용한 함수형 프로그래밍 스타일로 데이터 변환과 에러 처리를 명확히 분리할 수 있습니다.
+`yield* LocalStorageService` 코드를 살펴보면 인터페이스를 사용하는 것을 알 수 있습니다.
+이렇게 구현체를 이용한 프로그래밍이 아닌 의존성을 주입받아 인터페이스 기반의 프로그래밍이 가능합니다.  
+
+세부 구현사항에 대해 의존하지 않고 오직 인터페이스만으로 개발이 가능하여 코드의 결합도를 낮출 수 있습니다.
+그리고 pipe 메서드를 이용해서 함수형 프로그래밍이 가능합니다. 함수별로 역할을 나눌 수 있기 때문에 가독성이 높아집니다.
 
 ```typescript
-// LocalStorageService를 의존하는 UserRepository 구현체
-const userRepositoryImpl = Effect.gen(function* () {
-  const storage = yield* LocalStorageService; // 의존성 주입
+const userLocalStorageRepository = Effect.gen(function* () {
+  const localStorageService = yield* LocalStorageService
 
   return UserRepository.of({
-    findById: (id: number) =>
-      storage.getItem<User[]>("users").pipe(
-        Effect.map(users => users?.find(u => u.id === id)),
-        Effect.catchAll(() => Effect.succeed(undefined))
-      ),
+    findById: (id: number) => {
+      return Effect.gen(function* () {
+        return yield* localStorageService.getItem<Array<User>>("users").pipe(
+          Effect.map((users) => users || []),
+          Effect.catchAll(() => Effect.succeed<Array<User>>([])),
+          Effect.map((users) => users.find((user) => user.id === id))
+        )
+      })
+    },
+    findAll: () => {
+      return Effect.gen(function* () {
+        return yield* localStorageService.getItem<Array<User>>("users").pipe(
+          Effect.map((users) => users || []),
+          Effect.catchAll(() => Effect.succeed<Array<User>>([]))
+        )
+      })
+    },
+    update: (user: User) => {
+      return Effect.gen(function* () {
+        return yield* localStorageService.getItem<Array<User>>("users").pipe(
+          Effect.map((users) => users || []),
+          Effect.map((users) => {
+            const index = users.findIndex((u) => u.id === user.id)
+            if (index === -1) {
+              return users
+            }
 
-    findAll: () =>
-      storage.getItem<User[]>("users").pipe(
-        Effect.map(users => users ?? []),
-        Effect.catchAll(() => Effect.succeed([]))
-      )
-  });
-});
-```
-
-## Layer를 통한 의존성 조합
-
-Effect는 Layer를 사용하여 의존성을 조합합니다. 각 구현체를 Layer로 변환하고, 의존성이 있는 Layer는 provide를 통해 하위 의존성을 연결합니다. Layer는 컴파일 타임에 의존성 그래프를 검증하여, 누락된 의존성을 사전에 발견할 수 있습니다.
-
-런타임에 어떤 구현체를 사용할지 선택하여 주입할 수 있어, 환경별로 다른 구현체를 사용하거나 테스트를 위한 Mock을 주입할 수 있습니다. 프로그램 실행 시점에 Effect.provide를 통해 필요한 Layer를 주입하면, 프로그램 코드는 구체적인 구현체를 알 필요가 없습니다.
-
-```typescript
-// Layer 생성
-const localStorageLayer = Layer.succeed(
-  LocalStorageService,
-  localStorageServiceImpl
-);
-
-// 의존성이 있는 Layer 생성
-const userRepositoryLayer = Layer.effect(
-  UserRepository,
-  userRepositoryImpl.pipe(Effect.provide(localStorageLayer))
-);
-
-// 인메모리 구현체를 사용하는 Layer
-const inMemoryRepositoryLayer = Layer.effect(
-  UserRepository,
-  Effect.succeed(UserRepository.of({
-    findById: (id) => Effect.succeed(mockUsers.find(u => u.id === id)),
-    findAll: () => Effect.succeed(mockUsers)
-  }))
-);
-
-// 환경별 구현체 선택
-const selectLayer = (isDev: boolean) =>
-  isDev ? inMemoryRepositoryLayer : userRepositoryLayer;
-
-// 프로그램 작성 (구현체와 무관)
-const program = Effect.gen(function* () {
-  const repo = yield* UserRepository;
-  const users = yield* repo.findAll();
-  console.log(users);
-});
-
-// 프로그램 실행 (런타임에 구현체 주입)
-Effect.runSync(
-  program.pipe(Effect.provide(selectLayer(process.env.NODE_ENV === 'development')))
-);
-```
-
-## Effect 패턴의 장점
-
-### 명시적 에러 처리
-
-Effect는 에러 타입을 함수 시그니처에 명시합니다. 이를 통해 컴파일 타임에 에러 처리를 강제하고, 에러 전파 경로를 명확히 할 수 있습니다. 타입스크립트 컴파일러가 처리되지 않은 에러를 검출하여, 런타임 에러를 사전에 방지합니다.
-
-```typescript
-// Traditional - 에러 타입 불명확
-async function getUser(id: number): Promise<User> {
-  // LocalStorageError? NetworkError? ParseError? 알 수 없음
-}
-
-// Effect - 에러 타입 명시
-function getUser(
-  id: number
-): Effect.Effect<User, LocalStorageError | NetworkError> {
-  // 가능한 에러 타입이 시그니처에 명시됨
-}
-```
-
-### 인터페이스 기반 테스트
-
-Context 기반 의존성 주입으로 테스트가 간단해집니다. 테스트용 Mock 구현체를 Layer로 주입하면, 실제 구현체를 사용하지 않고도 테스트할 수 있습니다. 이를 통해 외부 의존성(데이터베이스, API 등)을 제거하고 빠른 단위 테스트를 작성할 수 있습니다.
-
-```typescript
-// 테스트용 Mock Layer
-const mockRepositoryLayer = Layer.succeed(
-  UserRepository,
-  UserRepository.of({
-    findById: (id) => Effect.succeed({ id, name: "Test User", email: "test@example.com" }),
-    findAll: () => Effect.succeed([])
+            return [...users.slice(0, index), { ...user }, ...users.slice(index + 1)]
+          }),
+          Effect.flatMap((users) => localStorageService.setItem("users", users)),
+          Effect.catchAll(() => Effect.succeed(void 0))
+        )
+      })
+    }
   })
-);
-
-// 테스트 실행
-const result = Effect.runSync(
-  program.pipe(Effect.provide(mockRepositoryLayer))
-);
+})
 ```
 
-### 파이프라인 기반 에러 처리
 
-pipe를 사용한 함수형 프로그래밍으로 에러 처리 로직을 명확히 분리할 수 있습니다. 각 단계별로 데이터 변환, 에러 처리, 기본값 설정 등의 작업을 순차적으로 표현할 수 있습니다. catchTag를 사용하면 특정 에러 타입만 선택적으로 처리할 수 있어, 세밀한 에러 핸들링이 가능합니다.
+#### 인 메모리 구현체
+
+인 메모리 구현체는 외부 서비스를 사용하지 않기 때문에 별도의 의존성 주입 없이 구현 가능합니다.
 
 ```typescript
-storage.getItem<User[]>("users").pipe(
-  Effect.map(users => users ?? []),
-  Effect.map(users => users.find(u => u.id === id)),
-  Effect.catchTag("LocalStorageError", () => Effect.succeed(undefined))
-);
+const inMemoryUserRepository = Effect.gen(function* () {
+  return UserRepository.of({
+    findById: (id: number) => Effect.succeed(users.find((user) => user.id === id)),
+    findAll: () => Effect.succeed(users),
+    update: (user: User) => Effect.succeed((users[users.findIndex((u) => u.id === user.id)] = user))
+  })
+})
 ```
 
-## 적용 고려사항
+### 서비스 조합하기
 
-### 학습 곡선
+Effect에서는 여러 방식으로 의존성을 주입할 수 있는데 가장 쉽게 명시적인 `Effect.Layer`를 이용해서 만들어 봅시다.
+`Layer`라는 패키지에서 제공하는 함수를 이용해 인터페이스와 실제 구현체를 조합할 수 있습니다.  
 
-Effect는 함수형 프로그래밍 개념에 익숙하지 않은 팀에서는 초기 학습 비용이 발생할 수 있습니다. 특히 Effect, Layer, Context와 같은 추상화 개념을 이해하는 데 시간이 필요합니다. 하지만 이러한 개념들은 일단 이해하면 코드의 예측 가능성과 안정성을 크게 향상시킵니다.
+아래 코드에서는 로컬스토리지 서비스 인터페이스와 실제 구현체를 결합해서 `localStorageLayer`를 만듭니다.
+이와 동일한 방식으로 인 메모리와 로컬스토리지 저장소의 의존성을 구현합니다.  
 
-### 코드 보일러플레이트
+이때에 로컬스토리지 저장소는 로컬스토리지 서비스를 의존하고 있으므로 `userLocalStorageRepository.pipe(Effect.provide(localStorageLayer))`와 같이 별도의 의존성을 추가하여 레이어를 만듭니다.  
 
-인터페이스와 에러 타입을 명시적으로 정의해야 하므로, 간단한 로직에서는 코드량이 증가할 수 있습니다. 하지만 프로젝트 규모가 커질수록 이러한 명시성이 유지보수성을 높입니다. 타입 안전성과 명시적 에러 처리는 장기적으로 버그를 줄이고 리팩토링을 안전하게 만듭니다.
+그리고 main 함수를 실행하는 시점에 인 메모리 저장소 레이어와 로컬스토리지 저장소 레이어 중에 어떤 레이어를 주입할지 결정하게 되면 main 함수는 외부에 어떤 저장소로 동작하는지 알지 못한 채 실행될 수 있습니다.  
 
-### 적합한 사용 사례
+오직 로컬스토리지 저장소 레이어에서만 로컬스토리지 서비스가 필요함을 인지할 수 있습니다.  
 
-Effect는 다음과 같은 경우에 특히 효과적입니다:
-
-- 환경별로 다른 구현체가 필요한 경우 (개발/스테이징/프로덕션)
-- 복잡한 에러 처리가 필요한 비즈니스 로직
-- 의존성이 많고 테스트가 중요한 서비스 레이어
-- 외부 시스템과의 통합이 많은 애플리케이션
-
-반면 단순한 CRUD 작업이나 일회성 스크립트에서는 과도한 추상화가 될 수 있습니다.
-
-### 점진적 도입
-
-Effect는 기존 TypeScript 코드와 함께 사용할 수 있습니다. Effect.runSync 또는 Effect.runPromise를 통해 Effect를 일반 함수로 변환하여 기존 코드베이스에 통합할 수 있습니다. 핵심 비즈니스 로직부터 시작하여 점진적으로 Effect를 도입하는 것을 권장합니다.
+이렇게 인터페이스와 실제 구현체를 연결하여 하나의 레이어를 만들고 
+이런 레이어들을 조합하여 실제 프로그램이 실행하는 시점에 의존성을 주입하는 방식으로 동작합니다.
 
 ```typescript
-// 기존 코드와 통합
-async function legacyGetUser(id: number): Promise<User | undefined> {
-  const program = Effect.gen(function* () {
-    const repo = yield* UserRepository;
-    return yield* repo.findById(id);
-  });
+const localStorageLayer = Layer.succeed(LocalStorageService, localStorageServiceLive)
+const userLocalStorageRepositoryLayer = Layer.effect(
+  UserRepository,
+  userLocalStorageRepository.pipe(Effect.provide(localStorageLayer))
+)
+const inMemoryUserRepositoryLayer = Layer.effect(UserRepository, inMemoryUserRepository)
 
-  return Effect.runPromise(program.pipe(Effect.provide(userRepositoryLayer)));
+const selectUserRepositoryLayer = (isDevelopment: boolean) =>
+  isDevelopment ? inMemoryUserRepositoryLayer : userLocalStorageRepositoryLayer
+
+const main = Effect.gen(function* () {
+  const userRepository = yield* UserRepository
+
+  const user1 = yield* userRepository.findById(1)
+  const user2 = yield* userRepository.findById(2)
+  const all = yield* userRepository.findAll()
+
+  console.log("user1", user1)
+  console.log("user2", user2)
+  console.log("all", all)
+})
+
+Effect.runSync(main.pipe(Effect.provide(selectUserRepositoryLayer(process.env.BUN_ENV === "development"))))
+```
+
+
+### 기존 서비스와 마이그레이션하기
+
+이렇게 작성한 프로그램을 기존 일반적인 타입스크립트 코드와 어떻게 연결할까요?
+사실 Effect는 실행하는 시점에는 일반 타입스크립트와 다를 바 없으므로 기존의 함수처럼 이용이 가능합니다.  
+
+getUser라는 기존의 함수에 단지 `Effect.run` 메서드들을 실행해주면 됩니다.
+이처럼 기존 로직과 결합하기도 아주 쉽습니다.
+
+```typescript
+const getUser = (id: number) => {
+	// return oldFindById(id);
+	return Effect.runSync(main.pipe(Effect.provide(selectUserRepositoryLayer(process.env.BUN_ENV === "development"))))
 }
 ```
 
-## 결론
+### 꼭 필요한가
 
-Effect는 TypeScript에서 명시적 에러 처리와 의존성 주입을 가능하게 하는 함수형 프로그래밍 라이브러리입니다. Context 기반 의존성 주입과 타입 안전한 에러 처리를 통해 확장 가능하고 테스트 가능한 코드를 작성할 수 있습니다.
+코드를 보면 기존의 코드들보다는 훨씬 코드량이 많습니다. 
+이는 인터페이스를 선언해야 하고 에러 타입을 대부분 만들어서 처리해주는 것을 지향하고 있기 때문입니다.
+그렇기 때문에 간단한 로직에서는 불필요할 수 있습니다.  
 
-초기 학습 비용과 코드 보일러플레이트가 있지만, 대규모 프로젝트나 복잡한 비즈니스 로직에서는 장기적으로 유지보수성을 높입니다. 환경별로 다른 구현체를 사용하거나, 테스트를 위한 Mock을 쉽게 주입할 수 있어 개발 생산성을 향상시킵니다.
+그에 반해 동일한 동작이 케이스에 따라 세부 구현이 달라지는 경우 아주 적합합니다. 
+코드 간의 결합도를 낮출 수 있기 때문에 확장성을 높일 수 있고 쉽게 유지보수할 수 있습니다.  
 
-구현 예제는 [GitHub 저장소](https://github.com/load28/effect)에서 확인할 수 있습니다. Effect는 이 글에서 다룬 기능 외에도 Stream, Schedule, Fiber 등 다양한 기능을 제공하므로, 필요에 따라 추가 기능을 탐색할 수 있습니다.
+그 외에도 Effect에서는 stream과 같은 기능을 제공해서 발행과 구독 기능을 지원하고 더 많은 부가 기능이 있습니다.    
+
+모든 기능을 이용할 필요는 없지만 때에 따라 pipe 함수를 이용한 함수형 프로그래밍 그리고 의존성 주입을 통한 확장성 등은 강력한 기능이 될 것이라 생각합니다.
+
+구현 예제 - https://github.com/load28/effect

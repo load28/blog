@@ -1,44 +1,25 @@
 ---
-title: 'Next.js의 숨겨진 최적화: 렌더링 지연과 Preload 자동화 메커니즘'
-description: '이벤트 루프 제어를 통한 동적 임포트 분석과 Link Preload 헤더 생성 전략'
+title: 'Next.js Hidden Optimizations'
 date: '2025-02-15:09:00Z'
 tags: ['next.js', 'optimization']
 ---
 
-Next.js는 공식 문서에 명시되지 않은 수많은 내부 최적화를 수행합니다. 그 중 하나가 **렌더링 전 이벤트 루프를 지연시켜 동적 임포트를 분석하고, Link Preload 헤더를 자동으로 생성하는 메커니즘**입니다.
+Next.js는 많은 기능을 제공합니다. 그 중 우연히 발견한 최적화 과정에 대해 알아보겠습니다.
 
-이 글에서는 MSW(Mock Service Worker)와 App Router 통합 과정에서 우연히 발견한 Next.js의 렌더링 최적화 전략을 살펴봅니다. 특히 JavaScript 이벤트 루프를 활용한 동적 임포트 수집과 리소스 preload 자동화 과정을 깊이 있게 분석합니다.
+## MSW와 앱 라우터 연동 문제
 
-## MSW와 App Router 통합 문제
+Next.js의 앱 라우터에서 MSW를 연동하고자 했습니다. 그러나 앱 라우터로 변경되면서 MSW를 연동하는데 문제가 있었는데, 
+SSR 동작시 그 전에 MSW 서버가 동작해서 mock api를 활성화 해야하는 문제였습니다. 
 
-### 문제 상황
+MSW 자체에서는 노드 패키지를 제공해서 서버를 실행 시킬수 있었으나, Next.js의 SSR 동작 이전에 해당 서버를 정확히 동작 시킬 방법이 없었습니다.
+그래서 여러가지 이슈를 찾아보았으나 임시방편의 해결방법 뿐이였습니다.
 
-Next.js App Router에서 MSW를 통합할 때 다음과 같은 타이밍 문제가 발생했습니다:
+## 해결 방법 발견
 
-**요구사항:**
-1. SSR 중 API 호출이 발생하기 전에 MSW 서버가 실행되어야 함
-2. 클라이언트 렌더링 전에 MSW Worker가 활성화되어야 함
+MSW 예제 레포지토리에서 앱 라우터 환경에 대한 PR이 올라와 있었습니다. 해당 PR은 아직 머지가 안되었지만 
+해당 접근 방식으로 어느정도 문제가 해결되었습니다.
 
-**기존 방식의 한계:**
-```typescript
-// [주의] 문제: 컴포넌트 렌더링 후 MSW 초기화
-export default function RootLayout({ children }) {
-  useEffect(() => {
-    // 렌더링 이후에 실행됨 - 너무 늦음
-    initMSW();
-  }, []);
-
-  return <html>{children}</html>;
-}
-```
-
-MSW는 Node.js 환경용 `setupServer`와 브라우저 환경용 `setupWorker`를 제공하지만, Next.js의 SSR 라이프사이클에 정확히 통합할 표준 방법이 부재했습니다.
-
-## 해결 방법: React의 use Hook 활용
-
-### MSW 공식 예제의 접근 방식
-
-MSW 예제 저장소에서 App Router 통합 PR을 발견했습니다. 이 방식은 **React의 `use` hook과 Promise를 활용**하여 렌더링 전 MSW 초기화를 보장합니다.
+해결방식은 아래와 같습니다. 코드를 보면 window 객체를 이용해 서버와 클라이언트를 판별하고 이렇게 설정하면 SSR로 응답이 오기전에 항상 MSW 서버가 실행이 보장됩니다.
 
 ```typescript
 'use client';
@@ -49,11 +30,9 @@ const shouldMockRequest = (url: string) => {
   return !url.includes('_rsc') && !url.includes('/_next/') && url.includes('api');
 };
 
-// 모듈 레벨에서 Promise 생성 (최초 1회만 실행)
 const mockingEnabledPromise =
   typeof window !== 'undefined'
-    ? // 브라우저 환경: Service Worker 초기화
-      import('./browser').then(async ({ worker }) => {
+    ? import('./browser').then(async ({ worker }) => {
         await worker.start({
           onUnhandledRequest: (request, print) => {
             if (shouldMockRequest(request.url)) {
@@ -62,8 +41,7 @@ const mockingEnabledPromise =
           },
         });
       })
-    : // Node.js 환경: MSW 서버 초기화
-      import('./mocks/server').then(async ({ server }) => {
+    : import('./mocks/server').then(async ({ server }) => {
         await server.listen({
           onUnhandledRequest: (request, print) => {
             if (shouldMockRequest(request.url)) {
@@ -72,365 +50,28 @@ const mockingEnabledPromise =
           },
         });
       });
-
-export function MSWProvider({ children }: PropsWithChildren) {
-  // use()가 Promise가 완료될 때까지 렌더링 중단
-  use(mockingEnabledPromise);
-
-  return <>{children}</>;
-}
 ```
 
-### 핵심 동작 원리
+## Next.js의 숨겨진 최적화 발견
 
-**1. 모듈 레벨 Promise 실행**
-```typescript
-// 모듈 import 시 즉시 평가됨
-const mockingEnabledPromise = typeof window !== 'undefined'
-  ? import('./browser').then(...)
-  : import('./server').then(...);
-```
-
-**2. React `use` Hook의 Suspend 동작**
-```typescript
-export function MSWProvider({ children }) {
-  use(mockingEnabledPromise); // Promise가 완료될 때까지 렌더링 중단
-
-  return <>{children}</>;
-}
-```
-
-**3. SSR 라이프사이클**
-```
-1. 서버에서 MSWProvider 렌더링 시도
-2. use(mockingEnabledPromise) 실행
-3. Promise 완료 대기 (MSW 서버 초기화 완료)
-4. children 렌더링 시작
-5. API 호출 → MSW 인터셉트 [권장]
-```
-
-## Next.js의 숨겨진 최적화: 이벤트 루프 지연
-
-### 발견 과정
-
-위 MSW 통합 코드가 동작하는 원리를 분석하던 중, Next.js 소스 코드에서 흥미로운 패턴을 발견했습니다.
-
-**Next.js SSR 렌더링 파이프라인 내부:**
-```typescript
-// packages/next/src/server/render.tsx (simplified)
-export async function renderToHTML(...) {
-  // 렌더링 전 의도적으로 이벤트 루프 지연
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  // 이후 실제 렌더링 시작
-  const stream = await renderToReadableStream(<App />);
-  return stream;
-}
-```
-
-주석을 확인한 결과, 다음과 같은 내용이 있었습니다:
-
-> "We don't want synchronous rendering, but we need to wait for dynamic imports to be analyzed for preload optimization."
-
-### 이벤트 루프 지연의 목적
-
-**setTimeout(fn, 0)의 의미:**
-```javascript
-await new Promise((resolve) => setTimeout(resolve, 0));
-```
-
-이 코드는 JavaScript 이벤트 루프를 **1틱(tick) 지연**시킵니다:
-
-```
-[현재 틱]
-1. 렌더링 준비
-2. 동적 임포트 Promise 생성 (마이크로태스크 큐에 추가)
-3. setTimeout으로 다음 틱까지 대기
-
-[다음 틱]
-4. 마이크로태스크 큐의 모든 Promise 완료
-5. Next.js가 수집한 동적 임포트 목록 확인
-6. 실제 렌더링 시작
-```
-
-### 동적 임포트 수집 메커니즘
-
-**1. 개발자가 작성한 코드:**
-```typescript
-// app/dashboard/page.tsx
-import dynamic from 'next/dynamic';
-
-const Chart = dynamic(() => import('./Chart'));
-const Analytics = dynamic(() => import('./Analytics'));
-
-export default function Dashboard() {
-  return (
-    <div>
-      <Chart />
-      <Analytics />
-    </div>
-  );
-}
-```
-
-**2. Next.js 내부 추적:**
-```typescript
-// Next.js 내부 (simplified)
-const dynamicImports = new Set<string>();
-
-function dynamic(loader: () => Promise<any>) {
-  const importPromise = loader();
-
-  // 임포트 경로 수집
-  importPromise.then((module) => {
-    dynamicImports.add(module.__esModule);
-  });
-
-  return importPromise;
-}
-```
-
-**3. 이벤트 루프 대기 후 수집 완료:**
-```typescript
-await new Promise((resolve) => setTimeout(resolve, 0));
-
-// 이 시점에 dynamicImports에는:
-// ['./Chart.js', './Analytics.js']
-```
-
-### Link Preload 헤더 자동 생성
-
-Next.js는 수집한 동적 임포트 정보를 기반으로 **HTTP Link Preload 헤더**를 자동 생성합니다.
-
-**생성되는 HTTP 응답 헤더:**
-```http
-HTTP/1.1 200 OK
-Content-Type: text/html
-Link: </chunks/Chart.js>; rel=preload; as=script
-Link: </chunks/Analytics.js>; rel=preload; as=script
-
-<!DOCTYPE html>
-<html>...</html>
-```
-
-**브라우저 동작:**
-```
-1. HTML 응답 수신
-2. Link 헤더 파싱 (HTML 파싱 전!)
-3. Chart.js, Analytics.js 병렬 다운로드 시작
-4. HTML 파싱 시작
-5. <script> 태그 만나도 이미 다운로드 완료 → 즉시 실행
-```
-
-### 성능 향상 효과
-
-**Link Preload가 없는 경우:**
-```
-0ms: HTML 요청
-100ms: HTML 수신 시작
-200ms: HTML 파싱 중 <script src="Chart.js"> 발견
-201ms: Chart.js 요청 시작 ← 100ms 손실!
-301ms: Chart.js 다운로드 완료
-```
-
-**Link Preload가 있는 경우:**
-```
-0ms: HTML 요청
-100ms: HTML + Link 헤더 수신
-101ms: Chart.js 병렬 다운로드 시작 ← 즉시!
-200ms: HTML 파싱 시작
-201ms: <script src="Chart.js"> 발견 → 이미 다운로드 완료!
-```
-
-**결과: ~100ms 절감**
-
-## 실전 적용 시나리오
-
-### 1. 동적 임포트 최적화 확인
-
-브라우저 개발자 도구에서 Response Headers를 확인하여 Next.js가 자동 생성한 preload를 볼 수 있습니다:
-
-```bash
-curl -I https://your-app.com/dashboard
-```
-
-**출력 예시:**
-```http
-HTTP/2 200
-link: </_next/static/chunks/123.js>; rel=preload; as=script
-link: </_next/static/chunks/456.js>; rel=preload; as=script
-link: </_next/static/css/app.css>; rel=preload; as=style
-```
-
-### 2. 성능 측정
-
-Chrome DevTools의 Network 탭에서 확인:
-
-**Before (preload 없음):**
-```
-HTML: 0ms ~ 100ms
-└─ Waiting: 100ms ~ 200ms (HTML 파싱)
-   └─ Chart.js: 200ms ~ 300ms ← Waterfall 발생
-```
-
-**After (preload 있음):**
-```
-HTML: 0ms ~ 100ms
-Chart.js: 100ms ~ 200ms ← HTML과 병렬 다운로드
-```
-
-### 3. 커스텀 Preload 추가
-
-Next.js의 자동 preload 외에 수동으로 추가할 수도 있습니다:
+이 코드를 보고 Next.js에서는 내부에서 렌더링을 하기 전에 이런 코드를 어떻게 평가할 것인지에 대해서 궁금증이 생겼습니다.
+그러다가 Next.js의 SSR 프로세스의 코드 중에 아래와 같은 코드를 발견했습니다.
 
 ```typescript
-// app/layout.tsx
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <head>
-        <link rel="preload" href="/fonts/custom.woff2" as="font" crossOrigin="anonymous" />
-        <link rel="preload" href="/critical-image.webp" as="image" />
-      </head>
-      <body>{children}</body>
-    </html>
-  );
-}
+await Promise((res) => setTimeout(() => res()));
 ```
 
-## 이벤트 루프 제어의 트레이드오프
+이 코드는 자바스크립트 엔진의 이벤트 루프를 한번 건너뛰고 다음 이벤트 루프에 동작하도록 보장하는 코드입니다.
+그리고 주석으로 Next.js는 동기적인 렌더링 프로세스를 원하는건 아니지만 preload와 관련된 최적화를 수행하기 위해 렌더링을 일부러 지연한다는 내용이였습니다.  
 
-### 장점
+즉, 다이나믹 임포트와 같은 동작이 마이크로태스크로 수행될때 이러한 동작이 먼저 수행되어서 Next.js에서 어떤 리소스들을 개발자가 임포트했는지 분석하고 최적화 하기 위함이였습니다.
 
-1. **자동 최적화**: 개발자가 명시하지 않아도 동적 임포트 preload
-2. **병렬 다운로드**: 리소스를 HTML 파싱과 병렬로 다운로드
-3. **투명성**: 코드 변경 없이 자동 적용
+Next.js는 이렇게 수집한 정보를 통해 메인 페이지를 반환하는 응답 헤더로 preload 속성을 넣어서 HTML 파싱하지 않고 브라우저가 어떤 리소스를 다운 받아야 할지 제공하므로써 최적화를 수행합니다.
 
-### 단점
+이런 내용은 공식문서에 제공되지 않아서 직접 찾아보지 않으면 알지 못하는 내용이였습니다.  
 
-1. **초기 렌더링 지연**: ~1ms의 지연 발생 (대부분 무시 가능)
-2. **문서화 부재**: 공식 문서에 명시되지 않음
-3. **예측 어려움**: 내부 동작을 모르면 디버깅 어려움
-
-## 다른 프레임워크와의 비교
-
-### Remix
-
-Remix는 **loader 단계에서 명시적으로 preload**합니다:
-
-```typescript
-// routes/dashboard.tsx
-export const links = () => [
-  { rel: 'preload', href: '/chunks/Chart.js', as: 'script' },
-];
-```
-
-**특징:**
-- 명시적 제어
-- 학습 비용 높음
-- 예측 가능
-
-### SvelteKit
-
-SvelteKit은 **빌드 타임에 정적 분석**으로 preload 생성:
-
-```typescript
-// +page.svelte
-<script>
-  import Chart from './Chart.svelte'; // 빌드 시 분석
-</script>
-```
-
-**특징:**
-- 런타임 오버헤드 없음
-- 동적 임포트 최적화 제한적
-
-### Next.js 접근의 장점
-
-- **빌드 타임 + 런타임 하이브리드**: 정적/동적 모두 최적화
-- **제로 설정**: 개발자 개입 없이 자동 동작
-- **유연성**: 동적 조건부 임포트도 추적 가능
-
-## 주의사항 및 권장사항
-
-### 1. 과도한 동적 임포트 피하기
-
-```typescript
-// [주의] 너무 많은 동적 임포트
-const A = dynamic(() => import('./A'));
-const B = dynamic(() => import('./B'));
-const C = dynamic(() => import('./C'));
-// ... 20개 이상
-
-// [권장] 적절한 청크 분할
-const DashboardWidgets = dynamic(() => import('./DashboardWidgets'));
-```
-
-**이유:**
-- Preload 헤더가 너무 커지면 초기 응답 지연
-- HTTP/2에서도 동시 연결 제한 존재
-
-### 2. 조건부 렌더링과 Preload
-
-```typescript
-// [참고] 주의: 조건부 렌더링은 항상 preload됨
-const Admin = dynamic(() => import('./Admin'));
-
-export default function Dashboard({ isAdmin }) {
-  return (
-    <div>
-      {isAdmin && <Admin />} {/* isAdmin=false여도 Admin.js preload */}
-    </div>
-  );
-}
-```
-
-**해결책:**
-```typescript
-// [권장] 조건부 동적 임포트
-export default function Dashboard({ isAdmin }) {
-  const [AdminComponent, setAdmin] = useState(null);
-
-  useEffect(() => {
-    if (isAdmin) {
-      import('./Admin').then(mod => setAdmin(() => mod.default));
-    }
-  }, [isAdmin]);
-
-  return <div>{AdminComponent && <AdminComponent />}</div>;
-}
-```
-
-### 3. 성능 모니터링
-
-Next.js의 자동 최적화 효과를 측정하려면:
-
-```typescript
-// middleware.ts
-export function middleware(request: NextRequest) {
-  const start = Date.now();
-
-  return NextResponse.next({
-    headers: {
-      'Server-Timing': `render;dur=${Date.now() - start}`,
-    },
-  });
-}
-```
-
-브라우저 DevTools → Network → Timing 탭에서 확인 가능합니다.
-
-## 결론
-
-Next.js는 이벤트 루프를 1틱 지연시켜 동적 임포트를 수집하고, Link Preload 헤더를 자동 생성하는 숨겨진 최적화를 수행합니다. 이는 공식 문서에 명시되지 않았지만, 실제 프로덕션 환경에서 상당한 성능 향상을 제공합니다.
-
-**핵심 권장사항:**
-- Next.js의 자동 preload를 신뢰하되, 과도한 동적 임포트는 피하기
-- 성능 Critical Path에는 수동 preload 추가 고려
-- 브라우저 DevTools로 실제 preload 동작 확인
-- 조건부 렌더링 시 불필요한 preload에 주의
-
-이처럼 프레임워크는 표면적으로 드러나지 않는 최적화를 내부적으로 수행합니다. 소스 코드를 직접 탐색하면 이러한 메커니즘을 이해하고 더 효과적으로 활용할 수 있습니다.
+이처럼 Next.js는 우리가 알지못하는 최적화를 내부적으로 많이 수행합니다. 
+그래서 이런 프레임워크는 실제로 많이 사용해보지 않으면 예상치 동작을 맞이 할 수 있기 때문에 유의해야 합니다.
 
 
 

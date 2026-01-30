@@ -1,439 +1,104 @@
 ---
-title: 'Next.js Dynamic Import와 SSR 제어: lazy vs dynamic 완벽 비교'
-description: 'React lazy와 Next.js dynamic의 SSR 동작 차이와 최적의 코드 스플리팅 전략'
+title: 'Dynamic import in Next.js'
 date: '2025-02-15'
 tags: ['react', 'next.js']
 series: 'react'
 seriesNumber: 1
 ---
 
-Next.js 애플리케이션에서 번들 크기를 최적화하기 위해 Dynamic Import를 사용할 때, React의 `lazy`와 Next.js의 `dynamic` 중 어떤 것을 선택해야 할지 혼란스러울 수 있습니다. 두 방식은 비슷해 보이지만 **SSR(Server-Side Rendering) 제어**에서 결정적인 차이를 보입니다.
+# Dynamic import란
+Dynamic import를 이용하면 비동기적으로 데이터를 불러 올 수 있습니다.
 
-이 글에서는 두 방식의 컴파일 동작과 SSR 처리 방식을 비교하고, 각 상황에 맞는 최적의 선택 기준을 제시합니다.
-
-## Dynamic Import의 기본 개념
-
-### 번들 크기 최적화의 핵심
-
-Dynamic Import는 JavaScript 모듈을 비동기적으로 로드하여 초기 번들 크기를 줄이는 표준 기술입니다. 모든 코드를 처음부터 로드하는 대신, 필요한 시점에만 코드를 요청합니다.
-
-```typescript
-// ES6 Dynamic Import (Promise 반환)
-const loader = async () => import('./HeavyModule');
-
-loader().then((module) => {
-  console.log(module.default);
-});
-
-// 또는 async/await
-const module = await import('./HeavyModule');
-console.log(module.default);
+```ts
+const loader = async () => import('[path]');
+loader().then((data) = console.log(data));
 ```
 
-**핵심 특징:**
-- ES6부터 표준 JavaScript 문법으로 지원
-- Promise를 반환하므로 비동기 처리 필요
-- 번들러(Webpack, esbuild)가 자동으로 별도 청크 파일로 분리
-- 네트워크 요청으로 청크 파일을 로드
+자바스크립트 ES6에서는 손쉽게 `Dynamic import`를 지원하고 있습니다.
+코드에서 유의해야 할 점은 async/await을 이용해 import 문을 작성하고 있다는 점입니다.
 
-## React lazy: 클라이언트 컴포넌트 코드 스플리팅
-
-### 기본 사용법
-
-React의 `lazy` 함수는 Dynamic Import와 `Suspense`를 결합하여 컴포넌트를 비동기 로드합니다.
+# Dynamic import with React
+리액트에서 `lazy` 함수와 `Dynamic import` 문법을 이용해서 컴포넌트를 별도의 청크파일로 분리하는 것이 가능합니다.
 
 ```tsx
-import { lazy, Suspense } from 'react';
-
 const LazyComponent = lazy(() => import('./LazyComponent'));
 
 const WrapComponent = () => {
-  return (
+  return(
     <Suspense fallback={<div>Loading...</div>}>
       <LazyComponent />
     </Suspense>
-  );
-};
-```
-
-### 렌더링 흐름
-
-**초기 로드:**
-1. 메인 번들이 로드되고 `WrapComponent`가 렌더링됨
-2. `LazyComponent`는 아직 로드되지 않았으므로 `Suspense`의 `fallback UI` 표시
-3. 백그라운드에서 `LazyComponent` 청크 파일을 HTTP 요청
-
-**청크 로드 후:**
-4. 청크 파일 다운로드 완료
-5. React가 컴포넌트를 파싱하고 준비
-6. `Suspense`가 `fallback` 대신 `LazyComponent` 렌더링
-
-**네트워크 최적화:**
-```
-초기 번들: main.js (300KB)
-지연 로드: LazyComponent.chunk.js (150KB)
-
-// lazy 미사용 시: 450KB 한 번에 로드
-// lazy 사용 시: 300KB → 필요 시 150KB 추가 로드
-```
-
-### React lazy의 제약사항
-
-**클라이언트 컴포넌트 전용:**
-
-`lazy`는 React의 클라이언트 전용 API로, 서버 컴포넌트에서 직접 사용할 수 없습니다.
-
-```tsx
-// [주의] 서버 컴포넌트에서 직접 사용 불가
-export default function ServerPage() {
-  const LazyComponent = lazy(() => import('./LazyComponent')); // 에러!
-  return <LazyComponent />;
+  )
 }
 ```
 
-**Suspense 필수:**
+> Dynamic import 포스팅이므로 Suspense에 대해 별도로 기술하지 않습니다.
 
-`lazy`로 로드한 컴포넌트는 반드시 `Suspense`로 감싸야 합니다. 그렇지 않으면 에러가 발생합니다.
+### Rendering flow
+1. 초기 렌더링 완료
+2. 아직 `LazyComponent`가 로드 되지 않았으므로 `fallback ui`가 표출됨
+3. `Dynamic import`로 인해 별도의 청크파일을 요청(http)하고 응답 받음
+4. 응답 받은 컴포넌트를 하이드레이션을 진행하여 컴포넌트를 사용할 준비 완료
+5. 로딩 대신 `LazyComponent`를 렌더링함
 
-## Next.js dynamic: 서버/클라이언트 모두 지원
-
-### 서버 컴포넌트에서 사용하려면 래핑 필요
-
-`lazy`를 서버 컴포넌트에서 사용하려면 클라이언트 컴포넌트로 감싸야 합니다.
+# Dynamic import with Next.js
+Next.js에서도 `lazy` 함수와 `Susepnse`를 이용해 `Dynamic import`를 사용 할 수 있습니다. 그러나 서버 컴포넌트에서는 기존의 방식대로 적용이 불가능합니다.
+그 이유는 `lazy` 함수는 클라이언트 컴포넌트에서만 사용 할 수 있기 때문입니다. 서버 컴포넌트에 사용하기 위해서는 클라이언트 컴포넌트로 한번 감싸서 사용해야합니다.
 
 ```tsx
 // ClientLazyComponent.tsx
 'use client';
-import { lazy, Suspense } from 'react';
-
 const LazyComponent = lazy(() => import('./LazyComponent'));
 
 export const ClientComponent = () => {
-  return (
+  return(
     <Suspense fallback={<div>Loading...</div>}>
       <LazyComponent />
     </Suspense>
-  );
-};
+  )
+}
 
-// ServerComponent.tsx (서버 컴포넌트)
+// ServerComponent.tsx
+'use server';
 export default function ServerPage() {
   return (
     <div>
-      <ClientComponent />  {/* 클라이언트 컴포넌트로 감싸서 사용 */}
+      <ClientComponent />
     </div>
-  );
+  )
 }
 ```
 
-이 방식은 작동하지만, 서버 컴포넌트에서 직접 Dynamic Import를 사용할 수 없다는 불편함이 있습니다.
-
-### Next.js dynamic 함수의 등장
-
-Next.js는 서버/클라이언트 컴포넌트 모두에서 사용할 수 있는 `dynamic` 함수를 제공합니다.
+### Dynamic function
+이처럼 서버 컴포넌트에서 `Dynamic import`를 직접 선언 할 수 없다는 불편함이 있어, Next.js는 `dynamic` 함수를 제공합니다.
 
 ```tsx
-import dynamic from 'next/dynamic';
+'use server';
 
-const LazyComponent = dynamic(() => import('./LazyComponent'), {
-  ssr: true,  // SSR 포함 여부 제어
-  loading: () => <div>Loading...</div>  // 로딩 UI
-});
-
-export default function ServerPage() {
-  return (
-    <div>
-      <LazyComponent />  {/* Suspense 없이도 동작 */}
-    </div>
-  );
-}
-```
-
-**핵심 특징:**
-- 서버/클라이언트 컴포넌트 모두에서 사용 가능
-- `Suspense` 없이도 `loading` 옵션으로 로딩 UI 표시
-- **`ssr` 옵션으로 SSR 포함 여부 제어 가능** (결정적 차이점)
-
-## React lazy vs Next.js dynamic 비교
-
-### 기본 기능 비교표
-
-| 특징 | React lazy | Next.js dynamic |
-|------|-----------|-----------------|
-| 사용 환경 | 클라이언트 컴포넌트만 | 서버/클라이언트 모두 |
-| Suspense 필요 | [지원] 필수 | [미지원] 선택적 (loading 옵션) |
-| SSR 제어 | [미지원] 불가능 | [지원] 가능 (ssr 옵션) |
-| 표준 API | [지원] React 표준 | [미지원] Next.js 전용 |
-| 로딩 UI | Suspense fallback | loading 옵션 또는 Suspense |
-| 코드 스플리팅 | [지원] 지원 | [지원] 지원 |
-| 번들러 독립성 | [지원] 독립적 | [부분] Next.js 의존 |
-
-## SSR 제어: 가장 중요한 차이점
-
-### React lazy의 SSR 동작
-
-**중요:** `lazy`를 사용해도 서버 컴포넌트 트리에 포함되면 SSR에 포함됩니다.
-
-```tsx
-// ServerPage.tsx (서버 컴포넌트)
-export default function ServerPage() {
-  return (
-    <ClientComponent>  {/* 내부에서 lazy 사용 */}
-      {/* LazyComponent는 SSR에 포함됨 */}
-    </ClientComponent>
-  );
-}
-```
-
-`lazy`로 감싸도 **코드 스플리팅은 적용되지만, SSR은 여전히 수행됩니다.** 서버에서 HTML을 생성할 때 해당 컴포넌트가 포함됩니다.
-
-**SSR 결과:**
-```html
-<!-- 서버에서 생성된 HTML에 LazyComponent 포함 -->
-<div data-react-component="LazyComponent">
-  <!-- LazyComponent의 렌더링 결과 -->
-</div>
-```
-
-### Next.js dynamic의 SSR 제어
-
-`dynamic`의 `ssr: false` 옵션을 사용하면 SSR에서 완전히 제외할 수 있습니다.
-
-```tsx
-const ClientOnlyComponent = dynamic(() => import('./HeavyChart'), {
-  ssr: false,
-  loading: () => <div>Loading chart...</div>
-});
-
-export default function ServerPage() {
-  return (
-    <div>
-      <ClientOnlyComponent />
-    </div>
-  );
-}
-```
-
-**SSR 결과:**
-```html
-<!-- 서버에서 생성된 HTML에는 로딩 상태만 포함 -->
-<div>
-  <div>Loading chart...</div>
-</div>
-```
-
-클라이언트에서 하이드레이션 시점에 비로소 컴포넌트를 로드하고 렌더링합니다.
-
-## 실전 사용 사례
-
-### 사례 1: 브라우저 API 의존 컴포넌트
-
-```tsx
-// [주의] 서버에서 에러 발생 (window is not defined)
-const MapComponent = () => {
-  const map = new window.google.maps.Map(...);
-  return <div ref={mapRef} />;
-};
-
-// [권장] ssr: false로 클라이언트 전용 렌더링
-const MapComponent = dynamic(() => import('./MapComponent'), {
-  ssr: false,
-  loading: () => <div>Loading map...</div>
-});
-```
-
-### 사례 2: 무거운 시각화 라이브러리
-
-```tsx
-// Chart.js 같은 대용량 라이브러리 (150KB+)
-const HeavyChart = dynamic(() => import('./HeavyChart'), {
-  ssr: false,  // SSR에서 제외하여 초기 로드 시간 단축
-  loading: () => <Skeleton height={400} />
-});
-
-export default function Dashboard() {
-  return (
-    <div>
-      <h1>Dashboard</h1>
-      {/* 초기 HTML에는 Skeleton만 포함 */}
-      <HeavyChart data={chartData} />
-    </div>
-  );
-}
-```
-
-**성능 이점:**
-- 서버에서 150KB 라이브러리를 번들링하지 않음
-- 초기 HTML 크기 감소
-- Time to First Byte (TTFB) 개선
-
-### 사례 3: 조건부 컴포넌트
-
-```tsx
-// 관리자 페널은 대부분 사용자에게 필요 없음
-const AdminPanel = dynamic(() => import('./AdminPanel'), {
-  ssr: false  // 필요한 사용자에게만 클라이언트에서 로드
-});
-
-export default function Page({ user }) {
-  return (
-    <div>
-      {user.isAdmin && <AdminPanel />}
-    </div>
-  );
-}
-```
-
-### 사례 4: SSR 포함하면서 코드 스플리팅
-
-```tsx
-// SSR은 유지하고 코드 스플리팅만 적용
-const BlogContent = dynamic(() => import('./BlogContent'), {
-  ssr: true,  // SEO를 위해 SSR 유지
-  loading: () => <ArticleSkeleton />
-});
-
-export default function BlogPost({ slug }) {
-  return (
-    <article>
-      <BlogContent slug={slug} />
-    </article>
-  );
-}
-```
-
-**SEO 유지하면서 번들 크기 최적화 달성**
-
-## 선택 가이드
-
-### Next.js dynamic을 사용해야 하는 경우
-
-**필수 사용:**
-- 브라우저 API 의존 컴포넌트 (window, document, localStorage)
-- SSR에서 제외해야 하는 무거운 라이브러리
-- 서버 컴포넌트에서 직접 Dynamic Import 필요
-
-**권장 사용:**
-- Next.js 프로젝트 (프레임워크에 최적화)
-- SSR 제어가 중요한 경우
-- 간편한 로딩 UI 구성
-
-### React lazy를 사용해야 하는 경우
-
-**권장 사용:**
-- 순수 React 애플리케이션 (CRA, Vite)
-- 프레임워크 독립적인 컴포넌트 라이브러리
-- React 표준 API 선호
-
-**허용 사용:**
-- Next.js 클라이언트 컴포넌트에서만 사용
-- SSR 제어가 필요 없는 경우
-
-## 성능 비교
-
-### 번들 크기
-
-두 방식 모두 동일하게 코드 스플리팅을 수행하므로 **번들 크기는 동일**합니다.
-
-```
-main.js: 300KB
-LazyComponent.chunk.js: 150KB
-```
-
-### SSR 성능
-
-| 상황 | React lazy | Next.js dynamic (ssr: true) | Next.js dynamic (ssr: false) |
-|------|-----------|----------------------------|------------------------------|
-| 서버 번들 크기 | 포함 | 포함 | **제외** |
-| TTFB | 느림 (무거운 컴포넌트 포함) | 느림 | **빠름** |
-| SEO | [지원] 좋음 | [지원] 좋음 | [부분] 클라이언트만 |
-| FCP | 빠름 (서버 렌더링) | 빠름 | 느림 (로딩 UI만) |
-
-### 추천 전략
-
-**SSR이 필요한 콘텐츠 (SEO 중요):**
-```tsx
-const BlogPost = dynamic(() => import('./BlogPost'), {
-  ssr: true  // SEO를 위해 SSR 유지
-});
-```
-
-**SSR이 불필요한 인터랙티브 요소:**
-```tsx
-const CommentSection = dynamic(() => import('./CommentSection'), {
-  ssr: false  // 초기 로드 최적화
-});
-```
-
-## 마이그레이션 가이드
-
-### React lazy → Next.js dynamic
-
-```tsx
-// Before: React lazy
-import { lazy, Suspense } from 'react';
-
-const LazyComponent = lazy(() => import('./LazyComponent'));
-
-function Page() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <LazyComponent />
-    </Suspense>
-  );
-}
-
-// After: Next.js dynamic
-import dynamic from 'next/dynamic';
-
-const LazyComponent = dynamic(() => import('./LazyComponent'), {
+const LazyComponent = dynamic(() => import('[path]'), {
+  ssr: true,
   loading: () => <div>Loading...</div>
-  // ssr: true (기본값)
-});
+})
 
-function Page() {
-  return <LazyComponent />;
+export default function ServerPage() {
+  return (
+    <LazyComponent />
+  )
 }
 ```
 
-### SSR 제외가 필요한 경우
+이 함수의 특징은 서버/클라이언트 컴포넌트에서 모두 사용 할 수 있으며 별도의 `Suspense` 조차 선언 할 필요가 없다는 것입니다.
 
-```tsx
-// Before: lazy + 'use client' wrapper
-'use client';
-import { lazy, Suspense } from 'react';
+# Lazy vs Dynamic
+두가지 방법으로 `Dynamic import`가 모두 가능하다면 어떤 것을 선택해야 할까요?
 
-const BrowserComponent = lazy(() => import('./BrowserComponent'));
+### Dynamic function
+- 서버와 클라이언트 컴포넌트 모두에서 사용 가능
+- `ssr` 옵션을 통해 서버 사이드 렌더링 여부 제어 가능
+- 별도의 `Suspense` 없이도 loading UI 표시 가능
 
-// After: dynamic with ssr: false
-import dynamic from 'next/dynamic';
+### Lazy
+- `lazy` 함수를 이용하면 어떤 컴포넌트를 사용하든지 별도의 청크 파일을 요청하는 방식으로 동작
 
-const BrowserComponent = dynamic(() => import('./BrowserComponent'), {
-  ssr: false
-});
-```
-
-## 결론
-
-Next.js에서 Dynamic Import를 사용할 때 **SSR 제어가 필요한지 여부**가 가장 중요한 선택 기준입니다.
-
-**핵심 권장사항:**
-
-1. **Next.js 프로젝트라면 `dynamic` 우선 사용**
-   - 서버/클라이언트 컴포넌트 모두 지원
-   - `ssr` 옵션으로 유연한 제어
-   - Next.js에 최적화된 API
-
-2. **브라우저 API 의존 컴포넌트는 `ssr: false` 필수**
-   - window, document, localStorage 등 사용 시
-   - 서버에서 에러 방지
-
-3. **SEO가 중요한 콘텐츠는 `ssr: true` 유지**
-   - 블로그 포스트, 제품 상세 페이지 등
-   - 코드 스플리팅과 SSR을 동시에 달성
-
-4. **순수 React 앱이라면 `lazy` 사용**
-   - 프레임워크 독립성 유지
-   - React 표준 API
-
-프로젝트의 요구사항과 성능 목표에 따라 적절한 방식을 선택하여, 최적의 사용자 경험과 개발자 경험을 달성하시기 바랍니다.
+**가장 큰 차이점은 SSR을 제외할 수 있는지 여부입니다. `lazy` 함수를 통해 'Dynamic import`하거나, 'Suspense`로 감싸서 로딩을 표출한다고 해도 최상위 컴포넌트가 서버 컴포넌트인 경우 SSR에 포함됩니다.
+그래서 SSR을 제외하고 싶다면 `dynamic` 함수를 이용해야 합니다. SSR에서 제외 함은 초기 HTML에 빈자리로 표시하고 클라이언트에서 온전히 대체함을 의미합니다.**

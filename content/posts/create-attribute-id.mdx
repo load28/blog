@@ -1,122 +1,44 @@
 ---
-title: 'React에서 고유한 HTML Attribute ID 생성 전략'
-description: 'ID 충돌을 방지하고 웹 접근성을 보장하는 체계적인 HTML Attribute ID 관리 방법'
+title: 'Attribute ID'
+description: 'A guide on creating and managing HTML attribute IDs effectively for better DOM manipulation and styling'
 date: '2023-07-21T09:00:00Z'
 tags: ['react', 'html']
 ---
 
-## HTML Attribute ID의 중요성
-
-HTML에서 요소 간의 관계를 명시적으로 연결하기 위해 고유한 ID를 사용합니다. 대표적인 예시는 다음과 같습니다:
+html에서 요소와 요소를 연결 할 때 고유한 ID를 만들어 연결시킵니다.  
+대표적으로 많이 사용하는 예시는 아래와 같습니다.
 
 ```html
-<!-- label과 input 요소를 userId로 연결 -->
+// label , input 요소를 userId로 연결
 <label for="userId">
   User id:
-  <input id="userId" type="text" aria-describedby="userHintId" />
+  <input id="userId" type="text" aria-describedby="userHindId" />
 </label>
-
-<!-- input과 p 요소를 userHintId로 연결 -->
-<p id="userHintId">User ID of minimum length is 12 characters.</p>
+// input, p 요소를 userHindId로 연결
+<p id="userHindId">User ID of minimum length is 12 characters.</p>
 ```
 
-> **aria-describedby 속성**
-> `aria-describedby`는 웹 접근성을 위한 ARIA 속성으로, 요소에 대한 설명을 명시합니다. 이 속성은 VoiceOver와 같은 스크린 리더가 요소의 설명을 읽을 수 있도록 보장합니다.
+> **aria-describedby 이란?**
+> aria-describedby 속성은 웹 접근성의 한 종류로 요소에 대한 설명을 명시합니다.  
+> 이 속성은 브라우저에서 voiceOver와 같은 접근성 보조 장치에 대한 동작을 보장해 줍니다.
 
-## ID 충돌 문제
+보통 개발을 할때에 데이터의 ID 또는 기능명으로 ID를 명시하는 경우가 많습니다.  
+데이터의 ID를 속성의 ID로 그대로 사용 했을때에는 문제가 발생 할 수 있습니다.  
+데이터가 한 화면에서 두곳 이상에서 표현된다면 데이터의 아이디가 겹쳐지게 되고 이것은 문제로 이어 집니다.  
+또는 하나의 화면을 두개 이상의 어플리케이션으로 화면을 구성 한다면 ID가 충돌 할 확률이 더 높아집니다.  
+이 문제를 해결하는 방법은 3가지 단계로 나뉩니다.
 
-개발 과정에서 데이터의 ID 또는 기능명을 HTML attribute ID로 직접 사용하는 경우가 많습니다. 이러한 접근은 다음과 같은 문제를 야기합니다:
-
-### 동일 데이터의 중복 렌더링
-
-하나의 화면에서 동일한 데이터가 여러 곳에 표현될 경우, 데이터 ID를 그대로 사용하면 ID가 중복됩니다. HTML 명세에 따르면 ID는 문서 내에서 고유해야 하므로, 이는 DOM 조작과 접근성 기능의 오작동을 초래합니다.
-
-### 마이크로 프론트엔드 환경
-
-여러 애플리케이션이 하나의 화면을 구성하는 마이크로 프론트엔드 환경에서는 ID 충돌 확률이 더욱 높아집니다. 각 애플리케이션이 독립적으로 개발되므로, ID 네이밍 규칙이 없다면 충돌을 방지하기 어렵습니다.
-
-## 체계적인 ID 생성 전략
-
-ID 충돌을 방지하기 위한 체계적인 접근 방법은 다음 세 단계로 구성됩니다:
-
-### 1. 애플리케이션 prefix 지정
-
-각 애플리케이션에 고유한 prefix를 부여하여 다른 애플리케이션과의 충돌을 방지합니다.
-
-### 2. 기능(Feature) prefix 지정
-
-애플리케이션 내에서 기능별로 prefix를 추가하여 같은 애플리케이션 내의 충돌을 방지합니다.
-
-### 3. 고유 ID 자동 생성
-
-런타임에 고유한 ID를 자동으로 생성하여 동일한 컴포넌트의 여러 인스턴스 간 충돌을 방지합니다.
+1. 어플리케이션 단위의 prefix 지정
+2. feature 단위의 prefix 지정
+3. Attribute id 생성함수 사용
 
 ```html
-<!-- app0: 애플리케이션 prefix -->
-<!-- loginForm: 기능 prefix -->
-<!-- 0: 자동 생성된 고유 ID -->
+// app0 -> 어플리케이션, loginForm -> 기능, 0 -> 자동 생성 아이디
 <label for="app0-loginForm-0">
   <input id="app0-loginForm-0" />
 </label>
 ```
 
-## React에서의 구현
-
-### useId 훅 활용
-
-React 18부터 제공되는 `useId` 훅을 사용하면 서버와 클라이언트 간에 일관된 고유 ID를 생성할 수 있습니다:
-
-```typescript
-import { useId } from 'react';
-
-function LoginForm() {
-  const id = useId();
-  const userIdInputId = `app0-loginForm-${id}-userId`;
-  const userHintId = `app0-loginForm-${id}-hint`;
-
-  return (
-    <>
-      <label htmlFor={userIdInputId}>
-        User ID:
-        <input
-          id={userIdInputId}
-          type="text"
-          aria-describedby={userHintId}
-        />
-      </label>
-      <p id={userHintId}>User ID of minimum length is 12 characters.</p>
-    </>
-  );
-}
-```
-
-### 커스텀 ID 생성 함수
-
-React를 사용하지 않는 환경에서는 커스텀 ID 생성 함수를 구현할 수 있습니다:
-
-```typescript
-let globalIdCounter = 0;
-
-function createAttributeId(appPrefix: string, featurePrefix: string): string {
-  return `${appPrefix}-${featurePrefix}-${globalIdCounter++}`;
-}
-
-// 사용 예시
-const inputId = createAttributeId('app0', 'loginForm');
-// 결과: "app0-loginForm-0"
-```
-
-## ID 생성 전략의 장점
-
-체계적인 ID 생성 전략을 적용하면 다음과 같은 이점을 얻을 수 있습니다:
-
-- **충돌 방지**: 애플리케이션, 기능, 인스턴스 수준에서 고유성이 보장됩니다.
-- **디버깅 용이성**: ID만으로 어떤 애플리케이션의 어떤 기능인지 파악할 수 있습니다.
-- **접근성 보장**: 고유한 ID를 통해 스크린 리더가 올바르게 동작합니다.
-- **유지보수성**: 명확한 네이밍 규칙으로 코드 이해도가 향상됩니다.
-
-## 결론
-
-HTML attribute ID는 요소 간의 관계를 명시하고 웹 접근성을 보장하는 중요한 속성입니다. 체계적인 ID 생성 전략을 통해 ID 충돌을 방지하고, 유지보수 가능한 코드를 작성할 수 있습니다.
-
-React 환경에서는 `useId` 훅을 활용하고, 다른 환경에서는 애플리케이션/기능 prefix와 자동 생성 ID를 조합하여 고유성을 보장하는 것이 효과적입니다.
+이렇게 어플리케이션, 기능 그리고 자동 생성된 어플리케이션 내에서 고유한 아이디를 조합하면
+더 이상 ID가 충돌 할 걱정을 하지 않아도 됩니다.  
+이런 문제들을 React에서는 `userId` 훅은 이용해서 해결 할 수 있으며, 다른 라이브러리 내에서는 생성 함수를 직접 만들어 쉽게 해결 할 수 있습니다.

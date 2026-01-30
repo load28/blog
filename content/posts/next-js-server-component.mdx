@@ -1,670 +1,82 @@
 ---
-title: 'Next.js Server Components: RSC 아키텍처와 하이브리드 렌더링 전략'
-description: 'React Server Components를 활용한 제로 클라이언트 번들 렌더링과 서버-클라이언트 조합 패턴'
+title: 'Next.js - Server component'
+description: 'Exploring the concept of server components in Next.js 13+'
 date: '2024-09-05:00:00Z'
 tags: ['next.js']
 series: 'react'
 seriesNumber: 2
 ---
 
-Next.js 13에서 도입된 App Router는 **React Server Components(RSC)** 를 기본값으로 채택하여 렌더링 패러다임의 근본적인 변화를 가져왔습니다. 서버 컴포넌트는 클라이언트로 전송되는 JavaScript 번들을 제로(0)로 만들면서도, 클라이언트 컴포넌트와 유연하게 조합하여 최적의 사용자 경험을 제공합니다.
+## 서버 컴포넌트의 특징과 사용법
 
-이 글에서는 서버 컴포넌트의 내부 동작 원리, RSC Payload 메커니즘, 그리고 서버-클라이언트 하이브리드 렌더링 전략을 살펴봅니다.
+서버 컴포넌트는 Next.js 13+ 버전의 App Router에서 기본값으로 설정되어 있습니다. 이 컴포넌트들은 서버에서 렌더링되며, 클라이언트 측 JavaScript를 필요로 하지 않습니다.
 
-## React Server Components(RSC)란?
+### 서버 컴포넌트의 주요 용도:
 
-### 전통적인 SSR vs RSC
+- 데이터 fetching
+- 백엔드 리소스에 직접 접근
+- 민감한 정보를 서버에 유지
+- 클라이언트 측 JavaScript 양 감소
 
-**기존 SSR의 한계:**
-```tsx
-// 기존 SSR: 클라이언트에서도 전체 컴포넌트 재실행
-export default function Page() {
-  const data = await fetchData(); // 서버에서 실행
-  return <div>{data}</div>;       // 클라이언트에서도 hydration 위해 재실행
-}
-
-// 번들에 포함됨:
-// - fetchData 함수
-// - Page 컴포넌트 전체 로직
-// 결과: 불필요한 JavaScript 전송
-```
-
-**RSC의 혁신:**
-```tsx
-// 서버 컴포넌트: 클라이언트 번들에서 완전히 제외
-export default async function Page() {
-  const data = await fetchData(); // 서버에서만 실행
-  return <div>{data}</div>;       // 렌더링 결과만 클라이언트로 전송
-}
-
-// 번들에 포함 안 됨:
-// - fetchData 함수 [권장] 제외
-// - Page 컴포넌트 로직 [권장] 제외
-// 결과: JavaScript 번들 크기 0KB!
-```
-
-### RSC Payload 구조
-
-서버 컴포넌트는 HTML이 아닌 **RSC Payload**라는 특수한 JSON-like 형식으로 클라이언트에 전송됩니다.
-
-**실제 RSC Payload 예시:**
-```json
-{
-  "0": ["$","div",null,{
-    "children": ["$","h1",null,{"children":"Hello"}]
-  }],
-  "1": ["$","@1",null,{"children":["$0"]}]
-}
-```
-
-**특징:**
-- React Element 트리를 직렬화한 형식
-- Suspense boundaries 정보 포함
-- Client Component의 placeholder 포함
-- Streaming 지원 (점진적 렌더링)
-
-## 서버 컴포넌트의 특징과 장점
-
-### 1. 제로 클라이언트 번들
-
-**Before (전통적인 React):**
-```tsx
-// ProductList.tsx
-import { useState, useEffect } from 'react';
-
-export default function ProductList() {
-  const [products, setProducts] = useState([]);
-
-  useEffect(() => {
-    fetch('/api/products')
-      .then(res => res.json())
-      .then(setProducts);
-  }, []);
-
-  return (
-    <div>
-      {products.map(p => <ProductCard key={p.id} product={p} />)}
-    </div>
-  );
-}
-
-// 번들 크기: ~15KB (컴포넌트 + useState/useEffect + fetch 로직)
-```
-
-**After (서버 컴포넌트):**
-```tsx
-// ProductList.tsx (서버 컴포넌트)
-export default async function ProductList() {
-  const products = await db.product.findMany(); // 직접 DB 접근!
-
-  return (
-    <div>
-      {products.map(p => <ProductCard key={p.id} product={p} />)}
-    </div>
-  );
-}
-
-// 번들 크기: 0KB (서버에서만 실행)
-// 클라이언트는 렌더링된 결과만 받음
-```
-
-### 2. 직접적인 백엔드 접근
-
-```tsx
-// 서버 컴포넌트에서 가능한 작업들
-export default async function Dashboard() {
-  // 1. 데이터베이스 직접 접근
-  const users = await prisma.user.findMany();
-
-  // 2. 환경 변수 안전하게 사용 (클라이언트 노출 없음)
-  const apiKey = process.env.SECRET_API_KEY;
-
-  // 3. 파일 시스템 접근
-  const config = await fs.readFile('config.json');
-
-  // 4. 서버 전용 라이브러리 사용
-  const marked = await import('marked'); // 클라이언트 번들에 포함 안 됨
-
-  return <div>{/* ... */}</div>;
-}
-```
-
-### 3. 자동 코드 스플리팅
-
-```tsx
-// 모든 서버 컴포넌트는 자동으로 코드 스플리팅됨
-import HeavyChart from './HeavyChart'; // 서버 컴포넌트
-import Analytics from './Analytics';   // 서버 컴포넌트
-
-export default function Dashboard() {
-  return (
-    <div>
-      <HeavyChart />    {/* 0KB 번들 */}
-      <Analytics />     {/* 0KB 번들 */}
-    </div>
-  );
-}
-
-// 전체 번들 크기: 0KB (RSC Payload만 전송)
-```
+서버 컴포넌트에서는 데이터 fetching을 위해 async/await를 직접 사용할 수 있어 편리합니다.
 
 ## 클라이언트 컴포넌트의 특징과 사용법
 
-### use client 지시어
+클라이언트 컴포넌트를 만들려면 파일 최상단에 `use client` 지시어를 추가해야 합니다.
 
-클라이언트 컴포넌트는 파일 최상단에 `'use client'` 지시어를 명시해야 합니다.
-
-```tsx
+```jsx
 'use client';
 
 import { useState } from 'react';
 
 export default function Counter() {
   const [count, setCount] = useState(0);
-
-  return (
-    <button onClick={() => setCount(count + 1)}>
-      Count: {count}
-    </button>
-  );
+  // ...
 }
 ```
 
-**중요한 점:**
-- `'use client'`는 **파일의 경계**를 정의합니다
-- 해당 파일과 import하는 모든 자식 컴포넌트가 클라이언트 컴포넌트가 됩니다
-- 번들에 포함되므로 크기에 영향을 미칩니다
+### 클라이언트 컴포넌트의 주요 용도:
 
-### 클라이언트 컴포넌트가 필요한 경우
+- 상호작용 및 이벤트 리스너
+- useState/useEffect 등의 훅 사용
+- 브라우저 전용 API 사용
+- 커스텀 이벤트 핸들러
 
-**1. 상태(State) 관리**
-```tsx
-'use client';
+클라이언트 컴포넌트는 첫 페이지 로드 시 서버에서 초기 렌더링되고, 이후 네비게이션에서는 클라이언트에서 렌더링됩니다.
 
-export default function SearchInput() {
-  const [query, setQuery] = useState('');
+## 서버 컴포넌트와 클라이언트 컴포넌트의 조합
 
-  return (
-    <input
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-    />
-  );
-}
-```
+서버 컴포넌트와 클라이언트 컴포넌트는 서로 중첩될 수 있습니다. 일반적인 패턴은 서버 컴포넌트에서 데이터를 가져와 클라이언트 컴포넌트에 props로 전달하는 것입니다.
+가능하다면 컴포넌트 트리의 말단에 클라이언트 컴포넌트를 배치하여 서버 렌더링의 이점을 최대화하는 것이 좋습니다.
 
-**2. 이벤트 핸들러**
-```tsx
-'use client';
+### 클라이언트 컴포넌트 내부의 서버 컴포넌트
 
-export default function LikeButton() {
-  const handleClick = () => {
-    alert('Liked!');
-  };
+클라이언트 컴포넌트 내부에 서버 컴포넌트를 직접 가져오는 것은 지원되지 않지만, `children` prop을 통해 서버 컴포넌트를 클라이언트 컴포넌트 내부에 중첩시킬 수 있습니다. 이를 `Composition pattern`이라고 합니다.
 
-  return <button onClick={handleClick}>Like</button>;
-}
-```
-
-**3. 브라우저 API 사용**
-```tsx
-'use client';
-
-import { useEffect } from 'react';
-
-export default function GeoLocation() {
-  useEffect(() => {
-    navigator.geolocation.getCurrentPosition((position) => {
-      console.log(position.coords);
-    });
-  }, []);
-
-  return <div>Getting your location...</div>;
-}
-```
-
-**4. Context 제공/소비**
-```tsx
-'use client';
-
-import { createContext, useContext } from 'react';
-
-const ThemeContext = createContext('light');
-
-export function ThemeProvider({ children }) {
-  return (
-    <ThemeContext.Provider value="dark">
-      {children}
-    </ThemeContext.Provider>
-  );
-}
-```
-
-### 클라이언트 컴포넌트의 렌더링 순서
-
-```
-1. 초기 페이지 로드 (SSR):
-   서버에서 HTML 생성 → 클라이언트로 전송 → Hydration
-
-2. 이후 네비게이션:
-   클라이언트에서만 렌더링 (CSR)
-```
-
-## 서버-클라이언트 하이브리드 렌더링 패턴
-
-### 1. 서버 컴포넌트에서 클라이언트로 Props 전달
-
-가장 일반적인 패턴은 서버에서 데이터를 가져와 클라이언트 컴포넌트에 전달하는 것입니다.
-
-```tsx
-// app/page.tsx (서버 컴포넌트)
-import ProductList from './ProductList'; // 클라이언트 컴포넌트
-
-export default async function Page() {
-  // 서버에서 데이터 페칭
-  const products = await db.product.findMany();
-
-  // 클라이언트 컴포넌트에 전달
-  return <ProductList products={products} />;
-}
-
-// app/ProductList.tsx (클라이언트 컴포넌트)
-'use client';
-
-export default function ProductList({ products }) {
-  const [filter, setFilter] = useState('');
-
-  return (
-    <div>
-      <input value={filter} onChange={(e) => setFilter(e.target.value)} />
-      {products
-        .filter(p => p.name.includes(filter))
-        .map(p => <ProductCard key={p.id} product={p} />)}
-    </div>
-  );
-}
-```
-
-**이점:**
-- 데이터베이스 접근은 서버에서 (보안)
-- 인터랙션은 클라이언트에서 (UX)
-- 최소한의 JavaScript 번들
-
-### 2. Composition Pattern: children을 통한 조합
-
-클라이언트 컴포넌트는 서버 컴포넌트를 직접 import할 수 없지만, `children` prop으로 받을 수 있습니다.
-
-```tsx
-// ClientWrapper.tsx (클라이언트 컴포넌트)
-'use client';
+```jsx
+// ClientWrapper.js (클라이언트 컴포넌트)
+'use client'
 
 export default function ClientWrapper({ children }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  return (
-    <div>
-      <button onClick={() => setIsCollapsed(!isCollapsed)}>
-        Toggle
-      </button>
-      {!isCollapsed && children}
-    </div>
-  );
+    return <div>{children}</div>
 }
 
-// ServerContent.tsx (서버 컴포넌트)
-export default async function ServerContent() {
-  const data = await fetchHeavyData(); // 서버에서만 실행
-
-  return <div>{data}</div>;
+// ServerComponent.js (서버 컴포넌트)
+export default function ServerComponent() {
+return <h1>서버 컴포넌트입니다</h1>
 }
 
-// Page.tsx (서버 컴포넌트)
-export default function Page() {
-  return (
-    <ClientWrapper>
-      <ServerContent /> {/* 서버 특성 유지! */}
-    </ClientWrapper>
-  );
-}
-```
-
-**동작 원리:**
-```
-1. Page 렌더링 (서버)
-2. ServerContent 렌더링 (서버) → RSC Payload 생성
-3. ClientWrapper 렌더링 (서버) → children 위치에 ServerContent placeholder
-4. 클라이언트로 전송
-5. ClientWrapper hydration → ServerContent는 이미 렌더링된 상태
-```
-
-### 3. 리프 컴포넌트를 클라이언트로 유지
-
-클라이언트 컴포넌트를 가능한 한 트리의 하단(leaf)에 배치합니다.
-
-**[주의] 비효율적:**
-```tsx
-'use client';
-
-// 전체 페이지가 클라이언트 컴포넌트
-export default function Page() {
-  const [query, setQuery] = useState('');
-
-  return (
-    <div>
-      <Header /> {/* 번들에 포함 */}
-      <Sidebar /> {/* 번들에 포함 */}
-      <SearchInput value={query} onChange={setQuery} />
-      <Footer /> {/* 번들에 포함 */}
-    </div>
-  );
-}
-
-// 번들 크기: ~50KB
-```
-
-**[권장] 효율적:**
-```tsx
-// 페이지는 서버 컴포넌트 (기본값)
-export default function Page() {
-  return (
-    <div>
-      <Header /> {/* 0KB */}
-      <Sidebar /> {/* 0KB */}
-      <SearchInput /> {/* 클라이언트 컴포넌트만 */}
-      <Footer /> {/* 0KB */}
-    </div>
-  );
-}
-
-// SearchInput.tsx
-'use client';
-
-export default function SearchInput() {
-  const [query, setQuery] = useState('');
-  return <input value={query} onChange={(e) => setQuery(e.target.value)} />;
-}
-
-// 번들 크기: ~2KB (SearchInput만)
-```
-
-## 실전 사용 사례
-
-### 사례 1: 대시보드 (데이터 + 인터랙션)
-
-```tsx
-// app/dashboard/page.tsx (서버 컴포넌트)
-export default async function Dashboard() {
-  // 서버에서 여러 데이터 병렬 페칭
-  const [stats, users, revenue] = await Promise.all([
-    db.stats.findFirst(),
-    db.user.count(),
-    db.order.aggregate({ _sum: { total: true } })
-  ]);
-
-  return (
-    <div>
-      <StatCard title="Users" value={users} /> {/* 서버 컴포넌트 */}
-      <InteractiveChart data={stats} /> {/* 클라이언트 컴포넌트 */}
-      <RevenueDisplay total={revenue._sum.total} /> {/* 서버 컴포넌트 */}
-    </div>
-  );
-}
-
-// InteractiveChart.tsx (클라이언트 컴포넌트)
-'use client';
-
-import { Line } from 'recharts';
-
-export default function InteractiveChart({ data }) {
-  const [period, setPeriod] = useState('week');
-
-  return (
-    <div>
-      <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-        <option value="week">Week</option>
-        <option value="month">Month</option>
-      </select>
-      <Line data={data} />
-    </div>
-  );
-}
-```
-
-### 사례 2: 블로그 포스트 (Markdown 렌더링)
-
-```tsx
-// app/posts/[id]/page.tsx (서버 컴포넌트)
-import { marked } from 'marked'; // 클라이언트 번들에 포함 안 됨!
-
-export default async function Post({ params }) {
-  const post = await db.post.findUnique({
-    where: { id: params.id }
-  });
-
-  // 서버에서 Markdown → HTML 변환
-  const html = marked(post.content);
-
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <div dangerouslySetInnerHTML={{ __html: html }} />
-      <CommentSection postId={post.id} /> {/* 클라이언트 컴포넌트 */}
-    </article>
-  );
-}
-
-// CommentSection.tsx (클라이언트 컴포넌트)
-'use client';
-
-export default function CommentSection({ postId }) {
-  const [comments, setComments] = useState([]);
-
-  useEffect(() => {
-    fetch(`/api/comments?postId=${postId}`)
-      .then(res => res.json())
-      .then(setComments);
-  }, [postId]);
-
-  return (
-    <div>
-      {comments.map(c => <Comment key={c.id} comment={c} />)}
-    </div>
-  );
-}
-```
-
-### 사례 3: 인증 보호 페이지
-
-```tsx
-// app/admin/page.tsx (서버 컴포넌트)
-import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
-
-export default async function AdminPage() {
-  const session = await auth(); // 서버에서 인증 확인
-
-  if (!session || session.user.role !== 'admin') {
-    redirect('/login'); // 서버 리다이렉트
-  }
-
-  // 민감한 데이터는 서버에서만 접근
-  const adminData = await db.admin.findMany({
-    include: { sensitiveInfo: true }
-  });
-
-  return (
-    <div>
-      <h1>Admin Dashboard</h1>
-      <AdminPanel data={adminData} />
-    </div>
-  );
-}
-```
-
-## 서버 컴포넌트의 제한사항
-
-### 사용할 수 없는 기능
-
-**1. React Hooks**
-```tsx
-// [주의] 서버 컴포넌트에서 불가능
-export default async function Page() {
-  const [state, setState] = useState(0); // Error!
-  useEffect(() => {}, []); // Error!
-  const context = useContext(MyContext); // Error!
-
-  return <div>{state}</div>;
-}
-```
-
-**2. 브라우저 API**
-```tsx
-// [주의] 서버 컴포넌트에서 불가능
-export default async function Page() {
-  const width = window.innerWidth; // Error: window is not defined
-  localStorage.setItem('key', 'value'); // Error!
-
-  return <div>{width}</div>;
-}
-```
-
-**3. 이벤트 핸들러**
-```tsx
-// [주의] 서버 컴포넌트에서 불가능
-export default async function Page() {
-  return (
-    <button onClick={() => alert('Hi')}> {/* Error! */}
-      Click me
-    </button>
-  );
-}
-```
-
-### 해결 방법
-
-이러한 기능이 필요하면 해당 부분만 클라이언트 컴포넌트로 분리합니다.
-
-```tsx
-// Page.tsx (서버 컴포넌트)
-export default async function Page() {
-  const data = await fetchData();
-
-  return (
-    <div>
-      <h1>Title</h1>
-      <InteractiveButton data={data} /> {/* 클라이언트 컴포넌트 */}
-    </div>
-  );
-}
-
-// InteractiveButton.tsx (클라이언트 컴포넌트)
-'use client';
-
-export default function InteractiveButton({ data }) {
-  const [count, setCount] = useState(0);
-
-  return (
-    <button onClick={() => setCount(count + 1)}>
-      {data.title}: {count}
-    </button>
-  );
-}
-```
-
-## 선택 가이드
-
-### 서버 컴포넌트를 사용해야 하는 경우
-
-- [지원] 데이터 페칭
-- [지원] 백엔드 리소스 접근 (데이터베이스, 파일 시스템)
-- [지원] 민감한 정보 처리 (API 키, 인증 토큰)
-- [지원] 대용량 라이브러리 사용 (Markdown 파서, 이미지 처리)
-- [지원] SEO가 중요한 콘텐츠
-
-### 클라이언트 컴포넌트를 사용해야 하는 경우
-
-- [지원] 상호작용 (onClick, onChange 등)
-- [지원] 상태 관리 (useState, useReducer)
-- [지원] 생명주기 훅 (useEffect, useLayoutEffect)
-- [지원] 브라우저 API (localStorage, navigator)
-- [지원] Context (createContext, useContext)
-- [지원] Custom Hooks
-
-## 성능 최적화 팁
-
-### 1. 데이터 페칭 위치 선택
-
-```tsx
-// [권장] 권장: 서버 컴포넌트에서 페칭
-export default async function Page() {
-  const data = await db.posts.findMany();
-  return <PostList posts={data} />;
-}
-
-// [주의] 비권장: 클라이언트에서 페칭
-'use client';
+// Page.js
+import ClientWrapper from './ClientWrapper'
+import ServerComponent from './ServerComponent'
 
 export default function Page() {
-  const [data, setData] = useState([]);
-
-  useEffect(() => {
-    fetch('/api/posts')
-      .then(res => res.json())
-      .then(setData);
-  }, []);
-
-  return <PostList posts={data} />;
+    return (
+        <ClientWrapper>
+            <ServerComponent />
+        </ClientWrapper>
+    )
 }
 ```
 
-### 2. Streaming과 Suspense 활용
-
-```tsx
-import { Suspense } from 'react';
-
-export default function Page() {
-  return (
-    <div>
-      <Header />
-      <Suspense fallback={<LoadingSkeleton />}>
-        <SlowComponent /> {/* 느린 데이터 페칭 */}
-      </Suspense>
-      <Footer />
-    </div>
-  );
-}
-
-// SlowComponent는 독립적으로 스트리밍됨
-async function SlowComponent() {
-  const data = await fetchSlowData(); // 3초 소요
-  return <div>{data}</div>;
-}
-```
-
-### 3. 번들 크기 모니터링
-
-```bash
-# Next.js 빌드 시 번들 크기 확인
-npm run build
-
-# 출력 예시:
-Route (app)              Size     First Load JS
-┌ ○ /                    1.2 kB      85 kB
-├ ○ /dashboard           0 kB        83 kB  # 서버 컴포넌트만
-└ ○ /interactive         15 kB       98 kB  # 클라이언트 컴포넌트 포함
-```
-
-## 결론
-
-Next.js Server Components는 클라이언트로 전송되는 JavaScript를 최소화하면서도, 클라이언트 컴포넌트와의 유연한 조합을 통해 최적의 사용자 경험을 제공합니다. RSC Payload 메커니즘을 통해 서버에서 렌더링된 결과를 효율적으로 전송하며, Composition Pattern을 활용하여 서버와 클라이언트 컴포넌트를 자연스럽게 조합할 수 있습니다.
-
-**핵심 권장사항:**
-- 기본적으로 서버 컴포넌트 사용 (App Router 기본값)
-- 인터랙션이 필요한 부분만 클라이언트 컴포넌트로 분리
-- 클라이언트 컴포넌트는 트리의 하단(leaf)에 배치
-- 데이터 페칭은 서버 컴포넌트에서 처리
-- Suspense와 Streaming으로 로딩 경험 개선
-
-**참고 자료:**
-- [Next.js 공식 문서 - Server Components](https://nextjs.org/docs/app/building-your-application/rendering/server-components)
-- [React 공식 문서 - Server Components](https://react.dev/reference/rsc/server-components)
+이 구조에서 ServerComponent는 서버 측 렌더링 특성을 유지하면서 클라이언트 컴포넌트 내부에 중첩될 수 있습니다.

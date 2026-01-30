@@ -1,490 +1,58 @@
 ---
-title: '모노레포 의존성 관리: ESLint Boundaries 플러그인으로 패키지 경계 강제하기'
-description: 'ESLint 플러그인 구현을 통한 모노레포 패키지 간 의존성 규칙 자동화'
-date: '2024-04-19T00:00:00Z'
-tags: ['eslint', 'monorepo']
+title: 'ESLint Boundaries plugin'
+description: 'Creating an ESLint plugin to enforce boundaries between packages in a monorepo'
+date: '2024-04-19:00:00Z'
+tags: ['eslint']
 ---
 
-모노레포에서 여러 패키지를 관리할 때, 패키지 간 의존성 규칙을 정의하고 강제하는 것은 아키텍처 일관성을 유지하는 핵심 요소입니다. 그러나 개발자의 실수나 부주의로 의도하지 않은 의존성이 추가될 수 있습니다.
+## 의존성 관리
 
-이 글에서는 **ESLint 플러그인을 직접 구현**하여 모노레포의 패키지 경계를 자동으로 검증하는 과정을 살펴봅니다. 그리고 실제 프로덕션 환경에서 사용할 수 있는 기존 솔루션과의 비교를 통해, 최적의 선택을 위한 가이드를 제공합니다.
+모노 레포에서는 패키지 간의 의존성을 관리하는 것이 중요합니다. 이를 위해 다음과 같은 규칙을 정의하였습니다.
 
-## 모노레포 의존성 규칙
-
-### 문제 상황
-
-모노레포 구조에서 다음과 같은 패키지 구조를 가정합니다:
-
-```
-packages/
-├── features/
-│   ├── auth/           # 인증 기능
-│   ├── dashboard/      # 대시보드 기능
-│   └── settings/       # 설정 기능
-└── libraries/
-    ├── ui-components/  # 공통 UI 컴포넌트
-    ├── utils/          # 유틸리티
-    └── api-client/     # API 클라이언트
-```
-
-### 의존성 규칙 정의
-
-아키텍처 일관성을 위해 다음 규칙을 정의했습니다:
-
-**1. Library 패키지는 Feature 패키지를 참조 불가**
-```typescript
-// [주의] packages/libraries/ui-components/Button.tsx
-import { useAuth } from '@features/auth'; // 불가능!
-
-// [권장] 올바른 사용
-import { theme } from '@libraries/utils';
-```
-
-**2. Feature 패키지는 다른 Feature 패키지를 참조 불가**
-```typescript
-// [주의] packages/features/dashboard/Dashboard.tsx
-import { LoginForm } from '@features/auth'; // 불가능!
-
-// [권장] 올바른 사용: 공통 기능은 library로 추출
-import { AuthGuard } from '@libraries/auth-utils';
-```
-
-**3. Feature 패키지는 Library 패키지를 참조 가능**
-```typescript
-// [권장] packages/features/auth/Login.tsx
-import { Button } from '@libraries/ui-components';
-import { api } from '@libraries/api-client';
-```
-
-### 규칙 설정의 이점
-
-- **순환 의존성 방지**: Feature 간 참조를 막아 순환 참조 근본적으로 차단
-- **관심사 분리**: Library는 도메인에 독립적, Feature는 비즈니스 로직에 집중
-- **재사용성 향상**: 공통 기능이 Library로 명확히 분리됨
-- **코드 스플리팅 최적화**: 의존성 트리가 단순해져 번들 분리 용이
-
-## ESLint 플러그인 동작 원리
-
-### ESLint 플러그인 로드 메커니즘
-
-ESLint는 다음 순서로 플러그인을 찾습니다:
-
-```
-1. node_modules/eslint-plugin-<name>/
-2. @scope/eslint-plugin-<name>/
-3. eslint-plugin-local (로컬 플러그인)
-```
-
-**사용 방법:**
-
-```javascript
-// .eslintrc.js
-module.exports = {
-  plugins: ['boundaries'], // eslint-plugin-boundaries를 로드
-  rules: {
-    'boundaries/element-types': 'error',
-  },
-};
-```
-
-### 로컬 개발 시 플러그인 사용
-
-프로덕션 배포 없이 개발하려면:
-
-**방법 1: npm link**
-```bash
-cd eslint-plugin-my-boundaries
-npm link
-
-cd ~/my-project
-npm link eslint-plugin-my-boundaries
-```
-
-**방법 2: eslint-plugin-local**
-```bash
-npm install --save-dev eslint-plugin-local
-```
-
-```javascript
-// .eslintrc.js
-module.exports = {
-  plugins: ['local'],
-  rules: {
-    'local/check-boundaries': 'error',
-  },
-};
-```
-
-## ESLint 플러그인 구현
-
-### 플러그인 구조
-
-ESLint 플러그인은 **규칙(Rule)** 의 집합입니다. 각 규칙은 AST(Abstract Syntax Tree)를 순회하며 패턴을 검사합니다.
-
-```typescript
-// eslint-plugin-check-import/index.ts
-export = {
-  rules: {
-    'no-invalid-import': {
-      meta: {
-        type: 'problem',
-        docs: {
-          description: 'Enforce package boundaries in monorepo',
-          category: 'Best Practices',
-        },
-        messages: {
-          invalidImport: 'Invalid import: {{from}} cannot import from {{to}}',
-        },
-      },
-      create(context) {
-        // 규칙 구현
-      },
-    },
-  },
-};
-```
-
-### 구현 스펙
-
-플러그인이 수행해야 할 작업:
-
-**1. Package.json 파싱**
-```typescript
-interface PackageInfo {
-  name: string;
-  type: 'library' | 'feature';
-  dependencies: string[];
-}
-
-function parsePackageInfo(packageJsonPath: string): PackageInfo {
-  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-
-  // 패키지 타입 판별
-  const isLibrary = pkg.name.includes('libraries');
-  const isFeature = pkg.name.includes('features');
-
-  return {
-    name: pkg.name,
-    type: isLibrary ? 'library' : isFeature ? 'feature' : 'unknown',
-    dependencies: Object.keys(pkg.dependencies || {}),
-  };
-}
-```
-
-**2. Import 경로 정규화**
-```typescript
-function resolveImportPath(
-  importPath: string,
-  currentFile: string,
-  tsConfig: TsConfig
-): string {
-  // 상대 경로 처리
-  if (importPath.startsWith('.')) {
-    return path.resolve(path.dirname(currentFile), importPath);
-  }
-
-  // TypeScript path alias 처리
-  const { paths, baseUrl } = tsConfig.compilerOptions;
-  for (const [alias, targets] of Object.entries(paths)) {
-    const pattern = alias.replace('/*', '');
-    if (importPath.startsWith(pattern)) {
-      const target = targets[0].replace('/*', '');
-      const relativePath = importPath.slice(pattern.length);
-      return path.join(baseUrl, target, relativePath);
-    }
-  }
-
-  // node_modules
-  return importPath;
-}
-```
-
-**3. ImportDeclaration 핸들러**
-```typescript
-create(context) {
-  const currentFile = context.getFilename();
-  const currentPkg = findPackageInfo(currentFile);
-
-  return {
-    ImportDeclaration(node) {
-      const importPath = node.source.value;
-      const resolvedPath = resolveImportPath(
-        importPath,
-        currentFile,
-        tsConfig
-      );
-      const targetPkg = findPackageInfo(resolvedPath);
-
-      // 의존성 규칙 검증
-      if (isInvalidDependency(currentPkg, targetPkg)) {
-        context.report({
-          node,
-          messageId: 'invalidImport',
-          data: {
-            from: currentPkg.name,
-            to: targetPkg.name,
-          },
-        });
-      }
-    },
-  };
-}
-```
-
-**4. 의존성 규칙 검증**
-```typescript
-function isInvalidDependency(
-  from: PackageInfo,
-  to: PackageInfo
-): boolean {
-  // 규칙 1: Library는 Feature 참조 불가
-  if (from.type === 'library' && to.type === 'feature') {
-    return true;
-  }
-
-  // 규칙 2: Feature는 다른 Feature 참조 불가
-  if (
-    from.type === 'feature' &&
-    to.type === 'feature' &&
-    from.name !== to.name
-  ) {
-    return true;
-  }
-
-  return false;
-}
-```
-
-### 실제 구현 코드
-
-완성된 코드는 GitHub에서 확인할 수 있습니다:
-
-**[eslint-plugin-check-import](https://github.com/load28/eslint-plugin-check-import)**
-
-## IDE 통합 문제 해결
-
-### 문제: TypeScript Path Alias 미지원
-
-ESLint CLI에서는 정상 동작하지만, IntelliJ IDEA에서 path alias 기반 import가 에러로 표시되지 않는 문제가 발생했습니다.
-
-**원인:**
-
-IntelliJ IDEA는 **가장 가까운 `.eslintrc` 파일**을 기준으로 ESLint를 실행합니다. 모노레포에서 각 패키지마다 ESLint 설정이 있는 경우, root의 설정을 인식하지 못합니다.
-
-### 해결책: Working Directory 명시
-
-**IntelliJ IDEA 설정:**
-
-```
-Settings → Languages & Frameworks → JavaScript → Code Quality Tools → ESLint
-  → Manual ESLint Configuration
-    → Working Directory: ./
-```
-
-**VS Code 설정:**
-
-```json
-// .vscode/settings.json
-{
-  "eslint.workingDirectories": ["./"]
-}
-```
-
-이렇게 설정하면 root의 `tsconfig.json` path alias 설정을 올바르게 인식합니다.
-
-## 프로덕션 솔루션 비교
-
-### 직접 구현 vs 기존 라이브러리
-
-직접 구현한 플러그인을 사용할지, 검증된 라이브러리를 사용할지 비교했습니다.
-
-| 솔루션 | 장점 | 단점 |
-|--------|------|------|
-| **직접 구현** | 완전한 커스터마이징 가능, 학습 기회 | 유지보수 부담, 엣지 케이스 처리 어려움 |
-| **@nx/eslint-plugin** | NX 생태계 통합, 강력한 기능 | NX 의존성 (회사 정책상 사용 불가) |
-| **eslint-plugin-boundaries** | 독립적, 디버깅 모드 제공, 커뮤니티 검증됨 | 초기 설정 복잡 |
-
-### @nx/eslint-plugin
-
-NX 모노레포 도구와 통합된 플러그인입니다.
-
-```javascript
-// .eslintrc.json
-{
-  "plugins": ["@nx"],
-  "rules": {
-    "@nx/enforce-module-boundaries": [
-      "error",
-      {
-        "enforceBuildableLibDependency": true,
-        "allow": [],
-        "depConstraints": [
-          {
-            "sourceTag": "type:feature",
-            "onlyDependOnLibsWithTags": ["type:library"]
-          },
-          {
-            "sourceTag": "type:library",
-            "bannedExternalImports": ["@features/*"]
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**문제:** 회사 정책상 NX 라이브러리 사용 불가 → 배제
-
-### eslint-plugin-boundaries
-
-독립적으로 사용 가능한 검증된 솔루션입니다.
-
-```javascript
-// .eslintrc.js
-module.exports = {
-  plugins: ['boundaries'],
-  settings: {
-    'boundaries/elements': [
-      {
-        type: 'library',
-        pattern: 'packages/libraries/*',
-        mode: 'folder',
-      },
-      {
-        type: 'feature',
-        pattern: 'packages/features/*',
-        mode: 'folder',
-      },
-    ],
-    'boundaries/ignore': ['**/*.test.ts'],
-  },
-  rules: {
-    'boundaries/element-types': [
-      'error',
-      {
-        default: 'disallow',
-        rules: [
-          {
-            from: 'feature',
-            allow: ['library'],
-          },
-          {
-            from: 'library',
-            disallow: ['feature'],
-          },
-        ],
-      },
-    ],
-  },
-};
-```
-
-**장점:**
-- 🐛 **디버깅 모드**: `BOUNDARIES_DEBUG=1` 환경변수로 상세 로그
-- 📸 **Capture 기능**: 의존성 그래프 스냅샷 생성
-- [지원] **커뮤니티 검증**: 수천 개 프로젝트에서 사용
-- 🔧 **유연한 설정**: glob 패턴, custom matcher 지원
-
-### 최종 선택: eslint-plugin-boundaries
-
-다음 이유로 `eslint-plugin-boundaries`를 선택했습니다:
-
-1. **독립적 사용 가능** (NX 같은 추가 의존성 불필요)
-2. **디버깅 도구 제공** (개발 생산성 향상)
-3. **minimatch 기반** (직접 구현한 버전과 동일한 패턴 매칭)
-4. **활발한 유지보수** (정기 업데이트, 이슈 대응)
-
-## 직접 구현의 가치
-
-결과적으로 직접 구현한 플러그인은 사용하지 않았지만, 다음을 얻었습니다:
-
-### 학습 효과
-
-**ESLint 내부 동작 이해:**
-- AST 순회 메커니즘
-- ImportDeclaration node 구조
-- Context API 활용법
-
-**TypeScript 설정 통합:**
-- `tsconfig.json` path alias 파싱
-- 상대 경로와 절대 경로 정규화
-- 모노레포 환경에서의 모듈 해석
-
-### 문제 해결 능력
-
-**실제 겪은 이슈:**
-- IDE와 CLI 간 동작 불일치
-- Working directory 설정의 중요성
-- Path alias 해석 복잡성
-
-이러한 경험은 `eslint-plugin-boundaries` 설정 시 트러블슈팅에 큰 도움이 되었습니다.
-
-## 실전 적용 예시
-
-### package.json 표시 규칙
-
-```json
-{
-  "name": "@my-app/feature-dashboard",
-  "meta": {
-    "type": "feature"
-  }
-}
-```
-
-```json
-{
-  "name": "@my-app/library-ui",
-  "meta": {
-    "type": "library"
-  }
-}
-```
-
-### ESLint 에러 예시
-
-```typescript
-// packages/libraries/ui-components/AuthButton.tsx
-import { useAuth } from '@features/auth'; // [주의] ESLint 에러
-
-// Error: boundary-types
-// Library packages cannot import from feature packages
-```
-
-```typescript
-// packages/features/dashboard/Dashboard.tsx
-import { LoginForm } from '@features/auth'; // [주의] ESLint 에러
-
-// Error: boundary-types
-// Feature packages cannot import from other feature packages
-```
-
-## 결론
-
-모노레포에서 패키지 간 의존성 규칙을 정의하고 자동화하는 것은 아키텍처 일관성 유지에 필수적입니다. ESLint 플러그인을 활용하면 개발자의 실수를 사전에 방지할 수 있습니다.
-
-**핵심 권장사항:**
-
-1. **명확한 의존성 규칙 정의**
-   - Library ↛ Feature
-   - Feature ↛ Feature (자기 자신 제외)
-   - Feature → Library [권장]
-
-2. **프로덕션 환경에는 검증된 솔루션 사용**
-   - eslint-plugin-boundaries (독립적 사용 시)
-   - @nx/eslint-plugin (NX 사용 시)
-
-3. **직접 구현은 학습 목적으로 권장**
-   - ESLint 동작 원리 이해
-   - 트러블슈팅 능력 향상
-   - 실제 사용은 검증된 라이브러리
-
-4. **IDE 통합 확인**
-   - Working directory 설정
-   - Path alias 인식 검증
-
-**참고 자료:**
-- [ESLint 공식 문서 - Plugin Development](https://eslint.org/docs/latest/extend/plugins/)
-- [eslint-plugin-boundaries GitHub](https://github.com/javierbrea/eslint-plugin-boundaries)
-- [직접 구현한 플러그인](https://github.com/load28/eslint-plugin-check-import)
+- library 패키지에서는 feature 패키지를 불가능.
+- feature 패키지에서는 다른 feature 패키지를 참조 불가능.
+- feature 패키지에서는 library 패키지를 참조 가능.
+
+## ESLint 설정
+
+이와 같은 규칙을 모두가 이해하고 있다고 하여도 실수를 방지하기 위해 ESLint를 사용해보기로 했습니다.
+
+#### ESLint 플러그인 동작 방식
+
+ESLint는 플러그인을 `eslint-plugin-<plugin-name>`이라는 이름의 npm 패키지를 찾아서 사용합니다.  
+따라서 `npm 배포 또는 npm link`를 통해서 ESLint 플러그인을 사용할 수 있습니다.  
+배포나 link 없이 사용하려면 [eslint-plugin-local](https://www.npmjs.com/package/eslint-plugin-local)을 사용하면 됩니다.
+
+#### ESLint plugin 구현하기
+
+[ESLint 사이트](https://eslint.org/docs/latest/extend/plugins/) 에서 플러그인 구현 방법을 참고합니다.  
+플러그인 스펙은 아래와 같습니다.
+
+- package.json에 패키지 간의 상관관계를 인지 할 수 있는 필드를 파싱
+- 파일의 import 경로가 타입스크립트 path alias 또는 상대경로인지 파악하여 절대경로로 변환
+- 위의 파싱된 정보를 기반으로 에러 여부를 판단
+
+ESLint에서 파일을 파싱할때 import을 발견하는 경우 ImportDeclaration 함수를 호출하므로 해당 함수에 로직을 구현합니다.  
+구현한 코드는 [eslint-plugin-check-import](https://github.com/load28/eslint-plugin-check-import)에서 확인 할 수 있습니다.
+
+## 동작 확인해보기
+
+ESLint cli를 통해서 정상 동작하는 것은 확인했습니다.  
+그러나 타입스크립트 paths로 설정된 import는 intellij에서 에러로 표시가 되지 않았습니다.
+
+이유는 intellij는 가장 가까운 ESLint 설정 파일을 찾아서 발생하는 문제였습니다.  
+여러개의 ESLint 설정 파일과 tsconfig 파일이 존재할 때에는 ESLint의 작업 디렉토리를 명시해주어야 합니다.  
+`eslint -> manual eslint config -> working directory`를 `./`으로 변경하면 됩니다.
+
+이렇게 바꾸어주고 ESLint 에러가 visaul studio code와 intellij 모두 잘 표시되었습니다.
+
+## 이미 누군가는 만들었다
+
+이러한 종류의 ESLint 플러그인은 `@nx/eslint-plugin`과 `eslint-plugin-boundaries`가 많이 쓰입니다.  
+그래서 직접 구현할때에도 `eslint-plugin-boundaries` 라이브러리와 동일하게 `minimatch` 라는 라이브러리를 활용하여 만들었습니다.
+
+직접 구현한 것, nx, eslint-plugin-boundaries 중에 무엇을 사용 할지 고민하다가  
+@nx/eslint-plugin는 nx 라이브러리 자체에 의지하고 있어서 회사 내에서는 nx를 사용 할 수 없어 배제하였고  
+`eslint-plugin-boundaries`는 디버깅 모드와 capture와 같은 기능도 제공하여 이것을 사용하기로 하였습니다.
+
+결국 직접 구현한 것은 사용하지 않았지만 동작 과정을 이해하게 되는 것만으로도 좋은 경험이였습니다.

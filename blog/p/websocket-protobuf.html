@@ -128,8 +128,7 @@ private deserializeMessage(buffer: Uint8Array, messageType: string): any {
 
 <h3>서버 구현</h3>
 
-<p>웹소켓 서버는 클라이언트와의 연결을 관리하고, Protocol Buffers로 직렬화된 메시지를 처리합니다. </p>
-<p>그리고 필요에 따라 gRPC를 통해 백엔드 서비스와 통신합니다.</p>
+<p>웹소켓 서버는 클라이언트와의 연결을 관리하고, Protocol Buffers로 직렬화된 메시지를 처리합니다. <br>그리고 필요에 따라 gRPC를 통해 백엔드 서비스와 통신합니다.</p>
 
 <pre><code class="language-typescript">import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
@@ -257,15 +256,10 @@ function startWebSocketServer() {
 <p>이 아키텍처에서 데이터가 어떻게 흐르는지 살펴보겠습니다.</p>
 
 <ol><li>클라이언트가 메시지를 전송하려면</li></ol>
-<p>   - Protocol Buffers로 메시지를 인코딩</p>
-<p>   - 메시지 타입 식별자를 추가</p>
-<p>   - 웹소켓을 통해 서버로 전송</p>
+<p>   - Protocol Buffers로 메시지를 인코딩<br>   - 메시지 타입 식별자를 추가<br>   - 웹소켓을 통해 서버로 전송</p>
 
 <ol><li>웹소켓 서버는</li></ol>
-<p>   - 메시지 타입을 식별</p>
-<p>   - Protocol Buffers로 메시지를 디코딩</p>
-<p>   - gRPC 클라이언트를 통해 백엔드 서비스에 요청</p>
-<p>   - 웹소켓을 통해 클라이언트에 전송</p>
+<p>   - 메시지 타입을 식별<br>   - Protocol Buffers로 메시지를 디코딩<br>   - gRPC 클라이언트를 통해 백엔드 서비스에 요청<br>   - 웹소켓을 통해 클라이언트에 전송</p>
 
 <p>이 흐름에서 중요한 점은</p>
 <ul><li><b>통신 채널은 웹소켓</b>입니다. 이는 지속적인 연결을 유지하며 양방향 통신을 가능하게 합니다.</li><li><b>데이터 형식은 Protocol Buffers</b>입니다. 이는 효율적인 바이너리 직렬화를 제공합니다.</li><li><b>내부 서비스 통신은 gRPC</b>를 사용합니다. 이는 서비스 간 통신에 최적화되어 있습니다.</li></ul>
@@ -275,8 +269,7 @@ function startWebSocketServer() {
 
 <h3>REST API vs WebSocket</h3>
 
-<p>REST API는 각 요청마다 새로운 TCP 연결을 설정하거나, keep-alive를 사용하더라도 요청/응답 패턴으로 인한 오버헤드가 있습니다.</p>
-<p>물론 기존 HTTP/1.1 프로토콜에서는 이러한 오버헤드를 HTTP/2.0 프로토콜로 개선할 수 있습니다.</p>
+<p>REST API는 각 요청마다 새로운 TCP 연결을 설정하거나, keep-alive를 사용하더라도 요청/응답 패턴으로 인한 오버헤드가 있습니다.<br>물론 기존 HTTP/1.1 프로토콜에서는 이러한 오버헤드를 HTTP/2.0 프로토콜로 개선할 수 있습니다.</p>
 
 <p><b>REST API (HTTP/1.1)의 연결 패턴:</b></p>
 <ol><li>TCP 연결 설정 (3-way handshake)</li><li>HTTP 요청 전송</li><li>HTTP 응답 수신</li><li>연결 종료 또는 유지</li></ol>
@@ -304,8 +297,7 @@ function startWebSocketServer() {
 <p>Protocol Buffers가 어떻게 크기를 줄이는지 자세히 살펴보면</p>
 
 <ol><li><b>필드 태그 사용</b>: 문자열 키 대신 숫자 태그를 사용합니다.</li></ol>
-<p>   - "userId"(7바이트) → 필드 번호 1(1바이트)</p>
-<p>   - "roomId"(8바이트) → 필드 번호 2(1바이트)</p>
+<p>   - "userId"(7바이트) → 필드 번호 1(1바이트)<br>   - "roomId"(8바이트) → 필드 번호 2(1바이트)</p>
 
 <ol><li><b>가변 길이 정수 인코딩</b>: 작은 숫자는 적은 바이트를 사용합니다.</li></ol>
 <p>   - 타임스탬프 1647853421000(13바이트 문자열) → 가변 길이 인코딩(5바이트)</p>
@@ -339,8 +331,7 @@ function startWebSocketServer() {
 <p>Protocol Buffers는 최적화된 인코딩 전략을 사용합니다</p>
 
 <ul><li><b>필드 번호 체계</b>: 필드명 대신 숫자를 사용하여 공간을 절약합니다.</li><li><b>가변 길이 정수(Varint)</b>: 작은 숫자는 적은 바이트를 사용합니다.</li></ul>
-<p>  - 1~127 범위의 숫자: 1바이트</p>
-<p>  - 128~16383 범위의 숫자: 2바이트</p>
+<p>  - 1~127 범위의 숫자: 1바이트<br>  - 128~16383 범위의 숫자: 2바이트</p>
 
 <p>  예시: 숫자 300은 JSON에서 3바이트(<code>300</code>)이지만, Protocol Buffers에서는 2바이트(<code>AC 02</code>)로 인코딩됩니다.</p>
 

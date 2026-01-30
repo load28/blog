@@ -2,16 +2,7 @@
 
 <p>러스트는 안전한 동시성 처리를 위해 다양한 타입을 제공합니다. 각 타입은 특정 상황에 최적화되어 있으며, 다음과 같은 주요 타입들이 있습니다.</p>
 
-<p>| 특징           | RefCell\<T>                  | Rc\<T>                       | Mutex\<T>               | Arc\<T>                          |</p>
-<p>| -------------- | ---------------------------- | ---------------------------- | ----------------------- | -------------------------------- |</p>
-<p>| 주요 특징      | 단일 스레드 내부 가변성 제공 | 단일 스레드 다중 소유권 제공 | 다중 스레드 데이터 보호 | 스레드 안전 다중 소유권          |</p>
-<p>| 소유권 관리    | 단일 소유권                  | 다중 소유권 (참조 카운팅)    | 단일 소유권             | 다중 소유권 (원자적 참조 카운팅) |</p>
-<p>| 접근 방식      | borrow()/borrow_mut()        | clone()                      | lock()                  | clone()                          |</p>
-<p>| 스레드 안전성  | 단일 스레드만                | 단일 스레드만                | 다중 스레드 안전        | 다중 스레드 안전                 |</p>
-<p>| 안전성 검사    | 런타임 대여 규칙             | 컴파일 타임                  | 락 기반 동기화          | 원자적 연산                      |</p>
-<p>| 메모리 관리    | 일반 해제                    | 참조 카운트 0 시 해제        | 일반 해제               | 원자적 참조 카운트 0 시 해제     |</p>
-<p>| 주요 사용 사례 | 단일 스레드 가변 데이터      | 단일 스레드 공유 데이터      | 멀티스레드 가변 데이터  | 멀티스레드 공유 데이터           |</p>
-<p>| 성능 특성      | 런타임 검사 오버헤드         | 가벼운 참조 카운팅           | 락 획득/해제 오버헤드   | 원자적 연산 오버헤드             |</p>
+<table><thead><tr><th style="text-align:left">특징</th><th style="text-align:left">RefCell\<T></th><th style="text-align:left">Rc\<T></th><th style="text-align:left">Mutex\<T></th><th style="text-align:left">Arc\<T></th></tr></thead><tbody><tr><td style="text-align:left">주요 특징</td><td style="text-align:left">단일 스레드 내부 가변성 제공</td><td style="text-align:left">단일 스레드 다중 소유권 제공</td><td style="text-align:left">다중 스레드 데이터 보호</td><td style="text-align:left">스레드 안전 다중 소유권</td></tr><tr><td style="text-align:left">소유권 관리</td><td style="text-align:left">단일 소유권</td><td style="text-align:left">다중 소유권 (참조 카운팅)</td><td style="text-align:left">단일 소유권</td><td style="text-align:left">다중 소유권 (원자적 참조 카운팅)</td></tr><tr><td style="text-align:left">접근 방식</td><td style="text-align:left">borrow()/borrow_mut()</td><td style="text-align:left">clone()</td><td style="text-align:left">lock()</td><td style="text-align:left">clone()</td></tr><tr><td style="text-align:left">스레드 안전성</td><td style="text-align:left">단일 스레드만</td><td style="text-align:left">단일 스레드만</td><td style="text-align:left">다중 스레드 안전</td><td style="text-align:left">다중 스레드 안전</td></tr><tr><td style="text-align:left">안전성 검사</td><td style="text-align:left">런타임 대여 규칙</td><td style="text-align:left">컴파일 타임</td><td style="text-align:left">락 기반 동기화</td><td style="text-align:left">원자적 연산</td></tr><tr><td style="text-align:left">메모리 관리</td><td style="text-align:left">일반 해제</td><td style="text-align:left">참조 카운트 0 시 해제</td><td style="text-align:left">일반 해제</td><td style="text-align:left">원자적 참조 카운트 0 시 해제</td></tr><tr><td style="text-align:left">주요 사용 사례</td><td style="text-align:left">단일 스레드 가변 데이터</td><td style="text-align:left">단일 스레드 공유 데이터</td><td style="text-align:left">멀티스레드 가변 데이터</td><td style="text-align:left">멀티스레드 공유 데이터</td></tr><tr><td style="text-align:left">성능 특성</td><td style="text-align:left">런타임 검사 오버헤드</td><td style="text-align:left">가벼운 참조 카운팅</td><td style="text-align:left">락 획득/해제 오버헤드</td><td style="text-align:left">원자적 연산 오버헤드</td></tr></tbody></table>
 
 <h2>실행 환경별 타입 선택</h2>
 

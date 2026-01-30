@@ -1,9 +1,6 @@
-<p>주변의 개발자 분들과 리액트와 DI에 대한 이야기를 한 적이 있습니다.</p>
-<p>Angular, Nest.js, Spring과 같은 프레임워크에서 의존성 주입을 통해 확장성 있게 개발이 가능한데 비해</p>
-<p>리액트와 같은 라이브러리에서는 의존성 주입을 도입할 수 없다는 이야기를 했었습니다.  </p>
+<p>주변의 개발자 분들과 리액트와 DI에 대한 이야기를 한 적이 있습니다.<br>Angular, Nest.js, Spring과 같은 프레임워크에서 의존성 주입을 통해 확장성 있게 개발이 가능한데 비해<br>리액트와 같은 라이브러리에서는 의존성 주입을 도입할 수 없다는 이야기를 했었습니다.  </p>
 
-<p>그렇게 관련 자료를 찾다가 Effect라는 타입스크립트 기반의 함수형 프로그래밍 라이브러리를 알게 되었는데 </p>
-<p>이것은 함수형 프로그래밍을 기반으로 의존성 주입 개념을 도입할 수 있었습니다. 그래서 간단하게 Effect로 구현해보았습니다.</p>
+<p>그렇게 관련 자료를 찾다가 Effect라는 타입스크립트 기반의 함수형 프로그래밍 라이브러리를 알게 되었는데 <br>이것은 함수형 프로그래밍을 기반으로 의존성 주입 개념을 도입할 수 있었습니다. 그래서 간단하게 Effect로 구현해보았습니다.</p>
 
 <h3>저장소 구현하기</h3>
 
@@ -11,9 +8,7 @@
 <ol><li>프로그램은 저장소에서 유저 정보를 획득한다.</li><li>저장소는 상황에 따라 로컬스토리지 기반의 저장소와 인 메모리 저장소를 사용한다.</li></ol>
 <h4>인터페이스 작성</h4>
 
-<p>Effect로 코드를 작성할 때에는 인터페이스 기반의 프로그래밍을 추구합니다. </p>
-<p>그렇기 때문에 각 기능에 대해 인터페이스를 명시하고 해당 인터페이스에 대한 구현체를 작성합니다.</p>
-<p>아래의 코드에서는 유저 저장소와 로컬스토리지 저장소의 인터페이스를 선언하고 각 인터페이스에서 사용되는 에러 타입을 정의합니다.</p>
+<p>Effect로 코드를 작성할 때에는 인터페이스 기반의 프로그래밍을 추구합니다. <br>그렇기 때문에 각 기능에 대해 인터페이스를 명시하고 해당 인터페이스에 대한 구현체를 작성합니다.<br>아래의 코드에서는 유저 저장소와 로컬스토리지 저장소의 인터페이스를 선언하고 각 인터페이스에서 사용되는 에러 타입을 정의합니다.</p>
 
 <pre><code class="language-typescript">class UserRepositoryError extends Error {
   readonly _tag = "UserRepositoryError"
@@ -73,8 +68,7 @@ class UserRepository extends Context.Tag("UserRepository")&lt;
   }
 &gt;() {}</code></pre>
 
-<p>Effect는 정상적으로 반환되는 데이터, 에러 타입, 요구사항으로 구분되는 기본적인 인터페이스를 가지고 있습니다.</p>
-<p>아래의 함수의 반환값을 예시로 성공일 때에는 T 또는 undefined를 반환하고 에러일 때에는 로컬스토리지 에러 타입을 반환합니다.</p>
+<p>Effect는 정상적으로 반환되는 데이터, 에러 타입, 요구사항으로 구분되는 기본적인 인터페이스를 가지고 있습니다.<br>아래의 함수의 반환값을 예시로 성공일 때에는 T 또는 undefined를 반환하고 에러일 때에는 로컬스토리지 에러 타입을 반환합니다.</p>
 
 <pre><code class="language-typescript">    getItem&lt;T&gt;(key: string): Effect.Effect&lt;T | undefined, LocalStorageError&gt;
     update: (user: User) =&gt; Effect.Effect&lt;void, UserRepositoryError&gt;</code></pre>
@@ -86,14 +80,11 @@ class UserRepository extends Context.Tag("UserRepository")&lt;
 
 <h4>로컬스토리지 서비스 구현체</h4>
 
-<p>LocalStorageService 인터페이스에 대한 실제 구현을 구현합니다.</p>
-<p>자체적인 try/catch 함수가 있어 기존의 try/catch 방식을 대신할 수 있습니다. try/catch 문을 이렇게 작성하면 좋은 점은 무엇일까요?  </p>
+<p>LocalStorageService 인터페이스에 대한 실제 구현을 구현합니다.<br>자체적인 try/catch 함수가 있어 기존의 try/catch 방식을 대신할 수 있습니다. try/catch 문을 이렇게 작성하면 좋은 점은 무엇일까요?  </p>
 
-<p>기존의 문법은 에러가 전파될 때 가장 가까운 try/catch에서 해결됩니다. </p>
-<p>이것은 암시적으로 해결되며 어디서 어떤 에러를 반환하는지 파악할 수 없게 합니다.  </p>
+<p>기존의 문법은 에러가 전파될 때 가장 가까운 try/catch에서 해결됩니다. <br>이것은 암시적으로 해결되며 어디서 어떤 에러를 반환하는지 파악할 수 없게 합니다.  </p>
 
-<p>하지만 Effect.try 메서드를 이용하면 해당 함수의 반환값으로 에러가 반환될 수 있음을 나타내기 때문에 </p>
-<p>명시적으로 에러 처리가 반드시 필요합니다.</p>
+<p>하지만 Effect.try 메서드를 이용하면 해당 함수의 반환값으로 에러가 반환될 수 있음을 나타내기 때문에 <br>명시적으로 에러 처리가 반드시 필요합니다.</p>
 
 <pre><code class="language-typescript">const localStorageServiceLive = LocalStorageService.of({
   getItem: &lt;T&gt;(key: string) =&gt;
@@ -125,11 +116,9 @@ class UserRepository extends Context.Tag("UserRepository")&lt;
 
 <h4>로컬스토리지 저장소 구현체</h4>
 
-<p><code>yield* LocalStorageService</code> 코드를 살펴보면 인터페이스를 사용하는 것을 알 수 있습니다.</p>
-<p>이렇게 구현체를 이용한 프로그래밍이 아닌 의존성을 주입받아 인터페이스 기반의 프로그래밍이 가능합니다.  </p>
+<p><code>yield* LocalStorageService</code> 코드를 살펴보면 인터페이스를 사용하는 것을 알 수 있습니다.<br>이렇게 구현체를 이용한 프로그래밍이 아닌 의존성을 주입받아 인터페이스 기반의 프로그래밍이 가능합니다.  </p>
 
-<p>세부 구현사항에 대해 의존하지 않고 오직 인터페이스만으로 개발이 가능하여 코드의 결합도를 낮출 수 있습니다.</p>
-<p>그리고 pipe 메서드를 이용해서 함수형 프로그래밍이 가능합니다. 함수별로 역할을 나눌 수 있기 때문에 가독성이 높아집니다.</p>
+<p>세부 구현사항에 대해 의존하지 않고 오직 인터페이스만으로 개발이 가능하여 코드의 결합도를 낮출 수 있습니다.<br>그리고 pipe 메서드를 이용해서 함수형 프로그래밍이 가능합니다. 함수별로 역할을 나눌 수 있기 때문에 가독성이 높아집니다.</p>
 
 <pre><code class="language-typescript">const userLocalStorageRepository = Effect.gen(function* () {
   const localStorageService = yield* LocalStorageService
@@ -187,11 +176,9 @@ class UserRepository extends Context.Tag("UserRepository")&lt;
 
 <h3>서비스 조합하기</h3>
 
-<p>Effect에서는 여러 방식으로 의존성을 주입할 수 있는데 가장 쉽게 명시적인 <code>Effect.Layer</code>를 이용해서 만들어 봅시다.</p>
-<p><code>Layer</code>라는 패키지에서 제공하는 함수를 이용해 인터페이스와 실제 구현체를 조합할 수 있습니다.  </p>
+<p>Effect에서는 여러 방식으로 의존성을 주입할 수 있는데 가장 쉽게 명시적인 <code>Effect.Layer</code>를 이용해서 만들어 봅시다.<br><code>Layer</code>라는 패키지에서 제공하는 함수를 이용해 인터페이스와 실제 구현체를 조합할 수 있습니다.  </p>
 
-<p>아래 코드에서는 로컬스토리지 서비스 인터페이스와 실제 구현체를 결합해서 <code>localStorageLayer</code>를 만듭니다.</p>
-<p>이와 동일한 방식으로 인 메모리와 로컬스토리지 저장소의 의존성을 구현합니다.  </p>
+<p>아래 코드에서는 로컬스토리지 서비스 인터페이스와 실제 구현체를 결합해서 <code>localStorageLayer</code>를 만듭니다.<br>이와 동일한 방식으로 인 메모리와 로컬스토리지 저장소의 의존성을 구현합니다.  </p>
 
 <p>이때에 로컬스토리지 저장소는 로컬스토리지 서비스를 의존하고 있으므로 <code>userLocalStorageRepository.pipe(Effect.provide(localStorageLayer))</code>와 같이 별도의 의존성을 추가하여 레이어를 만듭니다.  </p>
 
@@ -199,8 +186,7 @@ class UserRepository extends Context.Tag("UserRepository")&lt;
 
 <p>오직 로컬스토리지 저장소 레이어에서만 로컬스토리지 서비스가 필요함을 인지할 수 있습니다.  </p>
 
-<p>이렇게 인터페이스와 실제 구현체를 연결하여 하나의 레이어를 만들고 </p>
-<p>이런 레이어들을 조합하여 실제 프로그램이 실행하는 시점에 의존성을 주입하는 방식으로 동작합니다.</p>
+<p>이렇게 인터페이스와 실제 구현체를 연결하여 하나의 레이어를 만들고 <br>이런 레이어들을 조합하여 실제 프로그램이 실행하는 시점에 의존성을 주입하는 방식으로 동작합니다.</p>
 
 <pre><code class="language-typescript">const localStorageLayer = Layer.succeed(LocalStorageService, localStorageServiceLive)
 const userLocalStorageRepositoryLayer = Layer.effect(
@@ -229,11 +215,9 @@ Effect.runSync(main.pipe(Effect.provide(selectUserRepositoryLayer(process.env.BU
 
 <h3>기존 서비스와 마이그레이션하기</h3>
 
-<p>이렇게 작성한 프로그램을 기존 일반적인 타입스크립트 코드와 어떻게 연결할까요?</p>
-<p>사실 Effect는 실행하는 시점에는 일반 타입스크립트와 다를 바 없으므로 기존의 함수처럼 이용이 가능합니다.  </p>
+<p>이렇게 작성한 프로그램을 기존 일반적인 타입스크립트 코드와 어떻게 연결할까요?<br>사실 Effect는 실행하는 시점에는 일반 타입스크립트와 다를 바 없으므로 기존의 함수처럼 이용이 가능합니다.  </p>
 
-<p>getUser라는 기존의 함수에 단지 <code>Effect.run</code> 메서드들을 실행해주면 됩니다.</p>
-<p>이처럼 기존 로직과 결합하기도 아주 쉽습니다.</p>
+<p>getUser라는 기존의 함수에 단지 <code>Effect.run</code> 메서드들을 실행해주면 됩니다.<br>이처럼 기존 로직과 결합하기도 아주 쉽습니다.</p>
 
 <pre><code class="language-typescript">const getUser = (id: number) =&gt; {
 	// return oldFindById(id);
@@ -242,12 +226,9 @@ Effect.runSync(main.pipe(Effect.provide(selectUserRepositoryLayer(process.env.BU
 
 <h3>꼭 필요한가</h3>
 
-<p>코드를 보면 기존의 코드들보다는 훨씬 코드량이 많습니다. </p>
-<p>이는 인터페이스를 선언해야 하고 에러 타입을 대부분 만들어서 처리해주는 것을 지향하고 있기 때문입니다.</p>
-<p>그렇기 때문에 간단한 로직에서는 불필요할 수 있습니다.  </p>
+<p>코드를 보면 기존의 코드들보다는 훨씬 코드량이 많습니다. <br>이는 인터페이스를 선언해야 하고 에러 타입을 대부분 만들어서 처리해주는 것을 지향하고 있기 때문입니다.<br>그렇기 때문에 간단한 로직에서는 불필요할 수 있습니다.  </p>
 
-<p>그에 반해 동일한 동작이 케이스에 따라 세부 구현이 달라지는 경우 아주 적합합니다. </p>
-<p>코드 간의 결합도를 낮출 수 있기 때문에 확장성을 높일 수 있고 쉽게 유지보수할 수 있습니다.  </p>
+<p>그에 반해 동일한 동작이 케이스에 따라 세부 구현이 달라지는 경우 아주 적합합니다. <br>코드 간의 결합도를 낮출 수 있기 때문에 확장성을 높일 수 있고 쉽게 유지보수할 수 있습니다.  </p>
 
 <p>그 외에도 Effect에서는 stream과 같은 기능을 제공해서 발행과 구독 기능을 지원하고 더 많은 부가 기능이 있습니다.    </p>
 

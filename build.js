@@ -31,12 +31,14 @@ if(l.match(/^[-*]\s/)){var ul=["<ul>"];while(i<lines.length&&lines[i].match(/^[-
 if(l.match(/^\d+\.\s/)){var ol=["<ol>"];while(i<lines.length&&lines[i].match(/^\d+\.\s/)){ol.push("<li>"+inline(lines[i].replace(/^\d+\.\s/,""))+"</li>");i++}i--;ol.push("</ol>");out.push(ol.join(""));continue}
 if(l.startsWith(">")){out.push("<blockquote>"+inline(l.replace(/^>\s?/,""))+"</blockquote>");continue}
 if(l.startsWith("---")||l.startsWith("***")){out.push("<hr>");continue}
-out.push("<p>"+inline(l)+"</p>")
+if(l.match(/^\|(.+)\|$/)&&i+1<lines.length&&lines[i+1].match(/^\|[\s:|-]+\|$/)){var hd=l.split("|").filter(c=>c.trim()),al=lines[i+1].split("|").filter(c=>c.trim()).map(c=>c.trim().startsWith(":")&&c.trim().endsWith(":")?"center":c.trim().endsWith(":")?"right":"left"),tb=['<table><thead><tr>'];hd.forEach((c,j)=>tb.push('<th style="text-align:'+al[j]+'">'+inline(c.trim())+'</th>'));tb.push('</tr></thead><tbody>');i+=2;while(i<lines.length&&lines[i].match(/^\|(.+)\|$/)){var cs=lines[i].split("|").filter(c=>c.trim());tb.push("<tr>");cs.forEach((c,j)=>tb.push('<td style="text-align:'+(al[j]||"left")+'">'+inline(c.trim())+'</td>'));tb.push("</tr>");i++}i--;tb.push("</tbody></table>");out.push(tb.join(""));continue}
+var pb=[l];while(i+1<lines.length&&lines[i+1].trim()&&!lines[i+1].match(/^(#{1,6}\s|[-*]\s|\d+\.\s|>|```|---|\*\*\*|\|)/)&&!inCode){i++;pb.push(lines[i])}out.push("<p>"+inline(pb.join("\n"))+"</p>")
 }
 if(inCode){out.push('<pre><code class="language-'+codeLang+'">'+esc(codeBuf.join("\n"))+"</code></pre>")}
 return out.join("\n")}
 function inline(s){
-s=s.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+s=s.replace(/\n/g,"<br>");
+s=s.replace(/\*\*([\s\S]+?)\*\*/g,"<b>$1</b>");
 s=s.replace(/\*(.+?)\*/g,"<em>$1</em>");
 s=s.replace(/`([^`]+)`/g,"<code>$1</code>");
 s=s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target=_blank>$1</a>');

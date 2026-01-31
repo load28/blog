@@ -51,7 +51,11 @@ export async function getAllPosts(): Promise<Post[]> {
     });
   }
 
-  posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  posts.sort((a, b) => {
+    const da = a.date.slice(0, 10);
+    const db = b.date.slice(0, 10);
+    return db.localeCompare(da);
+  });
   _posts = posts;
   return posts;
 }

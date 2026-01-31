@@ -6,7 +6,7 @@ tags: ['next.js', 'ssr', 'aws', 'streaming']
 
 최근 서비스의 SSR 성능을 개선하면서 Next.js의 스트리밍 렌더링을 적용해보려 했습니다. 로컬에서는 Suspense와 스트리밍이 의도대로 작동했지만, AWS Amplify에 배포하자 전혀 다른 결과가 나왔습니다.
 
-처음에는 CloudFront가 응답을 버퍼링해서 그런 거라고 생각했는데, 조사해보니 진짜 원인은 다른 곳에 있었습니다.
+원인을 조사해보니 Lambda의 응답 방식에 있었습니다.
 
 ## 스트리밍 SSR이란
 
@@ -24,9 +24,9 @@ tags: ['next.js', 'ssr', 'aws', 'streaming']
 
 사용자 입장에서는 빈 화면을 보는 시간이 줄어들고, 준비된 영역부터 먼저 볼 수 있습니다. 이를 위해서는 `Transfer-Encoding: chunked` 헤더가 유지되어야 하고, 중간에 응답을 버퍼링하는 계층이 없어야 합니다.
 
-## 진짜 원인: Lambda의 응답 방식
+## 원인: Lambda의 응답 방식
 
-AWS Amplify에서 스트리밍이 안 되는 이유를 처음에는 CloudFront의 버퍼링 때문이라고 생각했습니다. 하지만 실제로는 CloudFront가 아니라 **Lambda의 응답 방식** 자체가 원인이었습니다.
+AWS Amplify에서 스트리밍이 안 되는 이유는 **Lambda의 응답 방식** 자체에 있습니다.
 
 AWS Lambda에는 두 가지 응답 모드가 있습니다.
 
@@ -56,15 +56,7 @@ Lambda 함수 실행 중 → 청크1 쓰기 → 즉시 전송
 
 Amplify Hosting은 Next.js SSR 페이지를 Lambda 함수로 패키징해서 배포하는데, 이때 **기본 Buffered 모드**를 사용합니다. Lambda Function URL의 Streaming 모드를 사용하지 않습니다.
 
-그래서 Next.js가 아무리 Suspense boundary를 설정하고 스트리밍 응답을 만들어도, Lambda가 그 응답을 전부 버퍼링한 뒤에야 반환합니다. CloudFront는 오히려 문제가 아닙니다. CloudFront는 오리진에서 chunked 응답이 오면 그대로 클라이언트에 전달하는데, 애초에 Lambda가 chunked 응답을 보내지 않으니 전달할 것도 없는 겁니다.
-
-```
-Next.js → Lambda (Buffered 모드, 여기서 전체 응답 완성까지 대기)
-       → CloudFront (받은 걸 그대로 전달)
-       → 브라우저
-```
-
-결국 스트리밍이 안 되는 근본 원인은 CloudFront가 아니라 Lambda의 Buffered 응답 방식이었습니다.
+그래서 Next.js가 아무리 Suspense boundary를 설정하고 스트리밍 응답을 만들어도, Lambda가 그 응답을 전부 버퍼링한 뒤에야 반환합니다. 애초에 Lambda가 chunked 응답을 만들지 않으니, 그 뒤의 네트워크 계층이 뭐든 스트리밍은 불가능합니다.
 
 ## OpenNext가 하는 일
 
@@ -104,17 +96,11 @@ SST의 `Nextjs` 컴포넌트는 내부적으로 OpenNext를 사용하며, 배포
 - **Lambda 함수**: Next.js 서버 코드(SSR, API 라우트 등) 실행
 - **Lambda Function URL**: `RESPONSE_STREAM` invoke 모드로 설정
 - **S3 버킷**: 정적 에셋(JS 번들, 이미지 등) 저장
-- **CloudFront 배포**: 정적 요청은 S3로, 동적 요청은 Lambda Function URL로 라우팅
+- **CDN 배포**: 정적 요청은 S3로, 동적 요청은 Lambda Function URL로 라우팅
 - **DynamoDB 테이블**: ISR 태그 캐시용
 - **SQS 큐**: ISR 재검증용
 
-핵심은 Lambda Function URL을 `RESPONSE_STREAM` 모드로 설정하는 부분입니다. 이렇게 하면 Lambda가 청크 단위로 응답을 보낼 수 있고, CloudFront는 이 chunked 응답을 받는 대로 브라우저에 전달합니다. CloudFront 자체는 원래부터 `Transfer-Encoding: chunked`를 지원하기 때문에, 오리진이 스트리밍 응답을 보내기만 하면 그대로 통과시킵니다.
-
-```
-Next.js → Lambda (Streaming 모드, 청크 즉시 전송)
-       → CloudFront (받는 대로 전달)
-       → 브라우저 (Shell 먼저 렌더링, 나머지 순차 업데이트)
-```
+핵심은 Lambda Function URL을 `RESPONSE_STREAM` 모드로 설정하는 부분입니다. 이렇게 하면 Lambda가 청크 단위로 응답을 보낼 수 있고, 브라우저는 Shell을 먼저 렌더링한 뒤 나머지 컴포넌트를 순차적으로 업데이트합니다.
 
 설정은 `open-next.config.ts`에서 wrapper만 변경하면 됩니다.
 
@@ -134,7 +120,7 @@ export default config;
 
 ## Vercel은 왜 되는가
 
-Vercel 환경에서는 이런 고민이 필요 없습니다. Vercel은 자체 Edge Network를 통해 서버리스 함수의 응답을 버퍼링 없이 전달합니다. Next.js를 만든 팀이 운영하는 플랫폼이니 스트리밍 SSR이 기본으로 작동하는 건 당연한 일입니다.
+Vercel 환경에서는 이런 고민이 필요 없습니다. Vercel은 자체 Edge Network를 통해 서버리스 함수의 응답을 스트리밍으로 전달합니다. Next.js를 만든 팀이 운영하는 플랫폼이니 스트리밍 SSR이 기본으로 작동하는 건 당연한 일입니다.
 
 동일한 코드를 Vercel에 배포하면 Suspense fallback이 정상적으로 표시되고 점진적 렌더링이 의도대로 작동합니다. Lambda의 응답 모드 같은 인프라 레벨의 고민 없이 코드에만 집중할 수 있다는 게 가장 큰 장점입니다.
 
@@ -165,8 +151,8 @@ export default function CenterPage() {
 
 ## 정리
 
-AWS Amplify에서 Next.js 스트리밍 SSR이 안 되는 진짜 이유는 CloudFront의 버퍼링이 아니라 Lambda의 기본 응답 방식(Buffered 모드)입니다. Lambda가 함수 실행을 완전히 마친 뒤에야 응답을 반환하기 때문에, Next.js가 아무리 스트리밍 응답을 만들어도 의미가 없습니다.
+AWS Amplify에서 Next.js 스트리밍 SSR이 안 되는 이유는 Lambda의 기본 응답 방식(Buffered 모드)입니다. Lambda가 함수 실행을 완전히 마친 뒤에야 응답을 반환하기 때문에, Next.js가 아무리 스트리밍 응답을 만들어도 의미가 없습니다.
 
-SST + OpenNext는 이 문제를 Lambda Function URL의 `RESPONSE_STREAM` 모드와 `awslambda.streamifyResponse()` API를 사용해서 해결합니다. Lambda 자체의 응답 방식을 스트리밍으로 전환하는 것이 핵심이고, CloudFront는 원래 chunked 응답을 그대로 전달할 수 있으므로 별도 설정이 필요 없습니다.
+SST + OpenNext는 이 문제를 Lambda Function URL의 `RESPONSE_STREAM` 모드와 `awslambda.streamifyResponse()` API를 사용해서 해결합니다. Lambda 자체의 응답 방식을 스트리밍으로 전환하는 것이 핵심입니다.
 
 AWS 인프라를 유지해야 한다면 SST + OpenNext를, 그런 제약이 없다면 Vercel을 선택하는 것이 자연스럽습니다. 그리고 어떤 환경이든 Dynamic API 호출 위치 조정이나 컴포넌트 분리 같은 렌더링 구조 개선은 기본으로 해두는 게 좋습니다.

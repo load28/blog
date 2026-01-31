@@ -40,7 +40,7 @@ OpenNext는 Next.js 빌드 결과물을 AWS에서 돌릴 수 있게 변환해주
 
 내부적으로 Wrapper, Converter, Handler 세 계층이 있는데, 스트리밍에서 중요한 건 Wrapper입니다. 기본 wrapper인 `aws-lambda`는 Buffered 모드로 동작하고, `aws-lambda-streaming`으로 바꾸면 Lambda 핸들러를 `awslambda.streamifyResponse()`로 감쌉니다.
 
-`awslambda`는 Lambda Node.js 런타임에 내장된 전역 객체입니다. `streamifyResponse()`로 감싸면 핸들러에 `responseStream`이라는 Writable 스트림이 들어오고, Next.js가 만든 응답 스트림이 여기로 파이핑됩니다. 그게 전부입니다. Lambda의 응답 방식 자체를 바꾸는 거라 별도의 복잡한 설정이 필요 없습니다.
+`awslambda`는 npm 패키지가 아니라 Lambda Node.js 런타임에 이미 들어있는 전역 객체입니다. `streamifyResponse()`로 감싸면 핸들러에 `responseStream`이 들어오는데, Next.js가 만든 응답이 이 스트림을 통해 클라이언트로 흘러갑니다. 결국 Lambda의 응답 방식을 바꾸는 것이라 따로 복잡한 설정은 없습니다.
 
 다만 인프라 쪽에서도 Lambda Function URL의 invoke 모드가 `RESPONSE_STREAM`이어야 합니다. 코드에서 `streamifyResponse()`를 쓰더라도 invoke 모드가 Buffered면 소용없습니다. SST의 `Nextjs` 컴포넌트가 이 부분을 알아서 잡아줍니다. Lambda Function URL을 `RESPONSE_STREAM`으로 만들고, S3, CDN, DynamoDB(ISR 캐시), SQS(재검증) 같은 나머지 인프라도 함께 구성합니다.
 

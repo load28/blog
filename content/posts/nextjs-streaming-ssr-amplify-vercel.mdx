@@ -1,0 +1,94 @@
+---
+title: 'Next.js 스트리밍 SSR: Lambda 응답 방식의 이해와 SST'
+date: '2025-01-06'
+tags: ['next.js', 'ssr', 'aws', 'streaming']
+---
+
+최근 서비스의 SSR 성능을 개선하면서 Next.js의 스트리밍 렌더링을 적용해보려 했습니다. 로컬에서는 Suspense와 스트리밍이 의도대로 작동했지만, AWS Amplify에 배포하자 전혀 다른 결과가 나왔습니다.
+
+원인을 조사해보니 Lambda의 응답 방식에 있었습니다.
+
+## 스트리밍 SSR이란
+
+기존 SSR은 서버에서 모든 데이터를 준비한 뒤 완성된 HTML을 한 번에 보냅니다. 스트리밍 SSR은 준비된 부분부터 청크 단위로 브라우저에 보냅니다.
+
+```
+기존 SSR:
+서버 → [전체 HTML 완성까지 대기] → 브라우저
+
+스트리밍 SSR:
+서버 → Shell 전송 → 브라우저 즉시 렌더링
+     → 컴포넌트A 완료 → 브라우저 업데이트
+     → 컴포넌트B 완료 → 브라우저 최종 완성
+```
+
+빈 화면을 보는 시간이 줄어들고, 준비된 영역부터 먼저 보여줄 수 있습니다.
+
+## Lambda의 두 가지 응답 모드
+
+AWS Lambda에는 Buffered와 Streaming, 두 가지 응답 모드가 있습니다.
+
+**Buffered 모드**는 기본값입니다. 함수 실행이 끝나면 전체 응답을 메모리에 모아서 한 번에 반환합니다. `Invoke` API를 사용하고 최대 페이로드는 6MB입니다. 함수가 끝나기 전까지 클라이언트는 아무것도 못 받습니다.
+
+**Streaming 모드**는 Lambda Function URL을 `RESPONSE_STREAM`으로 설정하면 쓸 수 있습니다. `InvokeWithResponseStream` API를 사용하고, 함수 코드에서 `responseStream`에 쓰는 즉시 클라이언트로 전송됩니다. 최대 페이로드도 6MB가 아닌 200MB까지 늘어납니다.
+
+Amplify Hosting은 Next.js를 Lambda로 배포할 때 Buffered 모드를 사용합니다. 그래서 Next.js가 스트리밍 응답을 만들어도 Lambda가 전부 모은 다음에야 내보냅니다.
+
+## OpenNext와 SST
+
+OpenNext는 Next.js 빌드 결과물을 AWS에서 돌릴 수 있게 변환해주는 오픈소스입니다.
+
+내부적으로 Wrapper, Converter, Handler 세 계층이 있는데, 스트리밍에서 중요한 건 Wrapper입니다. 기본 wrapper인 `aws-lambda`는 Buffered 모드로 동작하고, `aws-lambda-streaming`으로 바꾸면 Lambda 핸들러를 `awslambda.streamifyResponse()`로 감쌉니다.
+
+`awslambda`는 npm 패키지가 아니라 Lambda Node.js 런타임에 이미 들어있는 전역 객체입니다. `streamifyResponse()`로 감싸면 핸들러에 `responseStream`이 들어오는데, Next.js가 만든 응답이 이 스트림을 통해 클라이언트로 흘러갑니다. 결국 Lambda의 응답 방식을 바꾸는 것이라 따로 복잡한 설정은 없습니다.
+
+다만 인프라 쪽에서도 Lambda Function URL의 invoke 모드가 `RESPONSE_STREAM`이어야 합니다. 코드에서 `streamifyResponse()`를 쓰더라도 invoke 모드가 Buffered면 소용없습니다. SST의 `Nextjs` 컴포넌트가 이 부분을 알아서 잡아줍니다. Lambda Function URL을 `RESPONSE_STREAM`으로 만들고, S3, CDN, DynamoDB(ISR 캐시), SQS(재검증) 같은 나머지 인프라도 함께 구성합니다.
+
+설정은 `open-next.config.ts`에서 wrapper만 바꾸면 됩니다.
+
+```typescript
+// open-next.config.ts
+const config = {
+  default: {
+    override: {
+      wrapper: 'aws-lambda-streaming',
+    },
+  },
+};
+export default config;
+```
+
+OpenNext 공식 문서에서 스트리밍 지원은 아직 "EXTREMELY EXPERIMENTAL"로 표기되어 있습니다. AWS 런타임 업데이트로 깨진 적이 있다고 하니 프로덕션에 넣으려면 충분히 테스트해야 합니다.
+
+## Vercel
+
+Vercel에서는 이런 고민이 필요 없습니다. Next.js를 만든 팀이 운영하는 플랫폼이라 스트리밍 SSR이 기본으로 됩니다. Suspense fallback도 정상적으로 표시되고 점진적 렌더링이 의도대로 작동합니다.
+
+## 스트리밍 없이도 할 수 있는 것
+
+스트리밍이 안 되는 환경이라도 렌더링 구조를 고치는 것만으로 효과를 볼 수 있었습니다.
+
+페이지 최상위에서 `cookies()`를 호출하면 Next.js가 전체 페이지를 동적 렌더링으로 전환합니다. 이걸 실제로 쿠키가 필요한 하위 컴포넌트로 내리면 됩니다.
+
+```typescript
+// Before: 페이지 전체가 동적 렌더링
+export default function CenterPage() {
+  const isPresident = cookies().get('_employeeType')?.value;
+  // ...
+}
+
+// After: 필요한 곳에서만 동적
+export default function CenterPage() {
+  return (
+    <Suspense>
+      <NoticeActionButton /> {/* 여기서만 cookies() 접근 */}
+    </Suspense>
+  );
+}
+```
+
+컴포넌트를 독립적으로 분리해서 각자 데이터를 가져오게 하면, 스트리밍 없이도 hydration 순서가 최적화됩니다.
+
+## 정리
+
+Amplify에서 스트리밍이 안 되는 이유는 Lambda가 Buffered 모드로 동작하기 때문입니다. SST + OpenNext는 Lambda의 응답 방식 자체를 Streaming으로 바꿔서 이 문제를 해결합니다. AWS를 써야 한다면 SST + OpenNext를, 그런 제약이 없다면 Vercel이 간단합니다.

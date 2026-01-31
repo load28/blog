@@ -1,0 +1,130 @@
+---
+title: 'Next.js 스트리밍 SSR: AWS Amplify에서의 한계와 대안'
+date: '2025-01-06'
+tags: ['next.js', 'ssr', 'aws', 'streaming']
+---
+
+최근 서비스의 SSR 성능을 개선하면서 Next.js의 스트리밍 렌더링을 적용해보려 했습니다. 로컬에서는 Suspense와 스트리밍이 의도대로 작동했지만, AWS Amplify에 배포하자 전혀 다른 결과가 나왔습니다.
+
+이 과정에서 알게 된 것들을 정리합니다.
+
+## 스트리밍 SSR이란
+
+기존 SSR은 서버에서 모든 데이터를 준비한 뒤 완성된 HTML을 한 번에 보냅니다. 반면 스트리밍 SSR은 준비된 부분부터 청크 단위로 브라우저에 전송합니다.
+
+```
+기존 SSR:
+서버 → [전체 HTML 완성까지 대기] → 브라우저
+
+스트리밍 SSR:
+서버 → Shell 전송 → 브라우저 즉시 렌더링
+     → 컴포넌트A 완료 → 브라우저 업데이트
+     → 컴포넌트B 완료 → 브라우저 최종 완성
+```
+
+사용자 입장에서는 빈 화면을 보는 시간이 줄어들고, 준비된 영역부터 먼저 볼 수 있습니다. 이를 위해서는 `Transfer-Encoding: chunked` 헤더가 유지되어야 하고, 중간에 응답을 버퍼링하는 계층이 없어야 합니다.
+
+## AWS Amplify에서 스트리밍이 안 되는 이유
+
+결론부터 말하면, AWS Amplify는 Next.js 스트리밍 렌더링을 네이티브로 지원하지 않습니다.
+
+원인은 CloudFront에 있습니다. Amplify는 내부적으로 CloudFront를 CDN으로 사용하는데, CloudFront가 Lambda@Edge에서 오는 응답을 전부 수집한 뒤 gzip 압축을 적용하고 한 번에 전송합니다.
+
+```
+Next.js 서버 → Lambda@Edge → CloudFront (여기서 버퍼링) → 브라우저
+                                    ↑
+                              전체 응답 수집 후
+                              gzip 압축 적용
+                              한 번에 전송
+```
+
+실제로 Chrome DevTools로 확인해보면 응답 헤더에 `Transfer-Encoding: chunked`가 없고, 대신 `content-encoding: gzip`이 포함되어 있습니다. 응답 시작부터 완료까지 걸리는 시간이 0.6ms~1.6ms 정도로, 이는 67KB의 HTML이 한 번에 도착했다는 뜻입니다.
+
+```http
+content-encoding: gzip
+content-type: text/html; charset=utf-8
+via: 1.1 ...cloudfront.net (CloudFront)
+```
+
+AWS re:Post에서도 이 문제가 공식적으로 확인되었습니다. "CloudFront may buffer responses before sending them to the client, which can interfere with the streaming behavior expected by NextJS for Suspense to work properly." 그리고 네이티브 지원 계획에 대해서도 공식 타임라인이 없다는 답변이 있었습니다.
+
+## 스트리밍 없이도 개선할 수 있었던 것들
+
+스트리밍이 안 된다는 걸 확인한 뒤, 스트리밍에 의존하지 않는 최적화에 집중했습니다. 그리고 이 방향이 실제로 효과가 있었습니다.
+
+### cookies() 호출 위치 변경
+
+기존에는 페이지 최상위에서 `cookies()`를 호출하고 있었습니다. Next.js에서 `cookies()`나 `headers()` 같은 Dynamic API를 최상위에서 호출하면 페이지 전체가 동적 렌더링으로 전환되어, 서버에서 모든 준비가 끝날 때까지 응답을 시작하지 않습니다.
+
+```typescript
+// Before: 페이지 전체가 동적 렌더링
+export default function CenterPage() {
+  const isPresident = cookies().get('_employeeType')?.value;
+  // ...
+}
+```
+
+이걸 실제로 쿠키가 필요한 하위 컴포넌트로 내렸습니다.
+
+```typescript
+// After: 페이지 구조는 정적, 필요한 곳에서만 동적
+export default function CenterPage() {
+  return (
+    <Suspense>
+      <NoticeActionButton /> {/* 여기서만 cookies() 접근 */}
+    </Suspense>
+  );
+}
+```
+
+이 변경만으로 TTFB가 706ms에서 446ms로 약 37% 개선되었습니다.
+
+### 컴포넌트 분리
+
+하나의 큰 컴포넌트에서 여러 API를 순차적으로 호출하던 구조를, 독립적인 컴포넌트로 분리했습니다. 각 컴포넌트가 자체적으로 데이터를 가져오도록 하니 완료되는 순서대로 hydration이 진행되었습니다.
+
+스트리밍은 안 되지만, 클라이언트에서의 hydration 순서가 최적화되면서 사용자 체감 속도가 개선된 것입니다.
+
+### 실측 결과
+
+5회 반복 테스트 기준으로 평균 LCP 자체는 큰 차이가 없었지만(976ms vs 954ms), 성능 변동폭이 크게 줄었습니다. 변동계수가 46.4%에서 29.9%로 개선되어 예측 가능한 성능을 보여주었습니다.
+
+## 스트리밍이 꼭 필요하다면: OpenNext + SST
+
+AWS 인프라를 유지하면서 스트리밍을 사용해야 한다면 OpenNext와 SST 조합이 현실적인 대안입니다.
+
+OpenNext는 Next.js를 Vercel 외의 환경에서도 최적으로 배포할 수 있도록 만들어진 오픈소스 프로젝트입니다. AWS Lambda Response Streaming API를 활용해서 CloudFront의 버퍼링 문제를 우회합니다.
+
+설정은 간단합니다.
+
+```typescript
+// open-next.config.ts
+const config = {
+  default: {
+    override: {
+      wrapper: 'aws-lambda-streaming',
+    },
+  },
+};
+export default config;
+```
+
+SST를 통해 배포하면 CloudFront 설정도 스트리밍에 맞게 최적화됩니다. 커뮤니티에서도 이 방법으로 스트리밍이 정상 작동한다는 피드백이 있었습니다.
+
+다만 Amplify의 관리형 배포 환경을 벗어나야 하므로, 인프라 관리 부담이 늘어나는 점은 고려해야 합니다.
+
+## Vercel이라면
+
+Vercel 환경에서는 이런 고민 자체가 필요 없습니다. Next.js 12.2.0부터 기본적으로 `Transfer-Encoding: chunked`가 적용되고, Vercel Edge Network가 응답을 버퍼링하지 않고 청크 단위로 즉시 전달합니다.
+
+동일한 코드를 Vercel에 배포했을 때 Suspense fallback이 정상적으로 표시되고, 점진적 렌더링이 의도대로 작동했다는 커뮤니티 보고도 있습니다.
+
+## 어떤 환경을 선택할지
+
+정리하면 이렇습니다.
+
+스트리밍 SSR이 서비스에 꼭 필요한지부터 판단해야 합니다. 실제로 스트리밍 없이도 Dynamic API 호출 위치를 조정하고 컴포넌트를 적절히 분리하는 것만으로 충분한 성능 개선을 얻을 수 있었습니다.
+
+AWS 생태계에 이미 종속되어 있고 스트리밍이 필수가 아니라면, Amplify에서 렌더링 최적화에 집중하는 것이 합리적입니다. 스트리밍이 필수라면 OpenNext + SST를 고려하거나, AWS 종속이 없다면 Vercel이 가장 간단한 선택입니다.
+
+개인적으로는 이번 경험을 통해 플랫폼의 인프라 특성을 먼저 파악하는 것이 중요하다는 걸 다시 느꼈습니다. 로컬에서 잘 되던 것이 프로덕션에서 안 될 수 있고, 그 원인이 코드가 아니라 인프라에 있을 수 있습니다.

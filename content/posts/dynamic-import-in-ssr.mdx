@@ -6,7 +6,7 @@ series: 'react'
 seriesNumber: 1
 ---
 
-# Dynamic import란
+## Dynamic import란
 Dynamic import를 이용하면 비동기적으로 데이터를 불러 올 수 있습니다.
 
 ```ts
@@ -17,7 +17,7 @@ loader().then((data) = console.log(data));
 자바스크립트 ES6에서는 손쉽게 `Dynamic import`를 지원하고 있습니다.
 코드에서 유의해야 할 점은 async/await을 이용해 import 문을 작성하고 있다는 점입니다.
 
-# Dynamic import with React
+## Dynamic import with React
 리액트에서 `lazy` 함수와 `Dynamic import` 문법을 이용해서 컴포넌트를 별도의 청크파일로 분리하는 것이 가능합니다.
 
 ```tsx
@@ -41,7 +41,7 @@ const WrapComponent = () => {
 4. 응답 받은 컴포넌트를 하이드레이션을 진행하여 컴포넌트를 사용할 준비 완료
 5. 로딩 대신 `LazyComponent`를 렌더링함
 
-# Dynamic import with Next.js
+## Dynamic import with Next.js
 Next.js에서도 `lazy` 함수와 `Susepnse`를 이용해 `Dynamic import`를 사용 할 수 있습니다. 그러나 서버 컴포넌트에서는 기존의 방식대로 적용이 불가능합니다.
 그 이유는 `lazy` 함수는 클라이언트 컴포넌트에서만 사용 할 수 있기 때문입니다. 서버 컴포넌트에 사용하기 위해서는 클라이언트 컴포넌트로 한번 감싸서 사용해야합니다.
 
@@ -89,7 +89,7 @@ export default function ServerPage() {
 
 이 함수의 특징은 서버/클라이언트 컴포넌트에서 모두 사용 할 수 있으며 별도의 `Suspense` 조차 선언 할 필요가 없다는 것입니다.
 
-# Lazy vs Dynamic
+## Lazy vs Dynamic
 두가지 방법으로 `Dynamic import`가 모두 가능하다면 어떤 것을 선택해야 할까요?
 
 ### Dynamic function

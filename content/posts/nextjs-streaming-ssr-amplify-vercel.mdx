@@ -34,15 +34,13 @@ AWS Lambda에는 Buffered와 Streaming, 두 가지 응답 모드가 있습니다
 
 Amplify Hosting은 Next.js를 Lambda로 배포할 때 Buffered 모드를 사용합니다. 그래서 Next.js가 스트리밍 응답을 만들어도 Lambda가 전부 모은 다음에야 내보냅니다.
 
-## OpenNext와 SST
+## SST로 해결하기
 
-OpenNext는 Next.js 빌드 결과물을 AWS에서 돌릴 수 있게 변환해주는 오픈소스입니다.
+Amplify는 브랜치별 자동 배포와 간편한 설정 덕분에 쓰고 있었습니다. 하지만 스트리밍 렌더링이 안 되는 건 무시하기 어려운 한계였고, 대안을 찾다 보니 SST가 있었습니다.
 
-내부적으로 Wrapper, Converter, Handler 세 계층이 있는데, 스트리밍에서 중요한 건 Wrapper입니다. 기본 wrapper인 `aws-lambda`는 Buffered 모드로 동작하고, `aws-lambda-streaming`으로 바꾸면 Lambda 핸들러를 `awslambda.streamifyResponse()`로 감쌉니다.
+SST는 AWS 위에 풀스택 앱을 배포하는 프레임워크입니다. `Nextjs` 컴포넌트를 쓰면 Lambda Function URL을 `RESPONSE_STREAM`으로 구성하고, S3, CDN, DynamoDB(ISR 캐시), SQS(재검증) 같은 인프라도 함께 만들어줍니다. 코드에서 스트리밍을 아무리 잘 구현해도 인프라의 invoke 모드가 Buffered면 소용없는데, SST가 이 부분을 알아서 처리합니다.
 
-`awslambda`는 npm 패키지가 아니라 Lambda Node.js 런타임에 이미 들어있는 전역 객체입니다. `streamifyResponse()`로 감싸면 핸들러에 `responseStream`이 들어오는데, Next.js가 만든 응답이 이 스트림을 통해 클라이언트로 흘러갑니다. 결국 Lambda의 응답 방식을 바꾸는 것이라 따로 복잡한 설정은 없습니다.
-
-다만 인프라 쪽에서도 Lambda Function URL의 invoke 모드가 `RESPONSE_STREAM`이어야 합니다. 코드에서 `streamifyResponse()`를 쓰더라도 invoke 모드가 Buffered면 소용없습니다. SST의 `Nextjs` 컴포넌트가 이 부분을 알아서 잡아줍니다. Lambda Function URL을 `RESPONSE_STREAM`으로 만들고, S3, CDN, DynamoDB(ISR 캐시), SQS(재검증) 같은 나머지 인프라도 함께 구성합니다.
+인프라가 준비됐으면 코드 쪽도 맞춰야 합니다. SST는 내부적으로 OpenNext를 사용해 Next.js 빌드 결과물을 Lambda에서 실행 가능한 형태로 변환합니다. OpenNext에는 Wrapper, Converter, Handler 세 계층이 있는데, 스트리밍에서 중요한 건 Wrapper입니다. 기본 wrapper인 `aws-lambda`는 Buffered 모드로 동작하고, `aws-lambda-streaming`으로 바꾸면 Lambda 핸들러를 `awslambda.streamifyResponse()`로 감쌉니다. `awslambda`는 npm 패키지가 아니라 Lambda Node.js 런타임에 이미 들어있는 전역 객체로, 이걸로 감싸면 핸들러에 `responseStream`이 들어오고 Next.js가 만든 응답이 이 스트림을 통해 클라이언트로 흘러갑니다.
 
 설정은 `open-next.config.ts`에서 wrapper만 바꾸면 됩니다.
 
@@ -58,7 +56,26 @@ const config = {
 export default config;
 ```
 
-OpenNext 공식 문서에서 스트리밍 지원은 아직 "EXTREMELY EXPERIMENTAL"로 표기되어 있습니다. AWS 런타임 업데이트로 깨진 적이 있다고 하니 프로덕션에 넣으려면 충분히 테스트해야 합니다.
+SST가 인프라를 `RESPONSE_STREAM`으로 구성하고, OpenNext가 코드를 `streamifyResponse()`로 감싸는 것. 이 두 가지가 맞물려야 스트리밍이 동작합니다. 다만 OpenNext 공식 문서에서 스트리밍 지원은 아직 "EXTREMELY EXPERIMENTAL"로 표기되어 있으니 프로덕션에 넣으려면 충분히 테스트해야 합니다.
+
+스트리밍 문제는 해결됐지만, Amplify에서 쓰던 브랜치별 자동 배포를 포기할 수는 없었습니다. SST Console의 Autodeploy가 이걸 대체합니다. GitHub 레포를 연결하면 브랜치에 push할 때 자동으로 배포되고, 브랜치 이름이 곧 stage 이름이 됩니다. PR을 열면 PR 번호로 stage가 생기고(예: `pr-12`), PR이 닫히면 자동으로 제거됩니다.
+
+`sst.config.ts`에서 브랜치와 stage 매핑을 직접 제어할 수도 있습니다.
+
+```typescript
+// sst.config.ts
+console: {
+  autodeploy: {
+    target(event) {
+      if (event.type === "branch" && event.branch === "main" && event.action === "pushed") {
+        return { stage: "production" };
+      }
+    },
+  },
+}
+```
+
+각 stage는 독립된 AWS 리소스로 구성되므로 환경 간 간섭이 없습니다. Amplify에서 쓰던 배포 워크플로우를 그대로 유지하면서 스트리밍 SSR까지 쓸 수 있습니다.
 
 ## Vercel
 
@@ -91,4 +108,4 @@ export default function CenterPage() {
 
 ## 정리
 
-Amplify에서 스트리밍이 안 되는 이유는 Lambda가 Buffered 모드로 동작하기 때문입니다. SST + OpenNext는 Lambda의 응답 방식 자체를 Streaming으로 바꿔서 이 문제를 해결합니다. AWS를 써야 한다면 SST + OpenNext를, 그런 제약이 없다면 Vercel이 간단합니다.
+Amplify에서 스트리밍이 안 되는 이유는 Lambda가 Buffered 모드로 동작하기 때문입니다. SST는 Lambda의 응답 방식 자체를 Streaming으로 바꿔서 이 문제를 해결하고, 브랜치별 자동 배포까지 지원하므로 Amplify의 대안이 됩니다. AWS를 써야 한다면 SST를, 그런 제약이 없다면 Vercel이 간단합니다.

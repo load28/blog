@@ -1,0 +1,202 @@
+---
+title: 'DatePicker 컴포넌트 설계'
+date: '2026-02-02'
+tags: ['react', 'design-system', 'component']
+---
+
+design system에서 직접 입력 가능한 DatePicker를 설계한 과정을 정리합니다.
+
+## 직접 입력이 되는 DatePicker
+
+대부분의 DatePicker는 캘린더에서 날짜를 클릭하는 방식입니다. Google Calendar처럼 Input에 날짜를 직접 타이핑하고, 포맷에 맞으면 자동으로 파싱되는 방식을 원했습니다. 2024.1.5를 입력하면 2024-01-05로 정규화되고, blur 시점에 포맷팅이 적용됩니다. Enter를 누르면 즉시 반영되고, Escape를 누르면 이전 값으로 되돌아갑니다.
+
+입력과 캘린더는 양방향으로 연결됩니다. Input에 날짜를 타이핑하면 캘린더가 해당 월로 이동하고, 캘린더에서 날짜를 클릭하면 Input 값이 업데이트됩니다.
+
+```
+Input 타이핑 → 파싱 → 유효하면 캘린더 이동
+캘린더 클릭  → 날짜 반영 → Input 값 업데이트 → 포맷팅
+```
+
+이 동기화를 한곳에서 관리하기 위해 파싱, 유효성 검사, 포맷팅, 키보드 처리를 하나의 core 훅으로 묶었습니다.
+
+```typescript
+const {
+  inputValue,           // 현재 Input에 표시되는 문자열
+  handleInputChange,    // 타이핑 → 파싱 → 유효하면 캘린더 이동
+  handleInputBlur,      // blur → 포맷팅 적용 + 유효성 검사
+  handleKeyDown,        // Enter: 반영, Escape: 되돌리기
+  forceUpdateDate,      // 캘린더 클릭 → Input 값 강제 업데이트
+  validationResult,     // { isValid, errorType }
+} = useStDateInputCore({ format, minDate, maxDate });
+```
+
+입력값이 바뀔 때마다 파싱을 시도하고, 유효한 날짜면 캘린더 상태를 업데이트하고, 유효하지 않으면 입력값만 유지한 채 에러 상태를 기록합니다. 캘린더에서 날짜를 선택하면 `forceUpdateDate`로 Input의 값을 덮어쓰고 포맷팅을 적용합니다. 이 모든 분기가 하나의 훅 안에 있기 때문에 Input과 Calendar 컴포넌트는 각자 이 훅이 내려주는 handler만 연결하면 됩니다.
+
+Range DatePicker는 여기에 선택 단계가 추가됩니다. 첫 번째 클릭으로 시작일을 정하고 두 번째 클릭으로 종료일을 정하는 2클릭 방식인데, 종료일이 시작일보다 앞서면 자동으로 swap합니다.
+
+```typescript
+type SelectionPhase = 'idle' | 'selecting' | 'complete';
+type ActiveField = 'start' | 'end';
+```
+
+시작 Input과 종료 Input 중 어느 쪽에 포커스가 있는지 `activeField`로 추적합니다. 시작 Input을 클릭하면 시작일부터 다시 선택하고, 종료 Input을 클릭하면 종료일만 바꿀 수 있어야 하기 때문입니다. `selectionPhase`는 idle에서 첫 클릭 시 selecting으로, 두 번째 클릭 시 complete로 전환되고, Popover가 닫히면 다시 idle로 돌아갑니다.
+
+## 독립 사용
+
+DatePicker는 외부 의존 없이 독립적으로 동작합니다. 폼 라이브러리가 없는 환경에서도 그대로 쓸 수 있어야 했기 때문입니다.
+
+```tsx
+// controlled
+<StDatePicker value={value} onChange={setValue} />
+
+// uncontrolled
+<StDatePicker defaultValue="2024-01-01" name="date" />
+```
+
+폼 제출이 필요한 경우를 위해 hidden input으로 ISO 포맷 값을 전송합니다. Range의 경우 startName, endName으로 두 개의 hidden input이 생성됩니다. native form submission에서도 동작해야 하기 때문에 이 부분은 빠뜨릴 수 없었습니다.
+
+Single과 Range는 상태 구조가 다르지만 UI 요소는 동일합니다. Input, Popover, Field, Error를 shared 모듈로 분리하고, 상태 관리만 각자 구현했습니다.
+
+```
+datepicker/
+├── single/    ← 단일 날짜 상태 관리
+├── range/     ← 범위 날짜 상태 관리 (activeField, selectionPhase)
+└── shared/    ← Input, Popover, Field, Error 등 공용 UI
+```
+
+## 편의 훅과 RHF 통합
+
+독립적으로 동작하는 구조 위에 단계적으로 편의 계층을 얹었습니다.
+
+```
+Layer 0: 독립 컴포넌트    ← value/onChange로 직접 제어
+Layer 1: 독립 훅          ← required, minDate 등 옵션 셋업
+Layer 2: RHF 훅           ← control, name으로 폼 상태 동기화
+Layer 3: RHF Controller   ← render prop 패턴
+```
+
+독립 훅은 required, minDate, maxDate 같은 옵션을 받아서 상태와 유효성 검사를 한 번에 셋업합니다. DatePicker를 쓸 때마다 상태 선언과 validation 로직을 반복할 필요가 없습니다.
+
+```tsx
+const { rootProps, value, error } = useStSingleDateField({
+  required: true,
+  minDate: '2024-01-01',
+  maxDate: '2025-12-31',
+});
+```
+
+RHF 훅은 여기서 한 단계 더 확장해서 control과 name을 받아 폼 상태와 자동 동기화합니다. DatePicker 내부의 에러 상태가 RHF의 formState에 반영되고, RHF의 reset이나 setValue 같은 외부 제어도 DatePicker에 전파됩니다.
+
+```tsx
+const { rootProps } = useStSingleDateFieldWithRHF({
+  control,
+  name: 'birthday',
+  trigger,
+});
+```
+
+Controller는 RHF의 render prop 패턴을 쓰는 프로젝트에서 바로 붙을 수 있도록 만들었습니다.
+
+```tsx
+<StSingleDatePickerNS.Controller
+  control={control}
+  name="date"
+  trigger={trigger}
+  render={({ rootProps }) => (
+    <StSingleDatePickerNS.Root {...rootProps}>
+      ...
+    </StSingleDatePickerNS.Root>
+  )}
+/>
+```
+
+각 계층은 아래 계층을 감싸는 구조이기 때문에 기능이 누적됩니다. Layer 2는 Layer 1의 옵션 셋업 기능을 그대로 포함하면서 RHF 동기화가 추가되는 식입니다. 프로젝트의 폼 관리 방식에 맞는 계층을 골라 쓰면 됩니다.
+
+## 에러 표시 전략
+
+폼 에러의 기본 전략을 **에러는 지연, 수정은 즉시**로 잡았습니다.
+
+사용자가 입력하는 도중에 에러를 보여주면 아직 완성하지 않은 값에 대해 경고를 받게 됩니다. 날짜를 한 글자씩 타이핑하는 중에 "잘못된 형식"이 뜨는 건 방해일 뿐입니다. 그래서 에러는 blur 또는 submit 시점까지 지연시킵니다. 반면 에러가 이미 표시된 상태에서 값을 고치면 즉시 사라져야 합니다. 고쳤는데 에러가 남아 있으면 수정이 반영된 건지 알 수 없기 때문입니다.
+
+```
+에러 발생 → blur 또는 submit 시점까지 지연
+에러 수정 → 입력 즉시 에러 해제
+```
+
+이걸 기본 동작으로 두되, RHF의 mode 설정이 있으면 그쪽을 따릅니다. onSubmit이면 제출 전까지 에러를 보여주지 않고, onChange면 값이 바뀔 때마다 검증합니다. DatePicker가 독립으로 쓰일 때는 기본 전략이, RHF와 함께 쓰일 때는 폼의 mode가 에러 표시 시점을 결정합니다. RHF의 submitCount나 formState 변화에 반응하는 로직은 표시 여부를 판단하는 훅에만 집중시키고, 유효성 검사나 에러 분류 로직은 RHF 존재 여부와 무관하게 동작하도록 분리했습니다.
+
+에러 종류는 다섯 가지입니다.
+
+| 에러 타입 | 발생 조건 |
+|---|---|
+| invalidFormat | 파싱할 수 없는 입력값 |
+| minDate | 최소 날짜 미만 |
+| maxDate | 최대 날짜 초과 |
+| required | 필수값 미입력 |
+| rangeInvalid | 종료일이 시작일보다 앞섬 (Range 전용) |
+
+에러 메시지는 타입별로 기본값을 제공하되, 함수형으로도 받을 수 있게 했습니다.
+
+```tsx
+<StDatePicker
+  errorMessages={{
+    invalidFormat: '올바른 날짜 형식이 아닙니다',
+    minDate: (type) => `${minDate} 이후 날짜를 선택해주세요`,
+    required: '필수 입력입니다',
+  }}
+/>
+```
+
+문자열과 함수를 혼용할 수 있어서, 고정 메시지는 문자열로, 동적 메시지는 함수로 처리합니다.
+
+## Composition 패턴
+
+이 모든 기능을 하나의 monolithic 컴포넌트에 담으면 prop이 끝없이 늘어납니다. 캘린더 헤더 타입, 에러 위치, Popover 동작 같은 UI 요구사항은 사용처마다 다릅니다.
+
+Root, Input, Calendar, Popover, Field, Error를 독립 컴포넌트로 분리하고 Composition으로 조합합니다.
+
+```tsx
+<StSingleDatePickerNS.Root {...rootProps}>
+  <StSingleDatePickerNS.Field>
+    <StSingleDatePickerNS.Anchor>
+      <StSingleDatePickerNS.Input />
+    </StSingleDatePickerNS.Anchor>
+  </StSingleDatePickerNS.Field>
+  <StSingleDatePickerNS.Popover>
+    <StSingleDatePickerNS.Calendar />
+  </StSingleDatePickerNS.Popover>
+  <StSingleDatePickerNS.Error />
+</StSingleDatePickerNS.Root>
+```
+
+Error를 Input 바로 아래에 둘지, 폼 하단에 모아서 보여줄지는 사용처가 결정합니다. Root는 Context로 상태를 하위에 전달하는데, State, Actions, Refs 세 개로 나눠서 각 컴포넌트가 필요한 것만 구독하게 했습니다.
+
+```typescript
+const { StateContext, ActionsContext, RefsContext } =
+  createDatePickerContext<State, Actions, Refs>();
+
+// Calendar는 Actions만 구독
+const { handleDateSelect } = useContext(ActionsContext);
+
+// Input은 State만 구독
+const { inputValue, isOpen } = useContext(StateContext);
+```
+
+Context가 하나면 어느 한쪽이 바뀔 때마다 양쪽 다 리렌더링됩니다.
+
+다만 매번 조합을 직접 작성하는 건 번거롭기 때문에, 자주 쓰는 구조를 감싼 래퍼도 제공합니다.
+
+```tsx
+<StDatePicker
+  required
+  name="birthday"
+  type="border"
+  defaultValue="1994-01-01"
+/>
+```
+
+기본 사용은 래퍼로 간단하게, UI 커스텀이 필요하면 Composition으로 풀 수 있는 구조입니다.
+
+## 정리
+
+직접 입력과 캘린더 선택이 양방향으로 연결되는 DatePicker를 독립적으로 동작하게 만들고, 그 위에 편의 훅과 RHF 통합을 단계적으로 얹었습니다. 에러는 지연 표시, 수정은 즉시 해제를 기본으로 두되 RHF mode에 따라 유연하게 전환됩니다. UI 구성은 Composition 패턴으로 사용처의 요구사항에 맞게 조합할 수 있도록 했습니다.

@@ -14,9 +14,11 @@ tags: ['css']
 
 반면 영문/숫자는 `AL`(Alphabetic) 클래스입니다. 공백이나 하이픈 같은 명시적 구분자에서만 줄바꿈됩니다. `11111111111111` 같은 공백 없는 문자열은 줄바꿈 지점이 없어서 셀을 넘칩니다.
 
-`word-break` 속성은 이 Line Break class의 동작을 재정의하는 속성입니다.
+CSS에서는 이 기본 동작을 바꿀 수 있는 속성이 몇 가지 있습니다. `word-break`, `overflow-wrap`, `line-break`가 각각 다른 레벨에서 줄바꿈을 제어합니다.
 
-## word-break 속성
+## word-break
+
+Line Break class 자체를 재정의하는 속성입니다.
 
 ### normal (기본값)
 
@@ -55,16 +57,15 @@ overflow가 발생하는 지점에서 바로 끊습니다.
 
 브라우저가 자연어 분석을 통해 의미 단위(phrase)에서 줄바꿈합니다. `normal`에서는 글자 단위로 아무 데서나 끊기지만, `auto-phrase`는 의미 단위를 파악해서 자연스러운 위치에서 끊습니다. 브라우저 지원이 매우 제한적이라 실무에서는 아직 쓰기 어렵습니다.
 
-### break-word (deprecated)
+## overflow-wrap
 
-`overflow-wrap: anywhere` + `word-break: normal`을 합친 것과 동일하게 동작합니다. 쓰지 마세요. `overflow-wrap`을 대신 쓰면 됩니다.
+`word-break`가 Line Break class를 재정의하는 거라면, `overflow-wrap`은 class는 그대로 두고 **overflow가 발생했을 때의 대응 방식**을 지정합니다.
 
-## break-all vs overflow-wrap
+### break-word
 
-비슷해 보이지만 줄바꿈 전략이 다릅니다.
+단어를 먼저 다음 줄로 이동시킵니다. 그래도 넘치면 그때 글자 단위로 끊습니다.
 
-- **`word-break: break-all`** — overflow 지점에서 즉시 글자 단위로 끊음
-- **`overflow-wrap: break-word`** — 단어를 먼저 다음 줄로 이동 시도, 그래도 넘치면 글자 단위로 끊음
+`word-break: break-all`과 비슷해 보이지만 전략이 다릅니다. `break-all`은 overflow 지점에서 즉시 끊고, `overflow-wrap: break-word`는 단어 이동을 먼저 시도합니다.
 
 ```
 ┌──────────┐         ┌──────────┐
@@ -79,9 +80,9 @@ overflow가 발생하는 지점에서 바로 끊습니다.
 
 `overflow-wrap: break-word`가 보통 더 자연스럽습니다. 테이블 셀처럼 너비가 고정된 경우에는 `break-all`이 더 확실합니다.
 
-## overflow-wrap: break-word vs anywhere
+### anywhere
 
-시각적 결과는 동일합니다. 차이는 브라우저가 **요소의 최소 너비(`min-content`)를 계산할 때** 발생합니다.
+시각적 결과는 `break-word`와 동일합니다. 차이는 브라우저가 **요소의 최소 너비(`min-content`)를 계산할 때** 발생합니다.
 
 - **`break-word`** — `min-content` 계산 시 줄바꿈 지점을 무시합니다. 가장 긴 단어 기준으로 최소 너비가 결정됩니다.
 - **`anywhere`** — `min-content` 계산 시 줄바꿈 지점을 반영합니다. 글자 1개 너비까지 축소 가능합니다.
@@ -106,11 +107,11 @@ overflow-wrap: anywhere
 
 고정 너비 컨테이너에서는 둘 다 동일하게 보입니다. flex/grid 레이아웃에서 요소 크기가 `min-content` 기반으로 결정될 때 이 차이가 드러납니다.
 
-참고로 deprecated된 `word-break: break-word`는 `overflow-wrap: anywhere`처럼 min-content 계산에 영향을 줍니다. `overflow-wrap: break-word`는 주지 않습니다. 이게 유일한 실질적 차이입니다.
+참고로 deprecated된 `word-break: break-word`는 내부적으로 `overflow-wrap: anywhere` + `word-break: normal`과 동일하게 동작합니다. min-content 계산에도 영향을 줍니다. 쓰지 마세요. `overflow-wrap`을 대신 쓰면 됩니다.
 
 ## line-break
 
-CJK 문장부호(구두점, 괄호 등)의 줄바꿈 규칙을 세밀하게 제어하는 속성입니다.
+`word-break`와 `overflow-wrap`이 일반 텍스트의 줄바꿈을 다뤘다면, `line-break`는 CJK 문장부호(구두점, 괄호 등)의 줄바꿈 규칙을 세밀하게 제어합니다.
 
 - `auto` — 브라우저 기본
 - `loose` — 느슨한 규칙 (짧은 줄에 적합)

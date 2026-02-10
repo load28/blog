@@ -4,206 +4,324 @@ date: '2026-02-10'
 tags: ['react', 'compiler', 'optimization']
 ---
 
-React는 함수형 컴포넌트를 채택하면서 상태가 바뀔 때마다 함수를 다시 실행하는 구조를 갖게 됐습니다. 단순한 멘탈 모델이라는 장점이 있지만, 성능 최적화는 개발자 몫이 됐습니다. `useMemo`, `useCallback`, `React.memo`를 직접 배치해야 했고, 이 수동 메모이제이션이 가진 한계를 해결하기 위해 React Compiler가 등장했습니다.
+React는 상태가 바뀔 때마다 함수를 다시 실행합니다. 성능 최적화는 `useMemo`, `useCallback`, `React.memo`로 개발자가 직접 해야 했고, 이 수동 메모이제이션의 한계를 해결하기 위해 React Compiler가 등장했습니다.
 
 ## 수동 메모이제이션의 한계
 
-`useMemo`와 `useCallback`은 의존성 배열을 직접 관리해야 합니다. 의존성을 빠뜨리면 stale 값을 참조하고, 너무 많이 넣으면 캐시가 의미 없이 깨집니다. 컴포넌트가 복잡해지면 어디에 메모이제이션을 걸어야 하는지 판단하는 것 자체가 부담이 됩니다.
-
-더 근본적인 문제는 `useMemo`와 `useCallback`이 hook이라는 점입니다. hook은 조건문이나 early return 뒤에 올 수 없습니다. 아래 코드에서 `props.children`이 없으면 바로 `null`을 반환하고 싶지만, `useMemo`를 쓰고 있다면 그 위에 놓아야 합니다.
+`useMemo`와 `useCallback`은 hook이라서 조건문이나 early return 뒤에 올 수 없습니다.
 
 ```typescript
 function ThemeProvider(props) {
-  // useMemo는 여기에만 올 수 있음
+  // useMemo는 early return보다 위에 있어야 함
   const theme = useMemo(() => mergeTheme(props.theme), [props.theme]);
 
   if (!props.children) {
-    return null;
+    return null; // children이 없어도 mergeTheme은 이미 실행됨
   }
 
   return <ThemeContext value={theme}>{props.children}</ThemeContext>;
 }
 ```
 
-`props.children`이 없을 때에도 `mergeTheme`이 실행됩니다. 수동 메모이제이션으로는 이런 조건부 최적화가 불가능합니다.
+의존성 배열도 문제입니다. 빠뜨리면 stale 값을 참조하고, 너무 많이 넣으면 캐시가 의미 없이 깨집니다.
 
 ## 컴파일러가 하는 일
 
-React Compiler는 빌드 타임에 동작하는 소스 코드 변환 도구입니다. 컴포넌트와 hook 코드를 분석해서 메모이제이션 코드를 자동으로 삽입합니다.
+React Compiler는 빌드 타임에 메모이제이션 코드를 자동 삽입하는 소스 코드 변환 도구입니다. 핵심은 **세분화된 메모이제이션**입니다.
 
-핵심은 **세분화된 메모이제이션**입니다. `React.memo`는 컴포넌트 단위로 메모이제이션하고, `useMemo`는 개발자가 감싼 범위만 캐싱합니다. 컴파일러는 컴포넌트 내부의 개별 표현식, JSX 엘리먼트, 콜백 함수를 각각 독립적으로 메모이제이션합니다. 개발자가 수동으로 하기엔 너무 세밀한 수준의 최적화를 자동으로 적용합니다.
+| 방식 | 캐싱 단위 | 무효화 조건 |
+|:--|:--|:--|
+| `React.memo` | 컴포넌트 전체 | props 하나라도 변경 |
+| `useMemo` | 개발자가 감싼 범위 | deps 배열 변경 |
+| **Compiler** | 개별 표현식, JSX, 콜백 | 해당 값의 의존성만 변경 |
 
-앞서 본 `ThemeProvider` 예제도 컴파일러는 early return 이후의 코드만 별도로 메모이제이션할 수 있습니다. hook 규칙에 얽매이지 않기 때문입니다.
+컴파일러는 hook 규칙에 얽매이지 않으므로, 앞서 본 `ThemeProvider`도 early return 이후의 코드만 별도로 메모이제이션할 수 있습니다.
+
+```typescript
+// 컴파일러가 변환한 ThemeProvider (개념적)
+function ThemeProvider(props) {
+  if (!props.children) {
+    return null; // 여기서 반환되면 아래 코드는 실행되지 않음
+  }
+
+  // props.children이 있을 때만 theme 계산 + 캐싱
+  const theme = mergeTheme(props.theme);  // ← 조건부로 메모이제이션됨
+  return <ThemeContext value={theme}>{props.children}</ThemeContext>;
+}
+```
 
 ## 컴파일 파이프라인
 
-컴파일러는 Babel 플러그인으로 구현되어 있지만, 내부적으로는 Babel과 분리된 자체 파이프라인을 가지고 있습니다.
+```
+Source Code
+    │
+    ▼
+  [AST]          ← Babel이 파싱
+    │
+    ▼
+  [HIR]          ← Control Flow Graph로 변환
+    │
+    ▼
+  [SSA]          ← 변수마다 단일 할당
+    │
+    ▼
+  [Effect 분석]   ← Read / Mutate / Freeze 분류
+    │
+    ▼
+  [Reactive 분석] ← props/state 의존성 전파
+    │
+    ▼
+  [Scope 생성]   ← 캐싱 단위 결정
+    │
+    ▼
+  [Code 생성]    ← _c() 기반 메모이제이션 코드 출력
+```
+
+### HIR — Control Flow Graph
+
+AST는 구문 구조(syntax)를 표현하지만, 메모이제이션에는 **실행 흐름**(control flow)이 필요합니다. HIR은 코드를 기본 블록(basic block)으로 쪼개서 실행 경로를 명확히 합니다.
 
 ```
-Source Code → AST → HIR → SSA → Effect 분석 → Reactive 분석 → Scope 생성 → Code 생성
+ThemeProvider의 CFG:
+
+  ┌─────────────────────────────────┐
+  │ Block 0 (entry)                 │
+  │   $0 = LoadLocal props          │
+  │   $1 = PropertyLoad $0.children │
+  │   if $1 → Block 2, else Block 1 │
+  └──────────┬──────────┬───────────┘
+             │          │
+     ┌───────▼──┐  ┌────▼──────────────────────┐
+     │ Block 1  │  │ Block 2                    │
+     │ return   │  │   $2 = PropertyLoad $0.theme│
+     │   null   │  │   $3 = Call mergeTheme($2) │
+     └──────────┘  │   $4 = JSX ThemeContext     │
+                   │        {value: $3}          │
+                   │   return $4                 │
+                   └────────────────────────────┘
 ```
 
-**HIR(High-level Intermediate Representation)** 은 Babel이 만든 AST를 변환한 컴파일러 자체 표현입니다.
+블록 1과 2가 분리되어 있으므로, 컴파일러는 `mergeTheme`이 `null` 경로에서 실행되지 않는다는 걸 구조적으로 압니다. "High-level"이라는 이름답게 `array.map(fn)` 같은 고수준 표현이 IR에서도 유지되어, 컴파일 결과가 원본과 비슷하게 읽힙니다.
 
-왜 AST를 그대로 쓰지 않을까요? AST는 코드의 **구문 구조**(syntax structure)를 표현합니다. `if`문 안에 `return`이 있고, 그 뒤에 또 다른 코드가 있다는 걸 트리로 보여주죠. 하지만 메모이제이션을 적용하려면 "이 값이 실제로 실행될 때 어디를 거치는가"를 알아야 합니다. AST만으로는 조건 분기에 따라 실행 경로가 갈라지는 상황을 분석하기 어렵습니다.
+### SSA — Static Single Assignment
 
-HIR은 코드를 **Control Flow Graph**(CFG)로 변환합니다. CFG는 코드를 **기본 블록**(basic block) 단위로 쪼갭니다. 기본 블록은 중간에 분기 없이 순차적으로 실행되는 명령어 묶음입니다. `if`문을 만나면 블록이 나뉘고, 각 분기가 별도 블록이 되며, 합류 지점에서 다시 만납니다. 이런 구조에서는 "변수 `x`가 이 블록에서 정의됐고, 저 블록에서 읽힌다"는 관계가 명확해집니다.
+모든 변수가 정확히 한 번만 할당되게 만드는 변환입니다.
 
 ```
-[블록 0: props 읽기] → 조건 분기
-                        ├─ [블록 1: early return null]
-                        └─ [블록 2: theme 계산 → JSX 반환]
+// 원본                         // SSA 변환 후
+let label = 'default';         label_0 = 'default'
+if (isActive) {                if (isActive):
+  label = 'active';              label_1 = 'active'
+}                              label_2 = φ(label_0, label_1)
+console.log(label);            console.log(label_2)
 ```
 
-앞서 본 `ThemeProvider` 예제가 이런 식으로 표현됩니다. 블록 1과 블록 2가 분리되어 있으니, 컴파일러는 블록 2의 `mergeTheme` 호출이 블록 1 경로에서는 실행되지 않는다는 걸 구조적으로 알 수 있습니다. AST에서는 이런 분석이 별도 로직 없이는 안 됩니다.
+`φ`(phi) 함수는 분기 합류 지점에서 경로에 따라 값을 선택하는 분석용 표현입니다. 이 형태 자체가 데이터 의존성 그래프가 되어, `label_2 → isActive` 의존 관계가 자동으로 드러납니다.
 
-"High-level"이라는 이름이 붙은 이유가 있습니다. C 컴파일러의 IR처럼 모든 연산을 레지스터 수준으로 풀어내지 않고, 원본 코드의 고수준 구조를 유지합니다. `array.map(fn)` 같은 표현이 IR에서도 그대로 남아 있습니다. 덕분에 컴파일 결과물이 원본과 비슷하게 읽히고, 번들 사이즈 증가도 적습니다.
+### Effect 분석
 
-**SSA(Static Single Assignment)** 변환은 HIR 위에서 수행됩니다. 규칙은 간단합니다. 모든 변수가 정확히 한 번만 할당되게 만드는 것입니다.
+각 연산이 데이터에 미치는 영향을 분류합니다. "이 값을 캐시해도 안전한가?"를 판단하는 근거입니다.
 
-JavaScript는 `let`으로 선언한 변수에 값을 여러 번 넣을 수 있습니다.
+| Effect | 예시 | 캐싱 영향 |
+|:--|:--|:--|
+| **Read** | `props.name` | 안전하게 캐싱 가능 |
+| **Store** | `obj.field = value` | alias 추적 필요 |
+| **Capture** | `() => externalVar` | 캡처된 값의 변이 주의 |
+| **Mutate** | `array.push(item)` | scope 확장하여 변이 전체를 묶음 |
+| **Freeze** | `<Child data={obj} />` | JSX에 전달 → 안전하게 캐싱 |
 
 ```typescript
-let label = 'default';
-if (isActive) {
-  label = 'active';
-}
-console.log(label);
-```
-
-`console.log(label)`의 `label`이 `'default'`인지 `'active'`인지는 실행 흐름에 따라 다릅니다. SSA 변환은 각 할당에 고유한 이름을 붙여 이 모호함을 제거합니다.
-
-```
-label_0 = 'default'
-if (isActive):
-  label_1 = 'active'
-label_2 = φ(label_0, label_1)
-console.log(label_2)
-```
-
-여기서 `φ`(phi) 함수가 등장합니다. 조건 분기 후 합류 지점에서 "어느 경로로 왔느냐에 따라 값을 선택한다"는 의미입니다. 실제 코드에 삽입되는 함수가 아니라 컴파일러 내부의 분석용 표현입니다.
-
-이 변환이 메모이제이션에 왜 중요할까요? `label_2`가 `isActive`에 의존한다는 사실이 phi 함수를 통해 자동으로 드러납니다. 의존성 추적을 위해 별도 알고리즘을 돌릴 필요 없이, SSA 형태 자체가 데이터 의존성 그래프가 됩니다. 컴파일러는 이 그래프를 따라가며 "어떤 값이 바뀌면 어떤 값이 재계산되어야 하는지"를 알아냅니다.
-
-**Effect 분석**에서는 각 연산이 데이터에 어떤 영향을 미치는지 분류합니다. SSA로 "어떤 값이 어디로 흘러가는지"는 알 수 있게 됐지만, 그것만으로는 부족합니다. 캐싱을 안전하게 하려면 "이 연산이 데이터를 바꾸는지, 읽기만 하는지"도 알아야 합니다.
-
-컴파일러가 분류하는 주요 effect 타입은 이렇습니다.
-
-**Read** — 값을 읽기만 합니다. `props.name`을 참조하는 것이 대표적입니다. 읽기만 하는 연산은 캐싱에 문제가 없습니다.
-
-**Store** — 값의 참조를 다른 곳에 저장합니다. `obj.field = value`처럼 어떤 객체의 프로퍼티에 값을 넣는 경우입니다. store가 발생하면 두 값 사이에 alias 관계가 생기므로, 컴파일러는 이 관계를 추적해서 한쪽이 변이될 때 다른 쪽 캐시도 함께 무효화해야 하는지 판단합니다.
-
-**Capture** — 값을 클로저나 객체에 담아두는 것입니다. 콜백 안에서 외부 변수를 참조하면 capture가 발생합니다. 캡처된 값이 나중에 변이될 수 있으므로 주의가 필요한 지점입니다.
-
-**Mutate** — 기존 객체를 직접 변경합니다. `array.push(item)` 같은 연산입니다. 변이가 일어나는 값은 캐싱 범위를 신중하게 결정해야 합니다. 캐시된 객체가 외부에서 변이되면 캐시가 오염되기 때문입니다.
-
-**Freeze** — JSX에 전달된 값은 동결된 것으로 취급합니다. `<Child data={obj} />`에서 `obj`는 freeze됩니다. React는 렌더링 후 props를 변이하지 않으므로, 동결된 값은 안전하게 캐싱할 수 있습니다.
-
-이 effect 정보를 조합하면 컴파일러는 "이 값을 캐시해도 되는가"를 판단합니다. 순수하게 read와 store만 하는 연산은 자유롭게 캐싱하고, mutate가 포함된 연산은 변이가 끝나는 지점까지 scope를 확장해서 변이 과정 전체를 하나로 묶습니다.
-
-**Reactive 분석**은 이 파이프라인에서 React에 특화된 핵심 단계입니다. 앞의 단계들은 범용 컴파일러 기법이지만, 여기서부터는 React의 렌더링 모델을 이해하는 분석이 들어갑니다.
-
-출발점은 간단합니다. props, state, context는 렌더링 사이에 값이 바뀔 수 있습니다. 이것들이 **reactive value**의 시작점입니다.
-
-핵심은 **전파**입니다. SSA 그래프에서 reactive value로부터 파생된 값을 따라가며 reactive 여부를 전파합니다. `props.items`가 reactive이면, `props.items.filter(fn)`의 결과도 reactive입니다. 그 결과를 `map`으로 변환한 JSX 배열도 reactive입니다. SSA 형태 덕분에 이 전파가 그래프 탐색만으로 가능합니다.
-
-반대로, 모듈 스코프의 상수나 컴포넌트 밖에서 정의된 유틸 함수 같은 값은 렌더링 사이에 절대 변하지 않습니다. 이런 값은 non-reactive로 분류됩니다. non-reactive 값만으로 계산된 결과 역시 non-reactive입니다. 이 값들은 메모이제이션할 필요가 없습니다 — 어차피 매번 같은 결과를 내니까요.
-
-이 분류가 있어야 컴파일러가 불필요한 캐싱을 피할 수 있습니다. 모든 표현식을 무조건 캐싱하면 캐시 비교 비용이 오히려 성능을 깎아먹습니다. reactive 분석을 통해 "바뀔 수 있는 것만 캐싱한다"는 원칙을 지킵니다.
-
-## Reactive Scope
-
-Reactive 분석이 끝나면 컴파일러는 관련 연산들을 **reactive scope**로 묶습니다.
-
-scope를 만드는 원리는 이렇습니다. reactive로 표시된 각 값에서 출발해서, 그 값에 의존하는 연산들을 하나의 그룹으로 묶습니다. 같은 reactive 의존성을 공유하는 연산들은 같은 scope에 들어갑니다. 예를 들어 `props.users`에서 파생된 `filteredUsers`와 `userCount`가 있다면, 이 둘은 같은 scope에 묶입니다. 둘 다 `props.users`가 바뀔 때만 재계산하면 되니까요.
-
-scope 사이에는 의존 관계가 없습니다. 각 scope가 자기만의 의존성과 결과물을 가지고 독립적으로 동작합니다.
-
-```typescript
-function Dashboard({ users, theme }) {
-  // scope 1: users에 의존
-  const activeUsers = users.filter(u => u.isActive);
-  const userList = <UserList data={activeUsers} />;
-
-  // scope 2: theme에 의존
-  const headerStyle = { color: theme.primary };
-  const header = <Header style={headerStyle} />;
-
-  return <div>{header}{userList}</div>;
+function Example({ items }) {
+  //          Effect 분석 결과:
+  const list = items.filter(   // items: Read
+    i => i.active              // i: Read, i.active: Read
+  );
+  const result = [];           // result: Create(local)
+  result.push(list.length);   // result: Mutate, list: Read
+  return <List data={result} /> // result: Freeze
+  //       ↑ Mutate와 Freeze가 같은 값(result)에 걸리므로
+  //         생성 → 변이 → 동결을 하나의 scope로 묶음
 }
 ```
 
-이 컴포넌트에서 컴파일러는 두 개의 scope를 만듭니다. `users`가 바뀌면 scope 1만 재계산하고 scope 2는 캐시를 씁니다. `theme`가 바뀌면 그 반대입니다. 두 값이 동시에 바뀌면 둘 다 재계산합니다.
+### Reactive 분석
 
-여기서 effect 분석 결과도 scope 경계에 영향을 줍니다. 만약 어떤 값이 생성된 후 변이되는 코드가 있다면, 생성과 변이가 같은 scope 안에 있어야 합니다. 캐시된 값이 scope 밖에서 변이되면 안 되기 때문입니다. 컴파일러는 이런 경우 scope를 확장해서 변이까지 포함시킵니다.
-
-이게 `React.memo`와 근본적으로 다른 점입니다. `React.memo`는 컴포넌트의 모든 props가 같아야 캐시를 쓰는 전부 아니면 전무(all-or-nothing) 방식입니다. 하나의 prop만 바뀌어도 컴포넌트 전체를 다시 실행합니다. reactive scope는 컴포넌트 내부를 여러 독립적인 캐시 단위로 쪼개서, 바뀐 부분만 정확히 재계산합니다.
-
-## 컴파일 결과물
-
-컴파일러가 변환한 코드는 `_c`라는 내부 hook을 사용합니다. 이전에는 `useMemoCache`라 불렸습니다. 이 hook은 컴포넌트마다 고정 크기의 캐시 배열을 할당합니다.
-
-변환 전 코드입니다.
+props, state, context가 **reactive value**의 시작점입니다. SSA 그래프를 따라 reactive 여부가 전파됩니다.
 
 ```typescript
-function SimpleComponent({ message }) {
+// 모듈 스코프 — non-reactive (렌더링 사이에 불변)
+const LIMIT = 10;
+const formatName = (n) => n.toUpperCase();
+
+function UserList({ users, threshold }) {
+  //                  ↓ reactive (prop)    ↓ reactive (prop)
+
+  const filtered = users.filter(          // ← reactive (users에서 파생)
+    u => u.score > threshold              // ← reactive (threshold에서 파생)
+  );
+
+  const count = filtered.length;          // ← reactive (filtered에서 파생)
+
+  const label = formatName('Users');      // ← non-reactive (모두 non-reactive 입력)
+
+  const max = LIMIT * 2;                  // ← non-reactive (상수 연산)
+
   return (
     <div>
-      <p>{message}</p>
+      <h1>{label}</h1>        {/* non-reactive → 메모이제이션 불필요 */}
+      <span>{count}/{max}</span>
+      <List data={filtered} /> {/* reactive → 메모이제이션 대상 */}
     </div>
   );
 }
 ```
 
-컴파일 후 코드입니다.
+non-reactive 값은 매번 같은 결과를 내므로 캐싱하지 않습니다. 모든 걸 캐싱하면 비교 비용이 오히려 성능을 깎아먹기 때문에, **바뀔 수 있는 것만 캐싱**합니다.
+
+## Reactive Scope
+
+Reactive 분석이 끝나면 같은 의존성을 공유하는 연산들을 **reactive scope**로 묶습니다. 각 scope는 독립적으로 동작합니다.
 
 ```typescript
-function SimpleComponent(t0) {
-  const $ = _c(2);
-  const { message } = t0;
-  let t1;
+function Dashboard({ users, theme }) {
+  // ┌─── scope 1: users에 의존 ──────────────────┐
+  // │                                              │
+       const activeUsers = users.filter(u => u.isActive);
+       const userList = <UserList data={activeUsers} />;
+  // │                                              │
+  // └──────────────────────────────────────────────┘
 
-  if ($[0] !== message) {
-    t1 = (<div><p>{message}</p></div>);
-    $[0] = message;
-    $[1] = t1;
-  } else {
-    t1 = $[1];
-  }
-  return t1;
+  // ┌─── scope 2: theme에 의존 ──────────────────┐
+  // │                                              │
+       const headerStyle = { color: theme.primary };
+       const header = <Header style={headerStyle} />;
+  // │                                              │
+  // └──────────────────────────────────────────────┘
+
+  return <div>{header}{userList}</div>;
 }
 ```
 
-`_c(2)`로 슬롯 2개짜리 캐시 배열을 만듭니다. `$[0]`에 의존성(`message`)을, `$[1]`에 결과물(JSX)을 저장합니다. 다음 렌더링에서 `message`가 이전과 같으면 캐시된 JSX를 바로 반환합니다.
+```
+변경 시나리오:
 
-`useMemo`와 형태가 비슷해 보이지만 중요한 차이가 있습니다. 컴파일러는 컴포넌트 하나 안에서 여러 scope에 대해 이 패턴을 각각 적용합니다. 수동으로 이만큼 세밀하게 `useMemo`를 쓰려면 코드가 유지보수하기 어려울 정도로 복잡해집니다.
+users만 변경 → scope 1 재계산, scope 2 캐시 사용
+theme만 변경 → scope 1 캐시 사용, scope 2 재계산
+둘 다 변경   → 둘 다 재계산
+```
+
+`React.memo`는 props 하나만 바뀌어도 컴포넌트 전체를 다시 실행하는 all-or-nothing 방식입니다. reactive scope는 컴포넌트 내부를 여러 독립적인 캐시 단위로 쪼개서, 바뀐 부분만 정확히 재계산합니다.
+
+## 컴파일 결과물
+
+컴파일러는 `_c`(이전 이름: `useMemoCache`) hook으로 고정 크기 캐시 배열을 할당합니다. 단순한 예제부터 봅시다.
+
+```typescript
+// 변환 전                              // 변환 후
+function Greeting({ name }) {          function Greeting(t0) {
+  return (                               const $ = _c(2);
+    <div>                                const { name } = t0;
+      <p>{name}</p>                      let t1;
+    </div>                               if ($[0] !== name) {
+  );                                       t1 = <div><p>{name}</p></div>;
+}                                          $[0] = name;
+                                           $[1] = t1;
+                                         } else {
+                                           t1 = $[1];
+                                         }
+                                         return t1;
+                                       }
+```
+
+`$[0]`에 의존성, `$[1]`에 결과를 저장합니다. 다음 렌더링에서 `name`이 같으면 캐시된 JSX를 반환합니다.
+
+scope가 여러 개인 경우를 봅시다.
+
+```typescript
+// Dashboard 컴파일 결과
+function Dashboard(t0) {
+  const $ = _c(6);
+  const { users, theme } = t0;
+
+  // scope 1: users 의존
+  let t1, t2;
+  if ($[0] !== users) {
+    t1 = users.filter(u => u.isActive);
+    t2 = <UserList data={t1} />;
+    $[0] = users;
+    $[1] = t2;
+  } else {
+    t2 = $[1];
+  }
+
+  // scope 2: theme 의존
+  let t3, t4;
+  if ($[2] !== theme) {
+    t3 = { color: theme.primary };
+    t4 = <Header style={t3} />;
+    $[2] = theme;
+    $[3] = t4;
+  } else {
+    t4 = $[3];
+  }
+
+  // scope 3: 두 scope의 결과 조합
+  let t5;
+  if ($[4] !== t4 || $[4 + 1] !== t2) {
+    t5 = <div>{t4}{t2}</div>;
+    $[4] = t4;
+    $[5] = t2;
+  } else {
+    t5 = $[5];
+  }
+  return t5;
+}
+```
+
+`_c(6)` — 슬롯 6개. 각 scope가 독립적으로 캐시를 확인하고, 의존성이 바뀐 scope만 재계산합니다. 수동으로 이 수준의 `useMemo`를 쓰는 것은 비현실적입니다.
 
 ## Rules of React
 
-컴파일러가 안전하게 최적화할 수 있는 근거는 Rules of React입니다.
+컴파일러가 안전하게 최적화하는 근거입니다.
 
-- 컴포넌트와 hook은 **순수**해야 합니다. 같은 입력이면 같은 출력을 반환해야 합니다.
-- props와 state는 **불변**입니다. 직접 변이하면 안 됩니다.
-- JSX에 전달된 값도 **불변**으로 취급됩니다.
-- side effect는 렌더링 바깥(`useEffect`, 이벤트 핸들러)에서 실행해야 합니다.
+```typescript
+// ✅ 규칙을 지키는 코드                // ❌ 규칙을 위반하는 코드
 
-컴파일러는 이 규칙들이 지켜졌다는 가정 하에 코드를 변환합니다. 규칙을 위반하는 코드를 발견하면 해당 컴포넌트의 최적화를 건너뜁니다. 빌드가 실패하거나 런타임 에러가 나는 게 아니라, 그냥 최적화가 적용되지 않을 뿐입니다.
+// 순수 함수                           // 렌더링 중 side effect
+function Price({ amount }) {          function Price({ amount }) {
+  const formatted = `$${amount}`;       analytics.track('render');
+  return <span>{formatted}</span>;      return <span>${amount}</span>;
+}                                     }
 
-다만 JavaScript의 동적인 특성 때문에 컴파일러가 모든 위반을 정적으로 잡아내지는 못합니다. 위반을 감지하지 못하고 최적화를 적용해버리면 예상치 못한 동작이 발생할 수 있습니다. `eslint-plugin-react-hooks`에 컴파일러 관련 규칙이 통합되어 있으니, ESLint가 보고하는 경고를 무시하지 않는 게 중요합니다.
+// 불변 업데이트                        // 직접 변이
+function addItem(items, item) {       function addItem(items, item) {
+  return [...items, item];              items.push(item);
+}                                       return items;
+                                      }
+```
+
+위반 코드를 발견하면 컴파일러는 해당 컴포넌트의 최적화를 건너뜁니다. 빌드 실패나 런타임 에러가 아니라, 최적화가 적용되지 않을 뿐입니다. 다만 모든 위반을 정적으로 잡지는 못하므로, `eslint-plugin-react-hooks`의 컴파일러 관련 규칙을 활성화해두는 게 중요합니다.
 
 ## 기존 코드와의 공존
 
-이미 `useMemo`, `useCallback`, `React.memo`를 사용하고 있는 코드에서 컴파일러를 켜면 어떻게 되는지가 현실적인 관심사입니다.
+```typescript
+// 기존 코드 — 컴파일러를 켜도 그대로 동작
+const filtered = useMemo(
+  () => items.filter(i => i.active),
+  [items]
+);
+// 컴파일러가 위에 자체 최적화를 추가로 적용
+// → 기존 useMemo를 제거하지 않아도 문제 없음
+// → 새 코드에서는 useMemo 없이 작성하면 됨
+```
 
-컴파일러는 기존 수동 메모이제이션 위에 자체 최적화를 추가로 적용합니다. 기존 코드를 제거하지 않아도 동작에 문제가 없습니다. 새로 작성하는 코드에서는 컴파일러에 맡기고, 기존 코드는 그대로 두는 것이 권장됩니다.
-
-다만 `useMemo`의 반환값이 달라지면 effect의 의존성에 영향을 줄 수 있으므로, 기존 메모이제이션을 제거할 때는 동작 변경이 없는지 확인이 필요합니다.
+기존 `useMemo`/`useCallback`/`React.memo` 위에 컴파일러가 추가 최적화를 적용합니다. 기존 코드를 제거할 때는 `useMemo` 반환값 변경이 effect 의존성에 영향을 줄 수 있으므로 동작 확인이 필요합니다.
 
 ## 정리
 
 React Compiler는 빌드 타임에 코드를 분석해서 reactive value의 변경 범위에 따라 자동으로 메모이제이션을 적용합니다. HIR 기반의 파이프라인으로 데이터 흐름을 추적하고, reactive scope 단위로 세밀하게 캐싱합니다. 수동 메모이제이션으로는 불가능한 조건부 최적화까지 처리합니다. Meta 프로덕션에서 초기 로드 최대 12%, 특정 인터랙션 2.5배 빠른 결과를 보여주고 있고 v1.0이 릴리스된 상태입니다.
 
-개발자가 할 일은 Rules of React를 지키는 것뿐입니다. 규칙만 지키면 컴파일러가 알아서 최적화합니다.
+개발자가 할 일은 Rules of React를 지키는 것뿐입니다.
 
 ## References
 

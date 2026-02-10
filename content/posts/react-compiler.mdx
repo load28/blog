@@ -1,0 +1,135 @@
+---
+title: 'React Compiler 동작 원리'
+date: '2026-02-10'
+tags: ['react', 'compiler', 'optimization']
+---
+
+React는 함수형 컴포넌트를 채택하면서 상태가 바뀔 때마다 함수를 다시 실행하는 구조를 갖게 됐습니다. 단순한 멘탈 모델이라는 장점이 있지만, 성능 최적화는 개발자 몫이 됐습니다. `useMemo`, `useCallback`, `React.memo`를 직접 배치해야 했고, 이 수동 메모이제이션이 가진 한계를 해결하기 위해 React Compiler가 등장했습니다.
+
+## 수동 메모이제이션의 한계
+
+`useMemo`와 `useCallback`은 의존성 배열을 직접 관리해야 합니다. 의존성을 빠뜨리면 stale 값을 참조하고, 너무 많이 넣으면 캐시가 의미 없이 깨집니다. 컴포넌트가 복잡해지면 어디에 메모이제이션을 걸어야 하는지 판단하는 것 자체가 부담이 됩니다.
+
+더 근본적인 문제는 `useMemo`와 `useCallback`이 hook이라는 점입니다. hook은 조건문이나 early return 뒤에 올 수 없습니다. 아래 코드에서 `props.children`이 없으면 바로 `null`을 반환하고 싶지만, `useMemo`를 쓰고 있다면 그 위에 놓아야 합니다.
+
+```typescript
+function ThemeProvider(props) {
+  // useMemo는 여기에만 올 수 있음
+  const theme = useMemo(() => mergeTheme(props.theme), [props.theme]);
+
+  if (!props.children) {
+    return null;
+  }
+
+  return <ThemeContext value={theme}>{props.children}</ThemeContext>;
+}
+```
+
+`props.children`이 없을 때에도 `mergeTheme`이 실행됩니다. 수동 메모이제이션으로는 이런 조건부 최적화가 불가능합니다.
+
+## 컴파일러가 하는 일
+
+React Compiler는 빌드 타임에 동작하는 소스 코드 변환 도구입니다. 컴포넌트와 hook 코드를 분석해서 메모이제이션 코드를 자동으로 삽입합니다.
+
+핵심은 **세분화된 메모이제이션**입니다. `React.memo`는 컴포넌트 단위로 메모이제이션하고, `useMemo`는 개발자가 감싼 범위만 캐싱합니다. 컴파일러는 컴포넌트 내부의 개별 표현식, JSX 엘리먼트, 콜백 함수를 각각 독립적으로 메모이제이션합니다. 개발자가 수동으로 하기엔 너무 세밀한 수준의 최적화를 자동으로 적용합니다.
+
+앞서 본 `ThemeProvider` 예제도 컴파일러는 early return 이후의 코드만 별도로 메모이제이션할 수 있습니다. hook 규칙에 얽매이지 않기 때문입니다.
+
+## 컴파일 파이프라인
+
+컴파일러는 Babel 플러그인으로 구현되어 있지만, 내부적으로는 Babel과 분리된 자체 파이프라인을 가지고 있습니다.
+
+```
+Source Code → AST → HIR → SSA → Effect 분석 → Reactive 분석 → Scope 생성 → Code 생성
+```
+
+**HIR(High-level Intermediate Representation)** 은 Babel이 만든 AST를 변환한 컴파일러 자체 표현입니다. Control Flow Graph 기반으로 코드의 실행 흐름을 정확하게 파악합니다. 어떤 변수가 어디서 읽히고 어디서 쓰이는지, 조건 분기와 루프에서 값이 어떻게 흘러가는지를 추적합니다.
+
+HIR은 원본 코드의 고수준 구조를 유지합니다. 모든 것을 저수준으로 풀어내지 않기 때문에 컴파일 결과물이 읽기 쉽고 번들 사이즈에도 영향이 적습니다.
+
+**SSA(Static Single Assignment)** 변환에서는 모든 변수가 정확히 한 번만 할당되도록 변환합니다. 같은 변수에 여러 번 값을 넣는 코드가 있으면, 각 할당마다 고유한 이름을 부여합니다. 이렇게 하면 어떤 값이 어디서 유래했는지 모호함 없이 추적할 수 있습니다.
+
+**Effect 분석**에서는 각 연산이 데이터에 어떤 영향을 미치는지 분류합니다. 읽기만 하는지, 값을 저장하는지, 캡처하는지, 변이하는지, 동결하는지를 파악합니다. 이 정보가 있어야 안전하게 캐싱할 수 있는 범위를 결정할 수 있습니다.
+
+**Reactive 분석**은 이 파이프라인에서 React에 특화된 핵심 단계입니다. props, state, context처럼 렌더링 사이에 변할 수 있는 값을 **reactive value**로 식별합니다. 이 reactive value로부터 파생된 값들도 reactive로 표시됩니다. 반대로 렌더링 사이에 변하지 않는 값은 non-reactive로 분류되어 메모이제이션 대상에서 제외합니다.
+
+## Reactive Scope
+
+Reactive 분석이 끝나면 컴파일러는 관련 연산들을 **reactive scope**로 묶습니다. 같은 reactive value에 의존하는 연산들이 하나의 scope가 됩니다. 각 scope는 독립적으로 동작합니다.
+
+예를 들어 한 컴포넌트에서 `users` 배열을 가공하는 로직과 `theme` 값을 사용하는 JSX가 있다면, 이 둘은 별도의 scope로 분리됩니다. `users`가 바뀌어도 `theme` scope는 캐시된 결과를 그대로 쓰고, `theme`가 바뀌어도 `users` scope는 재계산하지 않습니다.
+
+이 방식이 `React.memo`와 다른 점은 컴포넌트 단위가 아니라 **표현식 단위**로 캐싱한다는 것입니다. 하나의 컴포넌트 안에서도 여러 scope가 각각 독립적으로 캐시를 관리합니다.
+
+## 컴파일 결과물
+
+컴파일러가 변환한 코드는 `_c`라는 내부 hook을 사용합니다. 이전에는 `useMemoCache`라 불렸습니다. 이 hook은 컴포넌트마다 고정 크기의 캐시 배열을 할당합니다.
+
+변환 전 코드입니다.
+
+```typescript
+function SimpleComponent({ message }) {
+  return (
+    <div>
+      <p>{message}</p>
+    </div>
+  );
+}
+```
+
+컴파일 후 코드입니다.
+
+```typescript
+function SimpleComponent(t0) {
+  const $ = _c(2);
+  const { message } = t0;
+  let t1;
+
+  if ($[0] !== message) {
+    t1 = (<div><p>{message}</p></div>);
+    $[0] = message;
+    $[1] = t1;
+  } else {
+    t1 = $[1];
+  }
+  return t1;
+}
+```
+
+`_c(2)`로 슬롯 2개짜리 캐시 배열을 만듭니다. `$[0]`에 의존성(`message`)을, `$[1]`에 결과물(JSX)을 저장합니다. 다음 렌더링에서 `message`가 이전과 같으면 캐시된 JSX를 바로 반환합니다.
+
+`useMemo`와 형태가 비슷해 보이지만 중요한 차이가 있습니다. 컴파일러는 컴포넌트 하나 안에서 여러 scope에 대해 이 패턴을 각각 적용합니다. 수동으로 이만큼 세밀하게 `useMemo`를 쓰려면 코드가 유지보수하기 어려울 정도로 복잡해집니다.
+
+## Rules of React
+
+컴파일러가 안전하게 최적화할 수 있는 근거는 Rules of React입니다.
+
+- 컴포넌트와 hook은 **순수**해야 합니다. 같은 입력이면 같은 출력을 반환해야 합니다.
+- props와 state는 **불변**입니다. 직접 변이하면 안 됩니다.
+- JSX에 전달된 값도 **불변**으로 취급됩니다.
+- side effect는 렌더링 바깥(`useEffect`, 이벤트 핸들러)에서 실행해야 합니다.
+
+컴파일러는 이 규칙들이 지켜졌다는 가정 하에 코드를 변환합니다. 규칙을 위반하는 코드를 발견하면 해당 컴포넌트의 최적화를 건너뜁니다. 빌드가 실패하거나 런타임 에러가 나는 게 아니라, 그냥 최적화가 적용되지 않을 뿐입니다.
+
+`eslint-plugin-react-hooks`에 컴파일러 관련 규칙이 통합되어 있어서, 개발 시점에 규칙 위반을 잡을 수 있습니다.
+
+## 기존 코드와의 공존
+
+이미 `useMemo`, `useCallback`, `React.memo`를 사용하고 있는 코드에서 컴파일러를 켜면 어떻게 되는지가 현실적인 관심사입니다.
+
+컴파일러는 기존 수동 메모이제이션 위에 자체 최적화를 추가로 적용합니다. 기존 코드를 제거하지 않아도 동작에 문제가 없습니다. 새로 작성하는 코드에서는 컴파일러에 맡기고, 기존 코드는 그대로 두는 것이 권장됩니다.
+
+다만 `useMemo`의 반환값이 달라지면 effect의 의존성에 영향을 줄 수 있으므로, 기존 메모이제이션을 제거할 때는 동작 변경이 없는지 확인이 필요합니다.
+
+## 정리
+
+React Compiler는 빌드 타임에 코드를 분석해서 reactive value의 변경 범위에 따라 자동으로 메모이제이션을 적용합니다. HIR 기반의 파이프라인으로 데이터 흐름을 추적하고, reactive scope 단위로 세밀하게 캐싱합니다. 수동 메모이제이션으로는 불가능한 조건부 최적화까지 처리합니다. Meta 프로덕션에서 초기 로드 최대 12%, 특정 인터랙션 2.5배 빠른 결과를 보여주고 있고 v1.0이 릴리스된 상태입니다.
+
+개발자가 할 일은 Rules of React를 지키는 것뿐입니다. 규칙만 지키면 컴파일러가 알아서 최적화합니다.
+
+## References
+
+- [React Compiler v1.0](https://react.dev/blog/2025/10/07/react-compiler-1)
+- [React Compiler Introduction](https://react.dev/learn/react-compiler/introduction)
+- [Understanding React Compiler - Tony Alicea](https://tonyalicea.dev/blog/understanding-react-compiler/)
+- [React Compiler Internals - Lydia Hallie](https://gitnation.com/contents/react-compiter-internals)

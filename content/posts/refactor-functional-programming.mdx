@@ -1,10 +1,10 @@
 ---
 title: 'AI 코드 분석으로 함수형 리팩토링하기'
-date: '2026-02-10'
-tags: ['react', 'functional-programming', 'refactoring']
+date: '2026-02-11'
+tags: ['react', 'functional-programming', 'refactoring', 'ai']
 ---
 
-React Compiler의 동작 원리를 정리하면서, 컴파일러가 코드를 분석하는 방식 자체에 함수형 프로그래밍의 핵심 원칙이 녹아 있다는 걸 알게 됐습니다. SSA는 변수를 한 번만 할당하고, Effect 분석은 순수성을 판단하고, Reactive 분석은 파생 가능한 값을 찾아냅니다. 이 관점을 AI에게 주고 기존 코드를 분석하게 한 뒤, 그 결과를 바탕으로 리팩토링했더니 단순히 "함수형으로 바꿔줘"라고 한 것보다 훨씬 나은 결과가 나왔습니다.
+React Compiler의 동작 원리를 정리하면서, 컴파일러가 코드를 분석하는 방식 자체에 함수형 프로그래밍의 핵심 원칙이 녹아 있다는 걸 알게 됐습니다. 그런데 한 발 더 나아가서, 컴파일러의 분석 파이프라인을 코드 생성 직전에 멈추고 그 중간 결과물을 AI에게 넘기면 어떨까? 실제로 해봤더니, "함수형으로 바꿔줘"라고 하거나 "컴파일러 관점으로 분석해줘"라고 개념적으로 요청하는 것보다 훨씬 정확한 리팩토링이 나왔습니다.
 
 ## 컴파일러의 분석이 보여주는 것
 
@@ -17,33 +17,100 @@ React Compiler는 소스 코드를 최적화하기 위해 여러 단계의 정�
 | Reactive 분석 | 파생 가능한 값 식별 | 상태 최소화, 계산된 값 |
 | Scope 생성 | 독립적 캐싱 단위 분리 | 관심사 분리 |
 
-SSA에서 `let label`이 `label_0`, `label_1`, `label_2 = φ(label_0, label_1)`로 변환되는 건, 변수의 재할당이 곧 새로운 값의 생성이라는 걸 구조적으로 보여줍니다. Effect 분석에서 Mutate로 분류된 연산이 scope를 확장시키는 건, 변이가 최적화를 어렵게 만든다는 걸 증명합니다. Reactive 분석에서 `formatName('Users')`가 non-reactive로 분류되는 건, 상수로부터 파생된 값은 상태로 관리할 필요가 없다는 뜻입니다.
+핵심은 이 분석 단계들이 코드 생성(메모이제이션 삽입) 이전에 수행된다는 점입니다. 코드 생성을 빼면, 컴파일러의 출력은 순수한 **코드 분석 리포트**가 됩니다.
 
-컴파일러가 최적화하기 좋은 코드의 조건이 곧 함수형 코드의 특성입니다.
+## 컴파일러 분석을 CLI로 추출하기
 
-## AI에게 컴파일러 관점으로 분석시키기
-
-"이 코드를 함수형으로 리팩토링해줘"라고 하면 AI는 일반적인 패턴 변환을 합니다. `for`를 `map`으로, `let`을 `const`로, 클래스를 함수로. 표면적인 변환은 되지만 어떤 변수가 왜 문제인지, 어떤 상태가 불필요한지에 대한 근거가 부족합니다.
-
-대신 컴파일러의 분석 관점을 프롬프트로 주면 달라집니다.
+React Compiler의 파이프라인은 이렇게 구성됩니다.
 
 ```
-다음 코드를 아래 기준으로 분석해줘:
-
-1. SSA 관점: 재할당되는 변수를 찾고, 각 할당이 실제로 새로운 값인지 확인
-2. Effect 관점: 각 연산을 Read/Store/Mutate/Freeze로 분류
-3. Reactive 관점: props/state에서 파생 가능한 값과 독립적인 상수를 구분
-4. Scope 관점: 같은 의존성을 공유하는 연산 그룹을 식별
+Source → AST → HIR → SSA → Effect 분석 → Reactive 분석 → Scope 생성 → Code 생성
+                                                                        ↑
+                                                               여기서 멈추면
+                                                              분석만 남는다
 ```
 
-이렇게 분석하면 코드의 구조적 문제가 구체적으로 드러납니다.
-
-## 분석 기반 리팩토링 예시
-
-실제 코드에 이 방식을 적용한 예시입니다.
+`babel-plugin-react-compiler`의 내부 파이프라인을 활용해서, 코드 생성 직전까지의 분석 결과만 추출하는 CLI 도구를 만들 수 있습니다.
 
 ```typescript
-// 리팩토링 전
+#!/usr/bin/env npx tsx
+// analyze.ts — React Compiler 분석 단계만 추출하는 CLI
+import { transformSync } from '@babel/core';
+import fs from 'fs';
+
+const sourceCode = fs.readFileSync(process.argv[2], 'utf-8');
+
+// 각 파이프라인 단계를 가로채는 커스텀 로거
+const pipelineLogger = {
+  logEvent(filename: string | null, event: any) {
+    if (event.kind === 'CompileSuccess') {
+      console.log('=== SSA Analysis ===');
+      printSSABindings(event.fnName, event.ir);
+
+      console.log('\n=== Effect Analysis ===');
+      printEffects(event.ir);
+
+      console.log('\n=== Reactive Analysis ===');
+      printReactiveValues(event.ir);
+
+      console.log('\n=== Scope Analysis ===');
+      printScopes(event.ir);
+    }
+  },
+};
+
+transformSync(sourceCode, {
+  plugins: [
+    [
+      'babel-plugin-react-compiler',
+      {
+        logger: pipelineLogger,
+        panicThreshold: 'none',
+      },
+    ],
+  ],
+  parserOpts: { plugins: ['jsx', 'typescript'] },
+  filename: 'input.tsx',
+});
+```
+
+좀 더 직접적인 방법도 있습니다. 컴파일러의 내부 함수들을 단계별로 호출하되, 마지막 코드 생성만 빼는 것입니다.
+
+```typescript
+// 컴파일러 파이프라인을 단계별로 실행
+import { parse } from '@babel/parser';
+import {
+  lower,                          // AST → HIR
+  enterSSA,                       // HIR → SSA
+  inferEffects,                   // Effect 분석
+  inferReactiveScopeVariables,    // Reactive 분석
+  buildReactiveBlocks,            // Scope 생성
+  // codegenFunction              ← 이건 호출하지 않는다
+} from 'babel-plugin-react-compiler/src/Entrypoint';
+
+const ast = parse(sourceCode, {
+  sourceType: 'module',
+  plugins: ['jsx', 'typescript'],
+});
+
+const funcNode = ast.program.body[0];
+const hir = lower(funcNode, env);
+const ssa = enterSSA(hir);
+inferEffects(ssa);
+const reactive = inferReactiveScopeVariables(ssa);
+const scopes = buildReactiveBlocks(reactive);
+
+// scopes가 최종 분석 결과 — 여기서 멈춤
+printAnalysis(scopes);
+```
+
+이 스크립트를 실행하면 코드 생성 없이 분석 결과만 나옵니다.
+
+## 분석 출력 예시
+
+다음 코드를 분석 대상으로 넣어봅시다.
+
+```typescript
 function OrderSummary({ items, coupon, user }) {
   let total = 0;
   let discountedTotal = 0;
@@ -80,36 +147,160 @@ function OrderSummary({ items, coupon, user }) {
 }
 ```
 
-AI에게 컴파일러 관점으로 분석을 요청하면 이런 결과가 나옵니다.
-
-```
-SSA 분석:
-- total: 3곳에서 재할당 (0 → += → +=...) → 루프 내 누적
-- discountedTotal: 2곳에서 할당 (if/else 분기) → φ 함수 대상
-- displayItems: push로 반복 변이 → Mutate
-
-Effect 분석:
-- items.filter, price * quantity: Read (안전)
-- displayItems.push: Mutate (scope 확장 필요)
-- total +=: Mutate (누적 변이)
-
-Reactive 분석:
-- total, discountedTotal, displayItems: items + coupon에 의존 (reactive)
-- greeting, vipLabel, isVip: user에만 의존 (reactive, 별도 scope)
-- 'VIP', 'Standard' 문자열: non-reactive (상수)
-
-Scope 분석:
-- scope 1: items → displayItems, total → discountedTotal (items, coupon 의존)
-- scope 2: user → isVip → vipLabel → greeting (user 의존)
-- 두 scope는 독립적
+```bash
+npx tsx analyze.ts OrderSummary.tsx
 ```
 
-이 분석을 바탕으로 리팩토링하면 각 변환의 근거가 명확합니다.
+```
+=== SSA Analysis ===
+OrderSummary:
+  total_0 = 0                                           [initial]
+  total_1 = total_0 + item.price * item.quantity        [loop body]
+  total_2 = φ(total_0, total_1)                         [loop merge]
+  discountedTotal_0 = total_2 * (1 - coupon.discount)   [if branch]
+  discountedTotal_1 = total_2                           [else branch]
+  discountedTotal_2 = φ(discountedTotal_0, discountedTotal_1) [merge]
+  displayItems_0 = []                                   [initial]
+  displayItems_1 = mutate(displayItems_0, push(...))    [loop body]
+  isVip_0 = user.purchaseCount > 10
+  vipLabel_0 = φ('VIP', 'Standard')                     [conditional]
+  greeting_0 = user.name + '님 (' + vipLabel_0 + ')'
+
+  재할당 변수: total(3), discountedTotal(3), displayItems(2)
+  φ 함수: total_2, discountedTotal_2, vipLabel_0
+
+=== Effect Analysis ===
+  items              → Read
+  items[i]           → Read
+  item.price         → Read
+  item.quantity      → Read
+  item.inStock       → Read
+  total += ...       → Mutate (local accumulator)
+  displayItems.push  → Mutate (local array)
+  {...item, subtotal} → Read(item) + Create(new object)
+  coupon?.isValid    → Read
+  coupon?.discount   → Read
+  user.purchaseCount → Read
+  user.name          → Read
+
+  Mutate 연산: 2개 (total 누적, displayItems.push)
+  Read 연산: 11개
+  Create 연산: 1개
+
+=== Reactive Analysis ===
+  reactive (props/state 의존):
+    items             ← prop
+    coupon            ← prop
+    user              ← prop
+    total_2           ← items에서 파생
+    discountedTotal_2 ← items, coupon에서 파생
+    displayItems_1    ← items에서 파생
+    isVip_0           ← user에서 파생
+    greeting_0        ← user에서 파생
+
+  non-reactive (상수):
+    'VIP'             ← string literal
+    'Standard'        ← string literal
+    0                 ← number literal
+
+  의존성 체인:
+    items → [total_2, displayItems_1] → discountedTotal_2
+    coupon → discountedTotal_2
+    user → isVip_0 → vipLabel_0 → greeting_0
+
+=== Scope Analysis ===
+  scope_0 [deps: items, coupon]:
+    displayItems = items.filter(...).map(...)
+    total = items.reduce(...)
+    discountedTotal = coupon ? total * ... : total
+    → JSX: <ItemList>, <span>
+
+  scope_1 [deps: user]:
+    isVip = user.purchaseCount > 10
+    vipLabel = isVip ? 'VIP' : 'Standard'
+    greeting = user.name + '님 (' + vipLabel + ')'
+    → JSX: <h1>
+
+  scope_2 [deps: scope_0, scope_1]:
+    → JSX: <div>
+
+  독립 scope: 2개 (scope_0과 scope_1은 의존성이 겹치지 않음)
+```
+
+코드 생성 단계가 빠져 있으니, 이건 순수한 분석 리포트입니다. 어떤 변수가 몇 번 재할당되는지, 어떤 연산이 변이를 일으키는지, 어떤 값이 어떤 props에 의존하는지, 어떤 연산들이 같은 scope로 묶이는지 — 구조화된 데이터로 나옵니다.
+
+## 분석 결과를 AI에 넘기기
+
+이 출력을 그대로 AI에게 넘기고 리팩토링을 요청합니다.
+
+```
+다음은 React Compiler가 OrderSummary 컴포넌트를 분석한 결과야.
+코드 생성(메모이제이션 삽입) 직전 단계까지의 분석이야.
+
+[위의 분석 출력 전체를 붙여넣기]
+
+이 분석을 바탕으로 함수형 프로그래밍 원칙에 맞게 리팩토링해줘.
+조건:
+- SSA에서 φ 함수가 나온 변수는 단일 할당으로 변경
+- Mutate로 분류된 연산은 Read로 변환
+- Scope 경계를 코드 구조에 반영
+- non-reactive 값은 컴포넌트 밖으로 추출 가능한지 검토
+```
+
+AI에게 "SSA 관점에서 분석해줘"라고 개념적으로 요청할 때는, AI가 직접 변수의 재할당 횟수를 세고 의존성을 추적해야 합니다. 이 과정에서 빠뜨리거나 잘못 판단할 수 있습니다. 반면 컴파일러가 이미 수행한 분석 결과를 넘기면, AI는 분석이 아니라 **해석과 적용**에 집중합니다.
+
+## 세 가지 접근 비교
+
+같은 코드에 대해 세 가지 방식으로 리팩토링을 요청했을 때의 차이입니다.
+
+### 1단계: 단순 요청
+
+```
+"이 코드를 함수형으로 리팩토링해줘"
+```
+
+AI는 `for`를 `forEach`나 `map`으로 바꾸고, `let`을 `const`로 바꾸는 수준에서 멈추는 경우가 많습니다. `total`을 `reduce`로 바꿔도 `displayItems`의 `push`는 그대로 두거나, 변환은 하되 scope 분리까지는 가지 않습니다. 왜 바꿔야 하는지에 대한 분석 없이 패턴만 대입하기 때문입니다.
+
+### 2단계: 개념적 분석 요청
+
+```
+"SSA, Effect, Reactive, Scope 관점으로 분석한 뒤 리팩토링해줘"
+```
+
+AI가 직접 분석을 시도합니다. 대체로 방향은 맞지만, 변수의 재할당 횟수를 세거나 의존성 체인을 추적하는 과정에서 빠뜨리거나 잘못 판단하는 경우가 있습니다. 분석의 정확도가 AI의 추론 능력에 의존합니다.
+
+### 3단계: 컴파일러 분석 결과 전달
+
+```
+"React Compiler의 분석 결과야. 이걸 바탕으로 리팩토링해줘."
+[실제 컴파일러 출력]
+```
+
+AI가 분석을 직접 할 필요가 없습니다. 컴파일러가 이미 정확하게 수행한 분석 결과를 해석하고 적용만 하면 됩니다. `total`의 φ 함수 3개, `displayItems`의 Mutate 분류, scope 2개의 독립성 — 이 모든 게 이미 데이터로 주어져 있습니다.
+
+```
+접근 방식별 비교:
+
+1단계: 코드 → AI가 패턴 매칭           → 표면적 변경
+2단계: 코드 → AI가 분석 시도           → 근거 있지만 불완전한 변경
+3단계: 코드 → 컴파일러가 분석 → AI가 적용 → 정확한 근거 기반 변경
+```
+
+| 항목 | 단순 요청 | 개념적 분석 | 컴파일러 출력 기반 |
+|:--|:--|:--|:--|
+| 분석 정확도 | 없음 | AI 추론에 의존 | 컴파일러 수준 |
+| 재할당 감지 | 패턴 기반 | 대체로 정확 | 정확 (φ 함수 포함) |
+| Effect 분류 | 안 함 | 가끔 누락 | 완전 |
+| Scope 분리 | 안 함 | 시도하지만 불완전 | 정확 |
+| 일관성 | 낮음 | 중간 | 높음 |
+
+## 리팩토링 결과
+
+3단계 방식으로 얻은 리팩토링 결과입니다. 각 변환의 근거가 컴파일러 출력에서 직접 나옵니다.
 
 ```typescript
-// 리팩토링 후
 function OrderSummary({ items, coupon, user }) {
-  // scope 1: items, coupon에 의존
+  // scope_0 [deps: items, coupon]
   const inStockItems = items.filter((item) => item.inStock);
 
   const displayItems = inStockItems.map((item) => ({
@@ -125,7 +316,7 @@ function OrderSummary({ items, coupon, user }) {
   const discountedTotal =
     coupon?.isValid ? total * (1 - coupon.discount) : total;
 
-  // scope 2: user에 의존
+  // scope_1 [deps: user]
   const vipLabel = user.purchaseCount > 10 ? 'VIP' : 'Standard';
   const greeting = `${user.name}님 (${vipLabel})`;
 
@@ -139,41 +330,15 @@ function OrderSummary({ items, coupon, user }) {
 }
 ```
 
-달라진 점을 정리하면 이렇습니다.
+| 변환 | 컴파일러 분석 근거 |
+|:--|:--|
+| `total`: `let` + `+=` → `reduce` | SSA: `total_0`, `total_1`, `total_2 = φ(...)` — 3번 할당 |
+| `displayItems`: `push` → `map` | Effect: `displayItems.push → Mutate` |
+| `discountedTotal`: `if/else` → 삼항 | SSA: `discountedTotal_2 = φ(d_0, d_1)` |
+| `isVip` 인라인 | Scope: `scope_1`에서 단일 사용, 중간 바인딩 불필요 |
+| scope 경계 주석 | Scope: `scope_0 [items, coupon]`, `scope_1 [user]` 독립 |
 
-| 항목 | 변경 전 | 변경 후 | 근거 |
-|:--|:--|:--|:--|
-| `total` | `let` + `+=` 반복 | `reduce` 단일 표현식 | SSA: 재할당 제거 |
-| `displayItems` | `push`로 변이 | `map`으로 새 배열 생성 | Effect: Mutate → Read |
-| `discountedTotal` | `if/else` 분기 할당 | 삼항 연산자 | SSA: φ 함수 → 단일 할당 |
-| `isVip` | 중간 변수 | 인라인 | Reactive: 불필요한 바인딩 제거 |
-| scope 분리 | 코드가 섞여 있음 | 주석으로 scope 경계 표시 | Scope: 의존성 기준 그룹화 |
-
-`let`이 전부 사라졌고, 변이 연산이 없어졌고, 각 값이 선언과 동시에 확정됩니다.
-
-## 단순 요청 vs 분석 기반 요청
-
-같은 코드에 대해 두 가지 방식으로 AI에게 리팩토링을 요청하면 결과가 다릅니다.
-
-**단순 요청**: "이 코드를 함수형으로 리팩토링해줘"
-
-AI는 `for`를 `forEach`나 `map`으로 바꾸고, `let`을 `const`로 바꾸는 수준에서 멈추는 경우가 많습니다. `total`을 `reduce`로 바꿔도 `displayItems`의 `push`는 그대로 두거나, 변환은 하되 scope 분리까지는 가지 않습니다. 왜 바꿔야 하는지에 대한 분석 없이 패턴만 대입하기 때문입니다.
-
-**분석 기반 요청**: "SSA, Effect, Reactive, Scope 관점으로 분석한 뒤 리팩토링해줘"
-
-분석 단계에서 각 변수의 재할당 횟수, 변이 여부, 의존성 그래프가 먼저 나옵니다. 이 분석이 리팩토링의 근거가 되므로 변환이 일관되고 빠뜨리는 부분이 적습니다. scope 분리까지 자연스럽게 이어지고, 결과 코드가 React Compiler의 최적화에도 유리한 형태가 됩니다.
-
-```
-분석 기반 접근:
-
-코드 → AI가 컴파일러 관점으로 분석 → 문제 지점 도출 → 근거 기반 리팩토링
-
-단순 접근:
-
-코드 → AI가 패턴 매칭으로 변환 → 표면적 변경
-```
-
-차이의 핵심은 **분석이 먼저 이루어지는가**입니다. 컴파일러가 최적화 전에 HIR, SSA, Effect 분석을 수행하듯이, 리팩토링 전에 코드의 구조적 특성을 파악하면 변환의 방향과 근거가 생깁니다.
+`let`이 전부 사라졌고, 변이 연산이 없어졌고, 각 값이 선언과 동시에 확정됩니다. React Compiler가 다시 이 코드를 처리하면, 이미 scope가 분리되어 있으므로 최적화가 더 효과적으로 적용됩니다.
 
 ## 실무 적용 시 주의할 점
 
@@ -183,11 +348,11 @@ AI는 `for`를 `forEach`나 `map`으로 바꾸고, `let`을 `const`로 바꾸는
 - **여러 props에서 파생되는 계산**: 의존성 그래프가 복잡해서 scope 분리가 필요한 경우
 - **성능 최적화가 필요한 컴포넌트**: React Compiler가 최적화하기 좋은 형태로 만들고 싶을 때
 
-분석 결과를 맹신하지 말고 검증하는 것도 중요합니다. AI가 Read로 분류한 연산이 실제로는 내부에서 변이를 일으키는 경우도 있고, non-reactive로 판단한 값이 실제로는 외부 상태에 의존하는 경우도 있습니다.
+컴파일러 내부 API는 공식 지원 API가 아니므로 버전에 따라 바뀔 수 있습니다. 하지만 분석의 개념(SSA, Effect, Reactive, Scope)은 컴파일러 이론의 기본이라 프레임워크가 바뀌어도 유효합니다. 실제 프로젝트에서는 React Compiler Playground를 활용해서 중간 표현을 UI로 확인하는 것도 좋은 대안입니다.
 
 ## 정리
 
-React Compiler의 분석 파이프라인은 최적화 도구이기도 하지만, 좋은 코드의 구조를 정의하는 기준이기도 합니다. SSA는 불변 바인딩을, Effect 분석은 순수 함수를, Reactive 분석은 상태 최소화를, Scope 생성은 관심사 분리를 지향합니다. AI에게 이 관점으로 코드를 먼저 분석하게 하고 그 결과를 바탕으로 리팩토링하면, 단순한 패턴 변환을 넘어서 구조적으로 개선된 코드를 얻을 수 있습니다.
+React Compiler의 분석 파이프라인에서 코드 생성을 빼면, 코드의 구조적 특성을 정확하게 기술하는 분석 리포트가 남습니다. 이 리포트를 AI에게 넘기면, AI가 직접 분석하는 것보다 정확한 근거 위에서 리팩토링할 수 있습니다. 컴파일러는 분석을, AI는 해석과 적용을 — 각자 잘하는 일을 나누는 것입니다.
 
 ## References
 

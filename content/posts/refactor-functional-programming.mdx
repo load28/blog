@@ -30,17 +30,24 @@ Source → AST → HIR → SSA → Effect 분석 → Reactive 분석 → Scope �
                                                             분석 데이터만 남는다
 ```
 
-`babel-plugin-react-compiler`의 `logger` 옵션이나 내부 함수를 단계별로 호출하는 방식으로, 코드 생성 직전까지의 분석 결과만 추출할 수 있습니다.
+`babel-plugin-react-compiler`의 `logger` 옵션에서 `debugLogIRs` 콜백을 등록하면, 파이프라인의 각 단계가 완료될 때마다 `HIRFunction`/`ReactiveFunction` 등 내부 IR 데이터를 그대로 받아볼 수 있습니다. React Compiler Playground도 이 방식으로 중간 결과를 시각화합니다.
 
-```
-// 의사코드
-source = readFile(targetComponent)
-result = runCompilerPipeline(source, { stopBefore: "codegen" })
+```javascript
+// babel-plugin-react-compiler의 logger.debugLogIRs 활용
+const snapshots = [];
 
-print(result.ssa)        // 변수별 할당 횟수, φ 함수
-print(result.effects)    // Read/Mutate/Freeze 분류
-print(result.reactive)   // props/state 의존성 체인
-print(result.scopes)     // scope별 의존성과 포함 연산
+const pluginOptions = {
+  logger: {
+    debugLogIRs(result) {
+      // 매 파이프라인 단계마다 호출됨
+      snapshots.push({ stage: result.name, kind: result.kind, value: result.value });
+    },
+    logEvent(filename, event) { /* CompileSuccess, CompileError 등 */ },
+  },
+};
+
+// 파이프라인 완료 후, snapshots에 각 단계의 IR이 누적됨
+// snapshots에서 원하는 단계의 HIRFunction/ReactiveFunction을 꺼내 분석
 ```
 
 ## 분석 데이터로 알 수 있는 것
@@ -86,12 +93,12 @@ function OrderSummary({ items, coupon, user }) {
 
 이 코드를 분석하면 다음과 같은 구조화된 데이터를 얻습니다.
 
-- **SSA 분석**: `total`이 3번 할당되고(초기값, 루프 내 누적, 병합), `discountedTotal`도 3번 할당됨(if 분기, else 분기, 병합). φ 함수가 3개 존재
-- **Effect 분석**: `total += ...`과 `displayItems.push`가 Mutate로 분류됨. 나머지 props 접근은 모두 Read
+- **SSA 분석**: `total`이 4번 할당됨(초기값, 루프 헤더 φ, 루프 내 누적, `inStock` 분기 합류 φ). `discountedTotal`은 3번 할당(if 분기, else 분기, 합류 φ). 루프 변수 `i`와 `displayItems`까지 포함하면 φ 함수가 총 6개 존재
+- **Effect 분석**: `displayItems.push`가 Mutate로 분류됨(배열 in-place 수정). `total += ...`은 원시값 재할당이므로 Mutate가 아니라 새 값 생성(SSA에서 새 버전 할당). props 접근은 Read, 객체 리터럴 생성(`{...item}`)은 Create, JSX 전달은 Freeze
 - **Reactive 분석**: `total`과 `displayItems`는 `items`에서 파생, `discountedTotal`은 `items`와 `coupon`에서 파생, `greeting`은 `user`에서 파생
-- **Scope 분석**: `items`/`coupon`에 의존하는 연산과 `user`에 의존하는 연산이 서로 독립적인 2개의 scope로 분리됨
+- **Scope 분석**: `items`/`coupon`에 의존하는 연산(scope_0), `user`에 의존하는 연산(scope_1), 그리고 두 scope의 결과를 결합하는 JSX 반환(scope_2)으로 총 3개의 scope가 생성됨. scope_0과 scope_1은 서로 독립적
 
-이 데이터 각각이 리팩토링의 근거가 됩니다. φ 함수가 나온 변수는 `reduce`나 삼항 연산자로 단일 할당으로 바꿀 수 있고, Mutate로 분류된 `push`는 `map`으로 대체할 수 있고, 독립된 scope는 코드 구조에 그대로 반영할 수 있습니다.
+이 데이터 각각이 리팩토링의 근거가 됩니다. φ 함수가 나온 변수는 `reduce`나 삼항 연산자로 단일 할당으로 바꿀 수 있고, Mutate로 분류된 `push`는 `map`으로, 원시값 재할당(`+=`)은 `reduce`로 대체할 수 있고, 독립된 scope는 코드 구조에 그대로 반영할 수 있습니다.
 
 ## 데이터 기반 리팩토링
 
@@ -111,10 +118,11 @@ function OrderSummary({ items, coupon, user }) {
 
 | 지표 | 리팩토링 전 | 리팩토링 후 |
 |:--|:--|:--|
-| 재할당 변수 수 | 3 (`total`, `discountedTotal`, `displayItems`) | 0 |
-| φ 함수 수 | 3 | 0 |
-| Mutate 연산 | 2 (`+=`, `push`) | 0 |
-| 독립 scope | 2 (코드 구조에 미반영) | 2 (코드 구조에 반영) |
+| 재할당 변수 수 | 2 (`total`, `discountedTotal`) | 0 |
+| φ 함수 수 | 6 | 0 |
+| Mutate 연산 | 1 (`push`) | 0 |
+| 원시값 재할당 | 1 (`+=`) | 0 |
+| 독립 scope | 3 (코드 구조에 미반영) | 3 (코드 구조에 반영) |
 
 분석 → 리팩토링 → 재분석의 루프를 돌면, 리팩토링이 실제로 코드 품질을 개선했는지 객관적 수치로 확인할 수 있습니다.
 
@@ -156,11 +164,11 @@ function OrderSummary({ items, coupon, user }) {
 
 | 변환 | 컴파일러 분석 근거 |
 |:--|:--|
-| `total`: `let` + `+=` → `reduce` | SSA: `total_0`, `total_1`, `total_2 = φ(...)` — 3번 할당 |
-| `displayItems`: `push` → `map` | Effect: `displayItems.push → Mutate` |
-| `discountedTotal`: `if/else` → 삼항 | SSA: `discountedTotal_2 = φ(d_0, d_1)` |
+| `total`: `let` + `+=` → `reduce` | SSA: `total_0` → `total_1(φ)` → `total_2(+=)` → `total_3(φ)` — 4번 할당, 원시값 재할당 제거 |
+| `displayItems`: `push` → `map` | Effect: `displayItems.push → Mutate` — 배열 in-place 변이 제거 |
+| `discountedTotal`: `if/else` → 삼항 | SSA: `discountedTotal = φ(d_if, d_else)` — 분기 병합 제거 |
 | `isVip` 인라인 | Scope: `scope_1`에서 단일 사용, 중간 바인딩 불필요 |
-| scope 경계 주석 | Scope: `scope_0 [items, coupon]`, `scope_1 [user]` 독립 |
+| scope 경계 주석 | Scope: `scope_0 [items, coupon]`, `scope_1 [user]` 독립, `scope_2`에서 결합 |
 
 `let`이 전부 사라졌고, 변이 연산이 없어졌고, 각 값이 선언과 동시에 확정됩니다. React Compiler가 다시 이 코드를 처리하면, 이미 scope가 분리되어 있으므로 최적화가 더 효과적으로 적용됩니다.
 

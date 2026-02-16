@@ -61,13 +61,9 @@ CSRF는 **blind attack**입니다. 공격자는 응답을 읽을 수 없고, 요
 
 `enctype="text/plain"`을 사용하면 CORS preflight 없이 요청을 보낼 수 있습니다. 서버가 Content-Type을 검증하지 않으면 JSON 요청도 위조할 수 있습니다.
 
-## 쿠키 보안 설정 전체 그림
+## SameSite — CSRF 방어의 첫 번째 축
 
-쿠키 속성 하나하나가 서로 다른 공격을 방어합니다. 어떤 속성 하나로 모든 공격을 막을 수 없고, 전부 조합해야 합니다.
-
-### SameSite — CSRF 방어의 첫 번째 축
-
-SameSite 속성은 브라우저가 cross-site 요청에 쿠키를 붙일지 결정합니다.
+CSRF가 쿠키의 자동 전송을 악용한다면, 그 자동 전송을 제어하는 것이 첫 번째 방어입니다. SameSite 속성은 브라우저가 cross-site 요청에 쿠키를 붙일지 결정합니다.
 
 | 속성 | cross-site POST | cross-site GET(top-level) | iframe/fetch/XHR |
 |:--|:--|:--|:--|
@@ -93,6 +89,45 @@ OWASP도 SameSite를 "아직 완전히 성숙하지 않았으며, 단독 방어�
 session_read: SameSite=Lax   → 읽기/표시용 (외부 링크로 들어와도 로그인 유지)
 session:      SameSite=Strict → 민감한 쓰기 작업용 (CSRF 완전 차단)
 ```
+
+## CSRF 토큰 방어
+
+SameSite만으로 부족한 이유를 봤으니, 토큰 기반 방어를 함께 써야 합니다.
+
+### Synchronizer Token Pattern
+
+OWASP의 primary recommendation입니다. 서버가 세션에 묶인 128비트 이상의 랜덤 토큰을 생성하고, 폼의 hidden field로 내려보냅니다. 요청 시 이 토큰이 일치하는지 검증합니다.
+
+CSRF 토큰이 동작하는 이유는 간단합니다. Same-Origin Policy 때문에 공격자가 bank.com의 페이지를 읽을 수 없으므로, hidden field에 있는 토큰 값을 가져올 수 없습니다.
+
+### Double Submit Cookie (HMAC 변형)
+
+stateless한 대안입니다. 서버가 CSRF 값을 쿠키와 요청 파라미터 양쪽에 설정하고, 요청 시 두 값이 일치하는지 검증합니다. 공격자는 쿠키 값을 읽을 수 없으므로 파라미터에 넣을 값을 모릅니다. HMAC으로 서명하면 Cookie Tossing 공격도 방어합니다.
+
+### Custom Request Header
+
+`X-Requested-With` 같은 커스텀 헤더를 요구하면, cross-origin 요청에서 CORS preflight가 발생합니다. 서버가 허용하지 않은 origin은 preflight에서 차단됩니다.
+
+### Fetch Metadata (Sec-Fetch-*)
+
+브라우저가 자동으로 붙이는 헤더로, 요청의 출처와 맥락을 서버에 알려줍니다. `Sec-Fetch-Site: cross-site`인 요청을 거부하면 됩니다. Go 1.25는 표준 라이브러리에 `CrossOriginProtection`을 내장했는데, 이 Fetch Metadata 기반입니다.
+
+### 프레임워크별 CSRF 지원
+
+| 프레임워크 | 내장 지원 | 방식 |
+|:--|:--|:--|
+| Django | 기본 활성화 | `CsrfViewMiddleware`, 쿠키+hidden field (BREACH 완화용 마스킹) |
+| Spring Security | 기본 활성화 | `CsrfFilter`, Synchronizer Token |
+| Ruby on Rails | 기본 활성화 | `protect_from_forgery` |
+| Express.js | **없음** | `csurf` 2022년 deprecated (`Math.random()` 사용, Cookie Tossing 취약). 대안: `csrf-csrf` |
+| Next.js | **없음** | Server Actions에서 직접 구현 필요 |
+| Go 1.25+ | 표준 라이브러리 | Fetch Metadata 기반 `CrossOriginProtection` |
+
+Express와 Next.js는 CSRF 보호가 없습니다. 직접 구현해야 합니다.
+
+## 쿠키 보안 속성: CSRF 너머의 위협
+
+CSRF 방어에는 SameSite와 CSRF 토큰이 핵심이었습니다. 하지만 쿠키는 XSS, 중간자 공격(MITM), Cookie Tossing 등 다양한 위협에도 노출됩니다. 각 속성이 어떤 공격을 막는지 알아야 올바르게 조합할 수 있습니다.
 
 ### HttpOnly — XSS로부터 쿠키 값 보호
 
@@ -137,48 +172,13 @@ __Host-csrf=xyz; Secure; SameSite=Strict; Path=/
 __Secure-logged_in=true; Secure; SameSite=Lax; Path=/
 ```
 
-## CSRF 토큰 방어
-
-SameSite만으로 부족한 이유를 봤으니, 토큰 기반 방어를 함께 써야 합니다.
-
-### Synchronizer Token Pattern
-
-OWASP의 primary recommendation입니다. 서버가 세션에 묶인 128비트 이상의 랜덤 토큰을 생성하고, 폼의 hidden field로 내려보냅니다. 요청 시 이 토큰이 일치하는지 검증합니다.
-
-CSRF 토큰이 동작하는 이유는 간단합니다. Same-Origin Policy 때문에 공격자가 bank.com의 페이지를 읽을 수 없으므로, hidden field에 있는 토큰 값을 가져올 수 없습니다.
-
-### Double Submit Cookie (HMAC 변형)
-
-stateless한 대안입니다. 서버가 CSRF 값을 쿠키와 요청 파라미터 양쪽에 설정하고, 요청 시 두 값이 일치하는지 검증합니다. 공격자는 쿠키 값을 읽을 수 없으므로 파라미터에 넣을 값을 모릅니다. HMAC으로 서명하면 Cookie Tossing 공격도 방어합니다.
-
-### Custom Request Header
-
-`X-Requested-With` 같은 커스텀 헤더를 요구하면, cross-origin 요청에서 CORS preflight가 발생합니다. 서버가 허용하지 않은 origin은 preflight에서 차단됩니다.
-
-### Fetch Metadata (Sec-Fetch-*)
-
-브라우저가 자동으로 붙이는 헤더로, 요청의 출처와 맥락을 서버에 알려줍니다. `Sec-Fetch-Site: cross-site`인 요청을 거부하면 됩니다. Go 1.25는 표준 라이브러리에 `CrossOriginProtection`을 내장했는데, 이 Fetch Metadata 기반입니다.
-
-### 프레임워크별 CSRF 지원
-
-| 프레임워크 | 내장 지원 | 방식 |
-|:--|:--|:--|
-| Django | 기본 활성화 | `CsrfViewMiddleware`, 쿠키+hidden field (BREACH 완화용 마스킹) |
-| Spring Security | 기본 활성화 | `CsrfFilter`, Synchronizer Token |
-| Ruby on Rails | 기본 활성화 | `protect_from_forgery` |
-| Express.js | **없음** | `csurf` 2022년 deprecated (`Math.random()` 사용, Cookie Tossing 취약). 대안: `csrf-csrf` |
-| Next.js | **없음** | Server Actions에서 직접 구현 필요 |
-| Go 1.25+ | 표준 라이브러리 | Fetch Metadata 기반 `CrossOriginProtection` |
-
-Express와 Next.js는 CSRF 보호가 없습니다. 직접 구현해야 합니다.
-
 ## 토큰 저장 위치: 진짜 보안 기준
 
 "쿠키에 넣으면 DevTools에서 바로 보이는데, 메모리에 넣으면 안 보이잖아."
 
 DevTools에서 쿠키가 보이려면 **사용자 본인이 자신의 브라우저를 열어야** 합니다. 이건 위협 모델에서 "물리적 접근"에 해당합니다. 이 수준의 접근이 가능한 공격자는 메모리의 토큰도 읽을 수 있습니다. Chrome의 V8 힙에서 JavaScript 문자열을 추출하는 메모리 포렌식 기법은 이미 문서화되어 있습니다.
 
-**"보이냐 안 보이냐"는 보안 판단 기준이 아닙니다.** 진짜 기준은 딱 두 가지입니다.
+**"보이냐 안 보이느냐"는 보안 판단 기준이 아닙니다.** 진짜 기준은 딱 두 가지입니다.
 
 | 기준 | 쿠키 | 메모리 (JS 변수) |
 |:--|:--|:--|

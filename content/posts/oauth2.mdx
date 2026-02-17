@@ -1,0 +1,202 @@
+---
+title: 'OAuth 2.0 기술 정리'
+date: '2026-02-17'
+tags: ['oauth', 'security', 'authentication']
+---
+
+제3자 앱이 사용자의 데이터에 접근하려면, 예전에는 사용자의 아이디와 비밀번호를 직접 받아야 했습니다. 이 방식은 제3자 앱이 해킹당하면 원본 비밀번호까지 노출되고, 접근 범위를 제한할 수 없고, 특정 앱의 접근만 취소하려면 비밀번호 자체를 바꿔야 하는 문제가 있습니다. OAuth 2.0은 이 문제를 해결하기 위해 **인가 계층(authorization layer)**을 도입하여, 비밀번호 대신 **Access Token**이라는 별도의 위임 자격 증명을 발급합니다.
+
+## 비유로 이해하기
+
+호텔에 비유하면 구조가 명확해집니다.
+
+| 비유 | OAuth 개념 |
+|:--|:--|
+| 호텔 투숙객 (나) | Resource Owner (리소스 소유자) |
+| 호텔 프론트 데스크 | Authorization Server (인가 서버) |
+| 객실 문 | Resource Server (리소스 서버) |
+| 배달 기사 | Client (제3자 앱) |
+| 로비에서만 유효한 임시 출입증 | Access Token |
+
+배달 기사(Client)에게 내 방 마스터키(비밀번호)를 주는 대신, 프론트에서 로비에서만 쓸 수 있는 임시 출입증(Access Token)을 발급하는 것입니다.
+
+## 4가지 역할
+
+OAuth 2.0 프로토콜에는 4가지 역할이 참여합니다.
+
+| 역할 | 설명 | 예시 |
+|:--|:--|:--|
+| **Resource Owner** | 보호된 리소스에 대한 접근 권한을 부여할 수 있는 주체. 보통 최종 사용자 | 구글 드라이브에 파일을 가진 사용자 |
+| **Resource Server** | 보호된 리소스를 호스팅하고, Access Token을 검증하여 요청을 처리하는 서버 | 구글 드라이브 API 서버 |
+| **Client** | Resource Owner를 대신하여 보호된 리소스에 접근하는 애플리케이션 | 구글 드라이브 연동 기능이 있는 메모 앱 |
+| **Authorization Server** | Resource Owner를 인증하고, 인가를 받은 후 Access Token을 발급하는 서버 | 구글 OAuth 서버 (accounts.google.com) |
+
+## Token과 Scope
+
+### Access Token
+
+보호된 리소스에 접근하기 위한 자격 증명 문자열입니다. 특정 범위(Scope)와 유효 기간(Lifetime)을 가집니다. Resource Owner의 비밀번호 대신 이 토큰으로 리소스에 접근합니다.
+
+### Refresh Token
+
+Access Token이 만료되었을 때, 사용자에게 다시 로그인을 요구하지 않고 새 Access Token을 발급받기 위해 사용합니다. Refresh Token은 **Authorization Server에만 전달**되며, Resource Server에는 전달되지 않습니다.
+
+### Scope
+
+Client가 접근할 수 있는 리소스의 범위를 제한하는 메커니즘입니다. 구글 OAuth에서 `drive.readonly` scope를 요청하면, 해당 앱은 드라이브를 읽기만 할 수 있고 수정은 할 수 없습니다.
+
+```
+Access Token 발급 요청 예시:
+
+scope=drive.readonly+calendar.events
+
+→ 드라이브 읽기 + 캘린더 이벤트 접근만 허용
+→ 드라이브 쓰기, 메일 접근 등은 불가
+```
+
+## 인가 승인 유형 (Grant Types)
+
+RFC 6749는 4가지 기본 Grant Type을 정의합니다. 애플리케이션 유형에 따라 적합한 방식이 다릅니다.
+
+### Authorization Code Grant
+
+가장 널리 사용되며, **보안성이 가장 높은 방식**입니다. 서버 사이드 웹 애플리케이션에 적합합니다.
+
+```
+[사용자] → [Client 앱] → [Authorization Server 로그인 화면으로 리다이렉트]
+                                      ↓
+                           사용자가 로그인 & 동의
+                                      ↓
+                         Authorization Code를 Client에게 전달 (redirect)
+                                      ↓
+               Client가 Authorization Code를 서버 간 통신으로 Access Token과 교환
+```
+
+핵심은 **Access Token이 사용자의 브라우저를 거치지 않는다**는 점입니다.
+
+1. Client가 사용자의 브라우저를 Authorization Server의 `/authorize` 엔드포인트로 리다이렉트합니다.
+2. 사용자가 로그인하고 Client에게 권한을 부여(동의)합니다.
+3. Authorization Server가 사용자의 브라우저를 Client의 `redirect_uri`로 리다이렉트하면서 **Authorization Code**를 전달합니다.
+4. Client는 이 Authorization Code를 Authorization Server의 `/token` 엔드포인트로 보내서 **Access Token**으로 교환합니다 (서버 간 백채널 통신).
+
+Authorization Code 자체는 일회성이며 짧은 유효기간을 가집니다.
+
+### Client Credentials Grant
+
+**사용자 개입 없이**, 애플리케이션 자체의 자격 증명으로 Access Token을 발급받는 방식입니다. 서버 간(M2M, Machine-to-Machine) 통신에 사용됩니다.
+
+```
+[Client] ──(client_id + client_secret)──→ [Authorization Server]
+[Client] ←────────(Access Token)──────── [Authorization Server]
+```
+
+사용자라는 개념이 없으므로, Client 자체가 리소스의 소유자이거나 사전에 접근 권한이 배치된 경우에만 사용 가능합니다. 반드시 **Confidential Client**(비밀키를 안전하게 보관할 수 있는 서버 앱)에서만 사용해야 합니다.
+
+### Device Authorization Grant (Device Code)
+
+TV, IoT 기기, CLI 도구 등 브라우저가 없거나 입력이 제한된 디바이스에서 사용하는 방식입니다. RFC 8628에 정의되어 있습니다.
+
+```
+[디바이스] → Authorization Server에 Device Code 요청
+                  ↓
+        화면에 URL과 코드를 표시
+        (예: "https://example.com/device 에서 코드 ABCD-1234를 입력하세요")
+                  ↓
+[사용자가 다른 기기(폰/PC)에서 해당 URL에 접속하여 코드를 입력하고 로그인]
+                  ↓
+[디바이스가 주기적으로 Authorization Server에 폴링하여 Access Token 수신]
+```
+
+### Legacy (비권장)
+
+| Grant Type | 설명 | 비권장 사유 |
+|:--|:--|:--|
+| **Implicit Grant** | 토큰을 브라우저 URL 프래그먼트로 직접 반환 | Access Token이 브라우저 히스토리, 로그 등에 노출. RFC 9700에서 사용 금지 |
+| **Resource Owner Password Credentials** | 사용자의 ID/PW를 Client가 직접 받아 토큰 요청 | OAuth가 해결하려는 근본 문제(비밀번호 직접 공유)를 다시 만듦. RFC 9700에서 사용 금지 |
+
+## PKCE (Proof Key for Code Exchange)
+
+Authorization Code Grant에는 취약점이 하나 있습니다. 모바일 환경에서 악성 앱이 커스텀 URL 스킴을 가로채서 Authorization Code를 탈취할 수 있습니다. Authorization Server 입장에서는 코드를 요청한 정당한 앱과 가로챈 악성 앱을 구분할 수 없습니다.
+
+PKCE(발음: "픽시")는 이 문제를 해결합니다. RFC 7636에 정의되어 있으며, 원래는 Public Client를 위해 설계되었지만 현재는 **모든 Client 유형에 권장**됩니다. OAuth 2.1 초안에서는 **필수 사항**입니다.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 1. Client가 code_verifier 생성 (43~128자 랜덤 문자열)           │
+│                                                              │
+│ 2. code_verifier → SHA-256 해시 → Base64URL 인코딩             │
+│    = code_challenge                                          │
+│                                                              │
+│ 3. /authorize 요청 시 code_challenge 전송                      │
+│    Authorization Server가 code_challenge 저장                  │
+│                                                              │
+│ 4. /token 요청 시 원본 code_verifier 전송                       │
+│    Authorization Server가 code_verifier를 해시하여              │
+│    저장해둔 code_challenge와 비교                               │
+│                                                              │
+│ 5. 일치 → Access Token 발급                                    │
+│    불일치 → 거부                                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+악성 앱이 Authorization Code를 가로채더라도 `code_verifier`를 모르기 때문에 토큰 교환에 실패합니다. SHA-256은 단방향 해시이므로 `code_challenge`에서 `code_verifier`를 역산할 수도 없습니다.
+
+## Client 유형
+
+RFC 6749는 Client를 인증 자격 증명의 보안 수준에 따라 두 가지로 분류합니다.
+
+| 유형 | 설명 | 예시 |
+|:--|:--|:--|
+| **Confidential Client** | Client Secret을 안전하게 보관할 수 있는 클라이언트. 서버 환경에서 실행 | 서버 사이드 웹 앱, 백엔드 서비스 |
+| **Public Client** | Client Secret을 안전하게 보관할 수 없는 클라이언트. 소스 코드가 사용자에게 노출 | SPA, 모바일 앱, 데스크톱 앱 |
+
+Public Client는 Client Secret 없이 동작해야 하므로, 반드시 PKCE를 사용해야 합니다.
+
+## OAuth 2.0 vs OAuth 2.1 vs OpenID Connect
+
+| 항목 | OAuth 2.0 (RFC 6749) | OAuth 2.1 (초안) | OpenID Connect |
+|:--|:--|:--|:--|
+| 목적 | 인가(Authorization) | 인가(Authorization) | 인증(Authentication) + 인가 |
+| PKCE | 선택 | 필수 | 선택/권장 |
+| Implicit Grant | 허용 | 삭제 | 허용(비권장) |
+| Password Grant | 허용 | 삭제 | 해당 없음 |
+| 핵심 토큰 | Access Token | Access Token | Access Token + **ID Token** |
+
+OAuth 2.0이 "이 앱이 내 데이터에 접근해도 되는가?"라는 **인가** 질문에 답한다면, OIDC는 "이 사용자가 누구인가?"라는 **인증** 질문에 답합니다. OIDC는 ID Token(JWT 형식)을 통해 사용자의 신원 정보를 제공합니다.
+
+## 관련 RFC 맵
+
+OAuth 2.0 생태계는 핵심 프레임워크 위에 다양한 보조 스펙들로 구성됩니다.
+
+| RFC/스펙 | 이름 | 역할 |
+|:--|:--|:--|
+| RFC 6749 | OAuth 2.0 Framework | 핵심 프레임워크 |
+| RFC 6750 | Bearer Token Usage | Access Token을 HTTP 요청에 포함하는 방법 |
+| RFC 7636 | PKCE | Authorization Code 가로채기 방어 |
+| RFC 7009 | Token Revocation | 토큰 무효화 엔드포인트 |
+| RFC 7662 | Token Introspection | 토큰 유효성과 메타정보 조회 |
+| RFC 8414 | Authorization Server Metadata | OAuth 엔드포인트 자동 검색 |
+| RFC 8628 | Device Authorization Grant | 브라우저 없는 디바이스용 인가 |
+| RFC 9068 | JWT Profile for Access Tokens | Access Token을 JWT로 구조화 |
+| RFC 9700 | Security Best Current Practice | 보안 모범 사례 (Implicit/Password 금지 등) |
+
+## 보안 권고사항
+
+RFC 9700 (OAuth 2.0 Security Best Current Practice)에서 권고하는 핵심 사항입니다.
+
+1. **모든 Client에 PKCE를 사용**하라. Public Client뿐 아니라 Confidential Client에서도 권장한다.
+2. **Implicit Grant와 Password Grant를 사용하지 말라.**
+3. **Redirect URI를 정확히 일치(exact match)시켜라.** 와일드카드나 패턴 매칭은 오픈 리다이렉트 공격에 취약하다.
+4. **Refresh Token은 한 번 사용 후 새 것으로 교체(Rotation)**하라. 탈취된 Refresh Token의 재사용을 탐지할 수 있다.
+5. **Access Token의 유효기간을 짧게(수 분~1시간) 설정**하고, Refresh Token으로 갱신하라.
+6. **state 파라미터 또는 PKCE를 사용하여 CSRF를 방어**하라.
+7. **모든 통신에 TLS(HTTPS)를 사용**하라.
+
+## References
+
+- [RFC 6749 - The OAuth 2.0 Authorization Framework](https://datatracker.ietf.org/doc/html/rfc6749)
+- [RFC 7636 - Proof Key for Code Exchange](https://datatracker.ietf.org/doc/html/rfc7636)
+- [RFC 8628 - Device Authorization Grant](https://datatracker.ietf.org/doc/html/rfc8628)
+- [RFC 9700 - OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/html/rfc9700)
+- [OAuth 2.0 — oauth.net](https://oauth.net/2/)
+- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)

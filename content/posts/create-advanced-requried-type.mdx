@@ -47,7 +47,7 @@ interface Params {
 }
 
 type Requried = RequiredParams<Params>;
-const result: Required = {
+const result: Requried = {
   // last 속성이 없으므로 컴파일 에러 발생
   name: {
     first: 'first',

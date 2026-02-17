@@ -27,5 +27,5 @@ node에서 corepack을 활성화 시키면 node에 포함된 yarn을 사용 할 
 - 특정 프로젝트만 yarn classic을 사용 할 수 도 있다.
 - 전역 캐시가 아니라 프로젝트 마다 캐시를 가지게 할 수 도 있다.
 - .yarnrc.yml 파일에 글로벌 캐시를 끄면 프로젝트마다 .yarn/cache 디렉토리에 캐시 파일이 생성된다.
-- 브랜치마다 의존성이 다르다면 .yarn/cache 파일이 달라지기 때문에 브랜치를 변경한뒤 별도로 yarn install을 대부분의 경우 실행 할 필요가 없어진다 (zero install이라 부른다)
+- `.yarn/cache`와 `.pnp.cjs`를 Git에 커밋하면, 브랜치를 변경할 때 Git이 해당 브랜치의 의존성 캐시를 자동으로 체크아웃하므로 별도로 yarn install을 실행할 필요가 없어진다 (zero install이라 부른다)
 - workspace 기능을 이용해 모노레포로 관리가 가능하다.

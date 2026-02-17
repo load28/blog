@@ -14,7 +14,7 @@ const loader = async () => import('[path]');
 loader().then((data) = console.log(data));
 ```
 
-자바스크립트 ES6에서는 손쉽게 `Dynamic import`를 지원하고 있습니다.
+자바스크립트 ES2020에서는 손쉽게 `Dynamic import`를 지원하고 있습니다.
 코드에서 유의해야 할 점은 async/await을 이용해 import 문을 작성하고 있다는 점입니다.
 
 ## Dynamic import with React
@@ -59,7 +59,6 @@ export const ClientComponent = () => {
 }
 
 // ServerComponent.tsx
-'use server';
 export default function ServerPage() {
   return (
     <div>
@@ -73,8 +72,6 @@ export default function ServerPage() {
 이처럼 서버 컴포넌트에서 `Dynamic import`를 직접 선언 할 수 없다는 불편함이 있어, Next.js는 `dynamic` 함수를 제공합니다.
 
 ```tsx
-'use server';
-
 const LazyComponent = dynamic(() => import('[path]'), {
   ssr: true,
   loading: () => <div>Loading...</div>

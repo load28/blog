@@ -240,7 +240,7 @@ scope가 여러 개인 경우를 봅시다.
 ```typescript
 // Dashboard 컴파일 결과
 function Dashboard(t0) {
-  const $ = _c(6);
+  const $ = _c(7);
   const { users, theme } = t0;
 
   // scope 1: users 의존
@@ -267,18 +267,19 @@ function Dashboard(t0) {
 
   // scope 3: 두 scope의 결과 조합
   let t5;
-  if ($[4] !== t4 || $[4 + 1] !== t2) {
+  if ($[4] !== t4 || $[5] !== t2) {
     t5 = <div>{t4}{t2}</div>;
     $[4] = t4;
     $[5] = t2;
+    $[6] = t5;
   } else {
-    t5 = $[5];
+    t5 = $[6];
   }
   return t5;
 }
 ```
 
-`_c(6)` — 슬롯 6개. 각 scope가 독립적으로 캐시를 확인하고, 의존성이 바뀐 scope만 재계산합니다. 수동으로 이 수준의 `useMemo`를 쓰는 것은 비현실적입니다.
+`_c(7)` — 슬롯 7개. 각 scope가 독립적으로 캐시를 확인하고, 의존성이 바뀐 scope만 재계산합니다. 수동으로 이 수준의 `useMemo`를 쓰는 것은 비현실적입니다.
 
 ## Rules of React
 

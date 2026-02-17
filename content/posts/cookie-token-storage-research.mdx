@@ -47,7 +47,7 @@ DevTools에서 보이냐 안 보이냐는 보안 기준이 아닙니다. DevTool
 <script>document.getElementById('csrf-form').submit();</script>
 ```
 
-OWASP CWE Top 25 2025에서 CSRF(CWE-352)는 **3위**입니다. SameSite=Lax가 기본값이 된 시대에 순위가 오히려 오르는 이유는, CSRF가 다른 취약점과 체인으로 엮이면서 공격 수단으로서의 가치가 높아졌기 때문입니다.
+CWE Top 25 2025에서 CSRF(CWE-352)는 **3위**입니다(2023년 9위에서 상승). SameSite=Lax 기본값 시대에도 순위가 오른 정확한 원인은 불분명하지만, 이 글 후반에서 다루듯 CSRF가 다른 취약점과 체인으로 엮이면서 공격 수단으로서의 가치가 재조명되고 있습니다.
 
 ### CSRF 방어: SameSite
 
@@ -102,7 +102,7 @@ CSRF가 성립하는 이유를 다시 봅니다. 공격자는 사용자의 브�
 3. 서버가 쿠키 값 vs 헤더/body 값 대조 → 불일치 시 거부
 ```
 
-공격자는 cross-site 요청으로 쿠키를 자동 전송시킬 수 있지만, 헤더나 body에 같은 값을 넣으려면 쿠키 값을 먼저 읽어야 합니다. `HttpOnly` 쿠키는 JavaScript로 읽을 수 없고, cross-origin에서는 `Set-Cookie` 응답도 볼 수 없으므로 값을 알 수 없습니다. HMAC 서명을 추가하면 서브도메인에서 쿠키를 덮어쓰는 Cookie Tossing 공격까지 차단됩니다 — 서버의 비밀키 없이는 유효한 서명을 만들 수 없기 때문입니다.
+공격자는 cross-site 요청으로 쿠키를 자동 전송시킬 수 있지만, 헤더나 body에 같은 값을 넣으려면 쿠키 값을 먼저 읽어야 합니다. CSRF 토큰 쿠키는 클라이언트가 읽어야 하므로 `HttpOnly`가 아니지만, `document.cookie`는 현재 origin의 쿠키만 반환하므로 다른 origin의 공격자는 대상 사이트의 쿠키 값을 읽을 수 없습니다. HMAC 서명을 추가하면 서브도메인에서 쿠키를 덮어쓰는 Cookie Tossing 공격까지 차단됩니다 — 서버의 비밀키 없이는 유효한 서명을 만들 수 없기 때문입니다.
 
 **Custom Request Header** — 커스텀 헤더 존재 여부로 검증하는 방식입니다.
 
@@ -128,7 +128,7 @@ cross-origin 요청에 커스텀 헤더를 붙이면 브라우저가 먼저 pref
 
 메모리 토큰은 JavaScript 변수입니다. XSS(Cross-Site Scripting)가 실행되면 같은 origin에서 돌아가므로 이 변수를 그냥 읽을 수 있습니다. 반면 `HttpOnly` 쿠키는 `document.cookie`로 접근 자체가 안 됩니다.
 
-MITRE/CISA 기준 2024년 가장 위험한 소프트웨어 약점에서 **XSS가 1위**, CSRF가 3위입니다. 단순한 순위 차이가 아니라 할 수 있는 일의 범위가 다릅니다.
+MITRE/CISA 기준 CWE Top 25 2025에서 **XSS(CWE-79)가 1위**, CSRF(CWE-352)가 3위입니다. 단순한 순위 차이가 아니라 할 수 있는 일의 범위가 다릅니다.
 
 **CSRF는 blind attack입니다.** 요청만 보낼 수 있고 응답은 못 읽습니다.
 

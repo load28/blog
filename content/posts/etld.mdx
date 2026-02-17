@@ -114,6 +114,46 @@ s3.amazonaws.com
 
 PSL에 `github.io`가 등록되어 있으므로 `username.github.io`는 각각 독립된 eTLD+1로 취급됩니다.
 
+## Public Suffix List에 등록하는 방법
+
+자체 서비스에서 사용자별 서브도메인을 발급하는 경우(예: `username.myservice.com`), PSL의 PRIVATE 섹션에 등록하면 각 서브도메인이 독립된 eTLD+1로 취급됩니다. 등록 절차는 [GitHub 저장소](https://github.com/publicsuffix/list)에서 Pull Request를 제출하는 방식입니다.
+
+### 등록 절차
+
+**1. 자격 확인** — PRIVATE 섹션 등록 요청은 반드시 도메인 소유자가 직접 제출해야 합니다. 제3자가 대신 제출하는 것은 거부됩니다. ICANN 섹션 변경은 해당 레지스트리, ICANN 또는 IANA에서 요청해야 합니다.
+
+**2. 가이드라인 확인** — [GitHub Wiki의 Guidelines](https://github.com/publicsuffix/list/wiki/Guidelines)에서 포맷, 정렬 규칙, 수락 기준을 확인합니다. 항목은 TLD 기준 알파벳순으로 정렬되며, 새 항목은 올바른 위치에 삽입해야 합니다.
+
+```
+// My Service : https://myservice.com
+// Submitted by Admin <admin@myservice.com>
+myservice.com
+```
+
+**3. DNS 검증 레코드 추가** — 등록하려는 각 도메인에 `_psl` TXT 레코드를 추가합니다. 값은 제출한 PR의 URL입니다.
+
+```bash
+$ dig TXT _psl.myservice.com
+# "https://github.com/publicsuffix/list/pull/1234"
+```
+
+이 레코드는 PR 승인 후에도 유지해야 합니다. 향후 자동화를 통해 `_psl` 레코드가 없는 항목은 제거 대상이 될 수 있습니다.
+
+**4. PR 제출 및 테스트** — Pull Request를 생성하면 CI에서 자동으로 테스트가 실행됩니다. 테스트를 통과하지 못한 PR은 거부됩니다. 로컬에서 `make test`로 미리 검증할 수 있습니다.
+
+### 거부 사유
+
+다음 목적의 등록은 거부됩니다.
+
+- 제3자 서비스의 rate limit 우회
+- 보안 보호 기능 회피
+- 소규모, 실험적, 단기 프로젝트
+- 도메인 등록 기간이 제출일로부터 2년 미만
+
+### 주의사항
+
+PSL 등록은 전역적 영향을 가집니다. 모든 주요 브라우저가 이 목록을 사용하므로, 등록되면 해당 도메인의 서브도메인 간 쿠키 공유가 차단되고 각각 독립된 사이트로 취급됩니다. 등록 후 철회는 어렵고 우선순위가 낮으므로 신중하게 결정해야 합니다. 또한 브라우저 반영까지 수개월이 소요될 수 있습니다.
+
 ## 정리
 
 ```

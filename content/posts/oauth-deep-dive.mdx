@@ -4,7 +4,7 @@ date: '2026-02-17'
 tags: ['oauth', 'security', 'authentication']
 ---
 
-OAuth 2.0 이전에는 제3자 앱이 사용자의 리소스에 접근하기 위한 표준 위임 프로토콜이 없었습니다. 2006~2007년경 Twitter API를 연동하는 서드파티 클라이언트들은 사용자의 Twitter 아이디와 비밀번호를 직접 입력받아 저장하는 방식으로 동작했고, Flickr나 Google도 각자 독자적인 인증 위임 방식(AuthSub, BBAuth 등)을 운영했습니다.
+OAuth 2.0 이전에는 제3자 앱이 사용자의 리소스에 접근하기 위한 표준 위임 프로토콜이 없었습니다. 2006~2007년경 Twitter API를 연동하는 서드파티 클라이언트들은 사용자의 Twitter 아이디와 비밀번호를 직접 입력받아 저장하는 방식으로 동작했고, Flickr, Google, Yahoo! 등도 각자 독자적인 인증 위임 방식(FlickrAuth, AuthSub, BBAuth 등)을 운영했습니다.
 
 비밀번호를 직접 공유하는 패턴은 구조적으로 다음과 같은 문제를 가집니다.
 
@@ -68,7 +68,7 @@ scope=drive.readonly+calendar.events
 
 ## 인가 승인 유형 (Grant Types)
 
-RFC 6749는 4가지 기본 Grant Type을 정의합니다. 애플리케이션 유형에 따라 적합한 방식이 다릅니다.
+RFC 6749는 4가지 기본 Grant Type(Authorization Code, Implicit, Resource Owner Password Credentials, Client Credentials)을 정의합니다. 이 중 Implicit과 ROPC는 보안 문제로 현재 비권장되며, 이후 RFC 8628이 Device Authorization Grant를 추가로 정의했습니다. 아래에서는 현재 권장되는 방식을 중심으로 설명합니다.
 
 ### Authorization Code Grant
 
@@ -123,8 +123,8 @@ TV, IoT 기기, CLI 도구 등 브라우저가 없거나 입력이 제한된 디
 
 | Grant Type | 설명 | 비권장 사유 |
 |:--|:--|:--|
-| **Implicit Grant** | 토큰을 브라우저 URL 프래그먼트로 직접 반환 | Access Token이 브라우저 히스토리, 로그 등에 노출. RFC 9700에서 사용 금지 |
-| **Resource Owner Password Credentials** | 사용자의 ID/PW를 Client가 직접 받아 토큰 요청 | OAuth가 해결하려는 근본 문제(비밀번호 직접 공유)를 다시 만듦. RFC 9700에서 사용 금지 |
+| **Implicit Grant** | 토큰을 브라우저 URL 프래그먼트로 직접 반환 | Access Token이 브라우저 히스토리, 로그 등에 노출. RFC 9700에서 SHOULD NOT (사용 비권장) |
+| **Resource Owner Password Credentials** | 사용자의 ID/PW를 Client가 직접 받아 토큰 요청 | OAuth가 해결하려는 근본 문제(비밀번호 직접 공유)를 다시 만듦. RFC 9700에서 MUST NOT (사용 금지) |
 
 ## PKCE (Proof Key for Code Exchange)
 
@@ -152,6 +152,8 @@ PKCE(발음: "픽시")는 이 문제를 해결합니다. RFC 7636에 정의되�
 ```
 
 악성 앱이 Authorization Code를 가로채더라도 `code_verifier`를 모르기 때문에 토큰 교환에 실패합니다. SHA-256은 단방향 해시이므로 `code_challenge`에서 `code_verifier`를 역산할 수도 없습니다.
+
+RFC 7636은 `code_challenge_method`로 `S256`(SHA-256)과 `plain`(해시 없이 `code_verifier`를 그대로 사용) 두 가지를 정의합니다. `S256`은 MTI(Mandatory To Implement)이며, `plain`은 기술적으로 SHA-256을 지원할 수 없는 환경에서만 사용해야 합니다. `plain`은 `code_verifier`가 전송 중 노출되면 보호 효과가 없으므로, 특별한 제약이 없는 한 반드시 `S256`을 사용해야 합니다.
 
 ## Client 유형
 

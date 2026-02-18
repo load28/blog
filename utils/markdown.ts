@@ -3,11 +3,22 @@ export function esc(s: string): string {
 }
 
 export function inline(s: string): string {
+  const codes: string[] = [];
+  s = s.replace(/`([^`]+)`/g, (_, code) => {
+    codes.push("<code>" + esc(code) + "</code>");
+    return "\x00" + (codes.length - 1) + "\x00";
+  });
+  const links: string[] = [];
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    links.push('<a href="' + url + '" target=_blank>' + esc(text) + '</a>');
+    return "\x01" + (links.length - 1) + "\x01";
+  });
+  s = esc(s);
   s = s.replace(/\n/g, "<br>");
   s = s.replace(/\*\*([\s\S]+?)\*\*/g, "<b>$1</b>");
   s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target=_blank>$1</a>');
+  s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[+i]);
+  s = s.replace(/\x01(\d+)\x01/g, (_, i) => links[+i]);
   return s;
 }
 

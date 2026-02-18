@@ -113,10 +113,10 @@ export function md2html(s: string): string {
       i + 1 < lines.length &&
       lines[i + 1].match(/^\|[\s:|-]+\|$/)
     ) {
-      const hd = l.split("|").filter((c) => c.trim());
+      const hd = l.split("|").slice(1, -1);
       const al = lines[i + 1]
         .split("|")
-        .filter((c) => c.trim())
+        .slice(1, -1)
         .map((c) =>
           c.trim().startsWith(":") && c.trim().endsWith(":")
             ? "center"
@@ -137,7 +137,7 @@ export function md2html(s: string): string {
       tb.push("</tr></thead><tbody>");
       i += 2;
       while (i < lines.length && lines[i].match(/^\|(.+)\|$/)) {
-        const cs = lines[i].split("|").filter((c) => c.trim());
+        const cs = lines[i].split("|").slice(1, -1);
         tb.push("<tr>");
         cs.forEach((c, j) =>
           tb.push(

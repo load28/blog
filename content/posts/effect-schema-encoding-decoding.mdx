@@ -1,0 +1,311 @@
+---
+title: 'Effect Schema의 Encoding과 Decoding'
+date: '2026-02-18'
+tags: ['effect', 'typescript', 'schema', 'validation']
+---
+
+검증 라이브러리를 사용할 때 한 가지 당연하게 받아들이는 전제가 있습니다. **검증할 때의 타입과 검증된 결과의 타입이 같다**는 것입니다. Zod에서 `z.string()`으로 검증하면 입력도 `string`이고 결과도 `string`입니다. `z.number()`로 검증하면 입력도 `number`여야 하고 결과도 `number`입니다.
+
+그런데 실제 개발에서는 이 전제가 맞지 않는 경우가 꽤 많습니다. URL query parameter는 항상 `string`으로 들어오지만 `page=2`의 `2`는 `number`로 쓰고 싶습니다. API 응답의 `"2024-01-15T10:30:00Z"`는 `string`이지만 코드에서는 `Date` 객체로 다루고 싶습니다. **외부에서 들어오는 형태와 내부에서 사용하는 형태가 다른 것**이 오히려 자연스럽습니다.
+
+Effect Schema는 이 차이를 타입 시스템 수준에서 다룹니다.
+
+## 두 개의 타입
+
+Effect Schema의 모든 스키마는 세 개의 타입 파라미터를 가집니다.
+
+```typescript
+Schema<Type, Encoded, Context>
+```
+
+- **Type**: 디코딩된 값. 애플리케이션 내부에서 사용하는 타입
+- **Encoded**: 인코딩된 값. 외부에서 들어오거나 외부로 나가는 타입
+- **Context**: 변환에 필요한 의존성 (대부분 `never`)
+
+`Schema.String`은 `Schema<string, string, never>`입니다. 입력도 `string`이고 결과도 `string`이니 Zod와 다를 게 없습니다. 하지만 `Schema.NumberFromString`은 다릅니다.
+
+```typescript
+import { Schema } from "effect"
+
+// Schema<number, string, never>
+//         ~~~~~~  ~~~~~~
+//         Type    Encoded
+const schema = Schema.NumberFromString
+
+Schema.decodeUnknownSync(schema)("42")  // 42 (number)
+Schema.encodeSync(schema)(42)           // "42" (string)
+```
+
+`Encoded`는 `string`이고 `Type`은 `number`입니다. 외부에서 `"42"`라는 문자열이 들어오면 `42`라는 숫자로 디코딩하고, 반대로 `42`를 외부로 보낼 때는 `"42"`로 인코딩합니다.
+
+이 두 타입은 Struct에서 합성됩니다.
+
+```typescript
+const User = Schema.Struct({
+  name: Schema.String,
+  age: Schema.NumberFromString,
+  createdAt: Schema.Date,
+})
+
+type UserType = typeof User.Type
+// { readonly name: string; readonly age: number; readonly createdAt: Date }
+
+type UserEncoded = typeof User.Encoded
+// { readonly name: string; readonly age: string; readonly createdAt: string }
+```
+
+`User.Type`과 `User.Encoded`가 다릅니다. `age`는 내부에서 `number`지만 외부에서는 `string`이고, `createdAt`은 내부에서 `Date`지만 외부에서는 `string`입니다. 스키마 하나로 **외부 데이터의 형태와 내부 데이터의 형태를 동시에 기술**하는 셈입니다.
+
+## Zod에서는 어떻게 하는가
+
+Zod는 기본적으로 단일 타입 모델입니다. `z.string()`의 입력 타입과 출력 타입은 모두 `string`입니다.
+
+문자열을 숫자로 변환하려면 `transform`을 씁니다.
+
+```typescript
+const schema = z.string().transform((val) => Number(val))
+// Input: string, Output: number
+```
+
+결과 타입은 `number`가 되지만, 이것은 **단방향 변환**입니다. `number`를 다시 `string`으로 되돌리는 경로가 없습니다. `z.coerce.number()`도 마찬가지입니다. JavaScript의 `Number()` 생성자를 입력에 적용한 뒤 `number` 검증을 하는 것이라 역방향 변환은 지원하지 않습니다.
+
+이것이 핵심적인 차이입니다. Zod의 `transform`은 **파싱 파이프라인의 한 단계**이고, Effect Schema의 인코딩/디코딩은 **양방향 변환 계약**입니다.
+
+| | Effect Schema | Zod |
+|:--|:--|:--|
+| 디코딩 (외부 → 내부) | `Schema.decodeUnknownSync` | `z.parse` |
+| 인코딩 (내부 → 외부) | `Schema.encodeSync` | 지원하지 않음 |
+| 타입 추출 | `Type`, `Encoded` 별도 추출 | `z.infer`(출력 타입만) |
+| 양방향 변환 | 기본 설계 | `transform`은 단방향 |
+
+## 양방향이 필요한 순간
+
+API 응답을 파싱하는 코드를 생각해봅시다.
+
+```typescript
+const ApiUser = Schema.Struct({
+  id: Schema.UUID,
+  name: Schema.String,
+  createdAt: Schema.Date,
+})
+
+// API 응답 파싱 (디코딩)
+const user = Schema.decodeUnknownSync(ApiUser)({
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  name: "Alice",
+  createdAt: "2024-01-15T10:30:00Z",
+})
+// user.createdAt는 Date 객체
+
+// 다시 API로 보내기 (인코딩)
+const payload = Schema.encodeSync(ApiUser)(user)
+// payload.createdAt는 "2024-01-15T10:30:00.000Z" (string)
+```
+
+디코딩만 있으면 파싱은 됩니다. 하지만 수정된 데이터를 다시 API로 보내야 할 때, 인코딩이 없으면 `Date` 객체를 수동으로 ISO 문자열로 변환해야 합니다. 필드가 늘어나고 변환이 복잡해질수록 이 수동 작업은 버그의 원인이 됩니다.
+
+URL parameter도 같은 상황입니다.
+
+```typescript
+const SearchParams = Schema.Struct({
+  page: Schema.NumberFromString,
+  limit: Schema.NumberFromString,
+  sort: Schema.Literal("asc", "desc"),
+})
+
+// URL에서 파싱 (디코딩)
+const params = Schema.decodeUnknownSync(SearchParams)({
+  page: "2", limit: "20", sort: "asc"
+})
+// { page: 2, limit: 20, sort: "asc" }
+
+// 다시 URL로 변환 (인코딩)
+const query = Schema.encodeSync(SearchParams)(params)
+// { page: "2", limit: "20", sort: "asc" }
+```
+
+`page`를 내부에서는 `number`로 계산하고, URL로 다시 내보낼 때는 `string`으로 변환합니다. 스키마 하나로 양방향이 처리됩니다.
+
+## 변환 스키마 만들기
+
+기본 제공되는 `NumberFromString`, `Date` 외에 직접 변환 스키마를 만들 수 있습니다.
+
+### transform — 항상 성공하는 변환
+
+HTML form의 checkbox는 `"on"` 또는 `"off"` 문자열을 보냅니다. 이걸 `boolean`으로 변환하는 스키마를 만들어봅시다.
+
+```typescript
+const BooleanFromCheckbox = Schema.transform(
+  Schema.Literal("on", "off"),  // Encoded
+  Schema.Boolean,                // Type
+  {
+    strict: true,
+    decode: (s) => s === "on",
+    encode: (b) => (b ? "on" : "off"),
+  }
+)
+
+Schema.decodeUnknownSync(BooleanFromCheckbox)("on")  // true
+Schema.encodeSync(BooleanFromCheckbox)(false)         // "off"
+```
+
+`decode`와 `encode`를 동시에 정의합니다. 어느 방향으로든 변환이 가능합니다.
+
+JSON string으로 저장된 배열을 다루는 경우도 생각해볼 수 있습니다. DB에서 tags를 JSON string으로 저장하는 경우입니다.
+
+```typescript
+const TagsFromJsonString = Schema.transform(
+  Schema.String,
+  Schema.Array(Schema.String),
+  {
+    strict: true,
+    decode: (s) => JSON.parse(s),
+    encode: (arr) => JSON.stringify(arr),
+  }
+)
+
+Schema.decodeUnknownSync(TagsFromJsonString)('["react","typescript"]')
+// ["react", "typescript"]
+
+Schema.encodeSync(TagsFromJsonString)(["react", "typescript"])
+// '["react","typescript"]'
+```
+
+### transformOrFail — 실패할 수 있는 변환
+
+변환이 항상 성공하지는 않습니다. 잘못된 형식의 문자열이 들어올 수 있습니다.
+
+```typescript
+import { ParseResult, Schema } from "effect"
+
+const IntFromString = Schema.transformOrFail(
+  Schema.String,
+  Schema.Number,
+  {
+    strict: true,
+    decode: (input, _options, ast) => {
+      const parsed = parseInt(input, 10)
+      if (isNaN(parsed)) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, input, "정수로 변환할 수 없습니다")
+        )
+      }
+      return ParseResult.succeed(parsed)
+    },
+    encode: (input) => ParseResult.succeed(input.toString()),
+  }
+)
+
+Schema.decodeUnknownSync(IntFromString)("42")   // 42
+Schema.decodeUnknownSync(IntFromString)("abc")  // ParseError 발생
+```
+
+`transformOrFail`은 Effect를 반환할 수 있어서 비동기 변환도 가능합니다. 외부 API를 호출해서 검증하는 스키마도 만들 수 있습니다.
+
+## Brand 타입과 조합
+
+Effect Schema의 `brand`는 구조적 타입에 이름표를 붙입니다.
+
+```typescript
+const UserId = Schema.UUID.pipe(Schema.brand("UserId"))
+const OrderId = Schema.UUID.pipe(Schema.brand("OrderId"))
+
+type UserId = typeof UserId.Type   // string & Brand<"UserId">
+type OrderId = typeof OrderId.Type // string & Brand<"OrderId">
+```
+
+둘 다 런타임에서는 `string`이지만 타입 레벨에서는 서로 호환되지 않습니다. `UserId`를 받는 함수에 `OrderId`를 넘기면 컴파일 에러가 납니다.
+
+이것을 인코딩/디코딩과 조합하면 **외부에서는 일반 `string`, 내부에서는 브랜드 타입**인 스키마가 됩니다.
+
+```typescript
+const UserId = Schema.UUID.pipe(Schema.brand("UserId"))
+
+// Encoded: string
+// Type:    string & Brand<"UserId">
+
+const id = Schema.decodeUnknownSync(UserId)("550e8400-e29b-41d4-a716-446655440000")
+// id의 타입은 string & Brand<"UserId">
+```
+
+API에서 받은 `string`이 자동으로 `UserId`라는 브랜드 타입이 됩니다. 이후 코드에서는 `UserId`와 `OrderId`를 실수로 섞어 쓸 수 없게 됩니다.
+
+## 실전 예시 — Form 스키마
+
+Form 데이터를 처리하는 전체적인 예시를 봅시다. HTML form은 모든 값을 `string`으로 보내기 때문에 인코딩/디코딩의 차이가 가장 명확하게 드러납니다.
+
+```typescript
+const ContactForm = Schema.Struct({
+  name: Schema.NonEmptyString,
+  age: Schema.NumberFromString,
+  email: Schema.String.pipe(Schema.pattern(/^[^@]+@[^@]+\.[^@]+$/)),
+  subscribe: Schema.transform(
+    Schema.Literal("on", "off"),
+    Schema.Boolean,
+    {
+      strict: true,
+      decode: (s) => s === "on",
+      encode: (b) => (b ? "on" : "off"),
+    }
+  ),
+  birthDate: Schema.Date,
+})
+
+type FormInput = typeof ContactForm.Encoded
+// {
+//   readonly name: string;
+//   readonly age: string;
+//   readonly email: string;
+//   readonly subscribe: "on" | "off";
+//   readonly birthDate: string;
+// }
+
+type FormData = typeof ContactForm.Type
+// {
+//   readonly name: string;
+//   readonly age: number;
+//   readonly email: string;
+//   readonly subscribe: boolean;
+//   readonly birthDate: Date;
+// }
+```
+
+`FormInput`은 HTML form이 보내는 그대로의 타입이고, `FormData`는 비즈니스 로직에서 사용하는 타입입니다. 스키마 하나로 두 타입을 동시에 관리합니다. form에서 받은 데이터를 디코딩하면 바로 `FormData`를 얻고, 저장된 `FormData`를 다시 form 초기값으로 넣을 때는 인코딩하면 됩니다.
+
+```typescript
+// form submit 처리
+const handleSubmit = (rawFormData: Record<string, string>) => {
+  const result = Schema.decodeUnknownEither(ContactForm)(rawFormData)
+
+  if (result._tag === "Left") {
+    // 검증 실패 — 에러 메시지 표시
+    return
+  }
+
+  // result.right의 타입은 FormData
+  // age는 number, subscribe는 boolean, birthDate는 Date
+  saveContact(result.right)
+}
+
+// form 초기값 세팅
+const setFormDefaults = (contact: FormData) => {
+  const defaults = Schema.encodeSync(ContactForm)(contact)
+  // defaults.age는 "25" (string), defaults.subscribe는 "on" (string)
+  // 바로 form input의 value로 사용 가능
+}
+```
+
+## 정리
+
+검증 라이브러리의 역할이 "올바른 데이터인지 확인하는 것"에 머무르면, 입력과 결과의 타입이 같은 게 자연스럽습니다. 하지만 역할을 "외부 데이터와 내부 데이터 사이의 경계를 관리하는 것"으로 보면, 두 타입이 다를 수 있다는 것이 오히려 자연스럽습니다.
+
+Effect Schema는 모든 스키마에 `Type`과 `Encoded`라는 두 개의 타입을 두고, 양방향 변환을 기본 설계로 가져갑니다. 이 설계 덕분에 API 응답 파싱, form 처리, URL parameter 변환, DB 직렬화 등 **경계를 넘나드는 데이터 변환을 스키마 한 곳에서 관리**할 수 있습니다.
+
+모든 프로젝트에 필요한 건 아닙니다. 단순한 입력 검증이 전부라면 Zod로 충분합니다. 하지만 외부 데이터와 내부 데이터의 형태가 다르고, 양방향 변환이 자주 필요하다면 Effect Schema의 이 설계가 상당히 편리합니다.
+
+## References
+
+- [Effect Schema - Introduction](https://effect.website/docs/schema/introduction/)
+- [Effect Schema - Transformations](https://effect.website/docs/schema/transformations/)
+- [Effect functional programming](/posts/effect-lib)
+- [AI 시대, frontend testing 전략](/posts/frontend-testing-strategy-with-ai)

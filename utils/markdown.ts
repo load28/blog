@@ -3,11 +3,22 @@ export function esc(s: string): string {
 }
 
 export function inline(s: string): string {
+  const codes: string[] = [];
+  s = s.replace(/`([^`]+)`/g, (_, code) => {
+    codes.push("<code>" + esc(code) + "</code>");
+    return "\x00" + (codes.length - 1) + "\x00";
+  });
+  const links: string[] = [];
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    links.push('<a href="' + url + '" target=_blank>' + esc(text) + '</a>');
+    return "\x01" + (links.length - 1) + "\x01";
+  });
+  s = esc(s);
   s = s.replace(/\n/g, "<br>");
   s = s.replace(/\*\*([\s\S]+?)\*\*/g, "<b>$1</b>");
   s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target=_blank>$1</a>');
+  s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[+i]);
+  s = s.replace(/\x01(\d+)\x01/g, (_, i) => links[+i]);
   return s;
 }
 
@@ -102,10 +113,10 @@ export function md2html(s: string): string {
       i + 1 < lines.length &&
       lines[i + 1].match(/^\|[\s:|-]+\|$/)
     ) {
-      const hd = l.split("|").filter((c) => c.trim());
+      const hd = l.split("|").slice(1, -1);
       const al = lines[i + 1]
         .split("|")
-        .filter((c) => c.trim())
+        .slice(1, -1)
         .map((c) =>
           c.trim().startsWith(":") && c.trim().endsWith(":")
             ? "center"
@@ -126,7 +137,7 @@ export function md2html(s: string): string {
       tb.push("</tr></thead><tbody>");
       i += 2;
       while (i < lines.length && lines[i].match(/^\|(.+)\|$/)) {
-        const cs = lines[i].split("|").filter((c) => c.trim());
+        const cs = lines[i].split("|").slice(1, -1);
         tb.push("<tr>");
         cs.forEach((c, j) =>
           tb.push(

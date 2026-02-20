@@ -1,0 +1,325 @@
+---
+title: '2주차: 함수 합성과 파이프라인'
+date: '2026-02-20'
+tags: ['functional-programming', 'typescript']
+---
+
+1주차에서 순수 함수와 불변성을 다뤘습니다. 2주차의 핵심은 **함수 합성(Function Composition)**입니다. 작은 함수를 조합해서 복잡한 동작을 만드는 것, 이것이 함수형 프로그래밍에서 코드를 구조화하는 방법입니다.
+
+## 함수 합성이란
+
+수학에서의 함수 합성 `(f ∘ g)(x) = f(g(x))`을 프로그래밍에 그대로 적용한 개념입니다. 두 함수 `f`와 `g`가 있을 때, `g`의 출력을 `f`의 입력으로 연결하면 새로운 함수가 만들어집니다.
+
+```typescript
+const double = (x: number) => x * 2
+const increment = (x: number) => x + 1
+
+// 수동 합성
+const doubleAndIncrement = (x: number) => increment(double(x))
+
+doubleAndIncrement(3) // 7
+```
+
+함수가 2개일 때는 직접 중첩하면 됩니다. 하지만 3개, 4개, 10개로 늘어나면 문제가 생깁니다.
+
+```typescript
+const result = h(g(f(e(d(c(b(a(x))))))))
+```
+
+안쪽에서 바깥쪽으로 읽어야 하는 구조라서 실행 순서와 읽는 순서가 반대입니다. 이 문제를 해결하는 것이 `compose`와 `pipe`입니다.
+
+## compose와 pipe
+
+`compose`는 수학적 합성과 같은 순서(오른쪽에서 왼쪽)로 함수를 결합합니다.
+
+```typescript
+function compose<A, B, C>(
+  f: (b: B) => C,
+  g: (a: A) => B
+): (a: A) => C {
+  return (a: A) => f(g(a))
+}
+
+const doubleAndIncrement = compose(increment, double)
+doubleAndIncrement(3) // 7
+```
+
+`pipe`는 반대 방향(왼쪽에서 오른쪽)으로 결합합니다. 데이터가 흘러가는 순서대로 읽을 수 있어서 직관적입니다.
+
+```typescript
+function pipe<A, B>(value: A, fn1: (a: A) => B): B
+function pipe<A, B, C>(value: A, fn1: (a: A) => B, fn2: (b: B) => C): C
+function pipe<A, B, C, D>(
+  value: A,
+  fn1: (a: A) => B,
+  fn2: (b: B) => C,
+  fn3: (c: C) => D
+): D
+function pipe(value: unknown, ...fns: Array<(arg: unknown) => unknown>): unknown {
+  return fns.reduce((acc, fn) => fn(acc), value)
+}
+
+pipe(
+  3,
+  double,      // 6
+  increment,   // 7
+  String       // "7"
+) // "7"
+```
+
+`pipe`가 `compose`보다 널리 쓰이는 이유는 **읽는 순서와 실행 순서가 같기 때문**입니다. Effect, fp-ts, Ramda 같은 라이브러리가 모두 `pipe`를 핵심 API로 제공합니다.
+
+`flow`는 `pipe`와 비슷하지만, 초기 값을 받지 않고 **합성된 함수 자체를 반환**합니다.
+
+```typescript
+function flow<A, B>(fn1: (a: A) => B): (a: A) => B
+function flow<A, B, C>(
+  fn1: (a: A) => B,
+  fn2: (b: B) => C
+): (a: A) => C
+function flow(...fns: Array<(arg: unknown) => unknown>) {
+  return (value: unknown) => fns.reduce((acc, fn) => fn(acc), value)
+}
+
+// pipe: 값을 받아 즉시 실행
+pipe(3, double, increment) // 7
+
+// flow: 함수를 합성해서 새 함수를 반환
+const doubleAndIncrement = flow(double, increment)
+doubleAndIncrement(3) // 7
+```
+
+`pipe`는 값을 변환할 때, `flow`는 재사용 가능한 함수를 만들 때 사용합니다.
+
+## 커링(Currying)
+
+함수 합성이 자연스럽게 작동하려면 각 함수가 `(a: A) => B` 형태여야 합니다. 인자가 하나인 함수끼리만 합성이 깔끔합니다. 그런데 실제 함수는 대부분 여러 인자를 받습니다.
+
+```typescript
+const add = (a: number, b: number) => a + b
+const multiply = (a: number, b: number) => a * b
+
+// add와 multiply를 파이프라인에 넣을 수 없음
+// pipe(3, add, multiply) — 타입이 맞지 않음
+```
+
+커링은 여러 인자를 받는 함수를 **인자를 하나씩 받는 함수의 연쇄**로 변환합니다.
+
+```typescript
+// before
+const add = (a: number, b: number) => a + b
+
+// after (curried)
+const add = (a: number) => (b: number) => a + b
+
+add(1)(2) // 3
+```
+
+커링된 함수는 인자를 하나만 적용해서 **특화된 함수**를 만들 수 있습니다.
+
+```typescript
+const add = (a: number) => (b: number) => a + b
+
+const increment = add(1)  // (b: number) => 1 + b
+const addTen = add(10)    // (b: number) => 10 + b
+
+increment(5) // 6
+addTen(5)    // 15
+```
+
+이제 파이프라인에서 자연스럽게 합성됩니다.
+
+```typescript
+const add = (a: number) => (b: number) => a + b
+const multiply = (a: number) => (b: number) => a * b
+
+pipe(
+  5,
+  add(3),       // 8
+  multiply(2),  // 16
+)
+```
+
+범용 커링 함수를 만들면 기존 함수도 커링할 수 있습니다.
+
+```typescript
+function curry<A, B, C>(fn: (a: A, b: B) => C): (a: A) => (b: B) => C {
+  return (a: A) => (b: B) => fn(a, b)
+}
+
+const add = (a: number, b: number) => a + b
+const curriedAdd = curry(add)
+
+curriedAdd(1)(2) // 3
+```
+
+## 부분 적용(Partial Application)
+
+커링과 부분 적용은 비슷해 보이지만 다른 개념입니다. 커링은 함수를 인자 하나씩 받는 형태로 **변환**하는 것이고, 부분 적용은 함수의 일부 인자를 **미리 고정**하는 것입니다.
+
+```typescript
+// 커링: 함수의 형태 자체를 변환
+const curriedAdd = (a: number) => (b: number) => a + b
+
+// 부분 적용: 기존 함수의 인자 일부를 고정
+const add = (a: number, b: number) => a + b
+const increment = add.bind(null, 1)  // a를 1로 고정
+increment(5)  // 6
+```
+
+TypeScript에서 부분 적용을 범용적으로 구현하면 이렇습니다.
+
+```typescript
+function partial<A, B extends unknown[], C>(
+  fn: (a: A, ...rest: B) => C,
+  a: A
+): (...rest: B) => C {
+  return (...rest) => fn(a, ...rest)
+}
+
+const add = (a: number, b: number) => a + b
+const increment = partial(add, 1)
+increment(5) // 6
+```
+
+결과만 보면 커링으로 만든 `add(1)`과 부분 적용으로 만든 `partial(add, 1)`은 동일하게 동작합니다. 차이점은 커링은 **모든 인자를 하나씩 받도록 구조를 바꾸는 것**이고, 부분 적용은 **원래 함수는 그대로 두고 일부 인자만 고정하는 것**입니다.
+
+실전에서는 처음부터 커링된 형태로 함수를 작성하는 것이 파이프라인에서 가장 자연스럽습니다.
+
+## Pointfree 스타일
+
+Pointfree는 데이터(point)를 명시적으로 언급하지 않고 함수 합성만으로 로직을 표현하는 스타일입니다.
+
+```typescript
+// pointed: 데이터를 명시적으로 참조
+const getActiveUserNames = (users: User[]) =>
+  users
+    .filter(user => user.isActive)
+    .map(user => user.name)
+
+// pointfree: 데이터를 직접 언급하지 않음
+const isActive = (user: User) => user.isActive
+const getName = (user: User) => user.name
+
+const getActiveUserNames = flow(
+  filter(isActive),
+  map(getName)
+)
+```
+
+Pointfree의 장점은 **무엇을 하는지**가 드러나고 **어떤 데이터에 하는지**가 추상화된다는 점입니다. `filter(isActive)`는 "활성 항목만 걸러낸다"는 의도 그 자체입니다.
+
+하지만 모든 코드를 pointfree로 작성할 필요는 없습니다. 변환이 복잡해지면 중간 변수에 이름을 붙이는 것이 오히려 가독성에 도움이 됩니다. 도구일 뿐 목표가 아닙니다.
+
+## 실전: 데이터 변환 파이프라인
+
+API 응답을 화면에 표시하는 과정을 함수 합성으로 구성해봅시다.
+
+```typescript
+interface ApiUser {
+  id: string
+  name: string
+  email: string
+  role: 'admin' | 'member' | 'guest'
+  lastLoginAt: string
+  isDeleted: boolean
+}
+
+interface UserViewModel {
+  id: string
+  displayName: string
+  role: string
+  lastLogin: Date
+}
+```
+
+명령형으로 작성하면 하나의 큰 함수가 됩니다.
+
+```typescript
+function transformUsers(users: ApiUser[]): UserViewModel[] {
+  const result: UserViewModel[] = []
+  for (const user of users) {
+    if (user.isDeleted) continue
+    if (user.role === 'guest') continue
+    result.push({
+      id: user.id,
+      displayName: `${user.name} (${user.role})`,
+      role: user.role,
+      lastLogin: new Date(user.lastLoginAt),
+    })
+  }
+  result.sort((a, b) => b.lastLogin.getTime() - a.lastLogin.getTime())
+  return result
+}
+```
+
+필터링, 변환, 정렬이 하나의 함수 안에 섞여 있습니다. 합성 가능한 작은 함수로 분해하면 이렇게 됩니다.
+
+```typescript
+const excludeDeleted = <T extends { isDeleted: boolean }>(items: T[]) =>
+  items.filter(item => !item.isDeleted)
+
+const excludeRole = <T extends { role: string }>(role: string) =>
+  (items: T[]) => items.filter(item => item.role !== role)
+
+const toViewModel = (user: ApiUser): UserViewModel => ({
+  id: user.id,
+  displayName: `${user.name} (${user.role})`,
+  role: user.role,
+  lastLogin: new Date(user.lastLoginAt),
+})
+
+const sortByDateDesc = <T extends { lastLogin: Date }>(items: T[]) =>
+  [...items].sort((a, b) => b.lastLogin.getTime() - a.lastLogin.getTime())
+
+const transformUsers = (users: ApiUser[]): UserViewModel[] =>
+  pipe(
+    users,
+    excludeDeleted,
+    excludeRole('guest'),
+    items => items.map(toViewModel),
+    sortByDateDesc,
+  )
+```
+
+각 단계가 독립적인 함수입니다. `excludeDeleted`는 삭제된 항목을 제외하고, `excludeRole('guest')`는 게스트를 제외하고, `toViewModel`은 화면용 데이터로 변환하고, `sortByDateDesc`는 정렬합니다. 각 함수를 개별적으로 테스트할 수 있고, 순서를 바꾸거나 단계를 추가/제거하기 쉽습니다.
+
+이 방식의 핵심은 **데이터 변환을 단계별로 기술한다**는 점입니다. 각 단계가 무엇을 하는지 함수 이름으로 드러나고, 파이프라인 전체의 흐름이 위에서 아래로 읽힙니다.
+
+## 합성의 조건
+
+함수 합성이 잘 되려면 몇 가지 조건이 필요합니다.
+
+**단일 인자**: 합성되는 함수는 하나의 값을 받아 하나의 값을 반환해야 합니다. 커링은 이 조건을 만족시키기 위한 도구입니다.
+
+**순수 함수**: 부수효과가 있으면 합성 순서에 따라 결과가 달라질 수 있습니다. 순수 함수여야 합성 순서만으로 동작을 예측할 수 있습니다.
+
+**타입 정합성**: `f: A → B`와 `g: B → C`의 합성은 `g ∘ f: A → C`입니다. `f`의 출력 타입과 `g`의 입력 타입이 일치해야 합니다. TypeScript의 타입 시스템이 이것을 컴파일 타임에 검증합니다.
+
+```typescript
+const toString = (x: number): string => String(x)
+const toUpper = (s: string): string => s.toUpperCase()
+
+// 타입이 맞는 합성
+pipe(42, toString, toUpper) // "42"
+
+// 타입이 맞지 않는 합성 — 컴파일 에러
+// pipe(42, toUpper)  // number를 string 인자에 넣으려고 함
+```
+
+이 세 가지 조건이 갖춰지면 함수를 레고 블록처럼 조합할 수 있습니다. 어떤 순서로 끼우든 타입이 맞으면 동작하고, 순수 함수이므로 결과가 예측 가능합니다.
+
+## 정리
+
+함수 합성은 작은 함수를 연결해서 복잡한 동작을 만드는 방법입니다. `pipe`는 데이터 흐름 순서대로 합성을 표현하고, 커링은 다중 인자 함수를 합성 가능한 형태로 변환합니다. `flow`는 합성된 함수 자체를 만들어 재사용할 수 있게 합니다.
+
+합성이 잘 되는 코드를 쓰려면 함수를 작게 만들고, 순수하게 유지하고, 인자를 하나만 받도록 설계하면 됩니다. 이 패턴이 익숙해지면 데이터 변환을 파이프라인으로 사고하게 되고, 코드의 각 단계가 독립적으로 테스트 가능하고 재사용 가능한 단위가 됩니다.
+
+다음 주차에서는 합성이 실패할 수 있는 상황—에러, null, 비동기—을 함수형으로 다루는 방법을 살펴보겠습니다.
+
+## References
+
+- [Professor Frisby's Mostly Adequate Guide to FP — Chapter 5: Composing](https://mostly-adequate.gitbook.io/mostly-adequate-guide/ch05)
+- [Effect — Building Pipelines](https://effect.website/docs/getting-started/building-pipelines/)
+- [Haskell Wiki — Function composition](https://wiki.haskell.org/Function_composition)
+- [데이터 기반 함수형 리팩토링](/posts/data-driven-functional-refactoring)

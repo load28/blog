@@ -159,7 +159,16 @@ Passkey는 이 문제를 **개인 키의 클라우드 동기화**로 해결합�
 
 **Microsoft**: Windows Hello를 통해 관리합니다. Microsoft 계정에 연결된 기기 간 동기화를 지원합니다.
 
-중요한 점은 **크로스 생태계 동기화는 되지 않는다**는 것입니다. Apple에서 만든 passkey는 Android로 자동 동기화되지 않습니다. 다른 생태계 기기에서 사용하려면 Cross-Device Authentication(하이브리드 전송)을 통해 기존 기기를 인증기로 사용해야 합니다.
+중요한 점은 **크로스 생태계 동기화는 기본적으로 되지 않는다**는 것입니다. Apple에서 만든 passkey는 Android로 자동 동기화되지 않습니다. 다른 생태계 기기에서 사용하려면 Cross-Device Authentication(하이브리드 전송)을 통해 기존 기기를 인증기로 사용해야 합니다.
+
+### Credential Exchange Protocol (CXP/CXF)
+
+크로스 생태계 이동 문제를 해결하기 위해 FIDO Alliance가 두 가지 보완 표준을 개발했습니다.
+
+- **CXF (Credential Exchange Format)**: 어떤 데이터를 교환할지 정의합니다. 2025년 8월 Proposed Standard으로 승인되었습니다.
+- **CXP (Credential Exchange Protocol)**: 교환이 어떻게 이루어지는지 정의합니다. HPKE(Hybrid Public Key Encryption)를 사용하여 전송 중 E2E 암호화를 보장합니다.
+
+Apple이 iOS 26(2025년 9월)에서 CXP를 최초로 구현하여, passkey를 서드파티 패스워드 매니저(Bitwarden 등)로 내보낼 수 있게 되었습니다. 이전까지는 iCloud Keychain에 갇혀 있던 passkey가 생태계 잠금에서 벗어나는 첫 단계입니다.
 
 ```
 [Cross-Device Authentication 흐름]
@@ -230,6 +239,10 @@ const assertion = await navigator.credentials.get({
 
 이 방식의 장점은 **점진적 도입이 가능**하다는 것입니다. 기존 비밀번호 로그인 폼을 유지하면서 passkey 지원을 추가할 수 있고, passkey가 없는 사용자는 기존대로 비밀번호를 입력합니다.
 
+### Conditional Create
+
+Conditional UI의 반대 방향도 있습니다. 사용자가 비밀번호로 로그인에 성공한 후, 별도의 UI 없이 자동 완성 영역에 "이 사이트에 패스키 만들기" 옵션을 표시합니다. 비밀번호 사용자를 passkey로 자연스럽게 전환시키는 업그레이드 경로입니다. 현재 WebKit(Safari)과 일부 패스워드 매니저에서 지원합니다.
+
 ## 보안 속성 비교
 
 | 위협 | 비밀번호 | OTP (TOTP/SMS) | Passkey |
@@ -254,6 +267,12 @@ Passkey에서는 사용자가 판단에 개입하지 않습니다.
 ```
 
 이 검증은 브라우저 레벨에서 수행됩니다. JavaScript로 우회할 수 없고, 사용자의 실수가 개입할 여지가 없습니다.
+
+### 다운그레이드 공격: Passkey도 만능은 아니다
+
+Passkey 자체는 피싱에 면역이지만, **인증 시스템 전체**가 안전한 것은 별개 문제입니다. Proofpoint 연구팀이 문서화한 Microsoft Entra ID 대상 다운그레이드 공격이 대표적입니다. 피싱 프록시가 지원하지 않는 브라우저를 가장하면, Entra가 passkey를 비활성화하고 사용자를 비밀번호 같은 약한 폴백 수단으로 유도합니다.
+
+이건 passkey의 암호학적 결함이 아니라 **폴백 경로의 설계 결함**입니다. Passkey의 보안 이점을 온전히 얻으려면, 약한 인증 수단으로의 폴백을 제거하거나 최소한 추가 검증을 요구해야 합니다.
 
 ### signCount를 이용한 복제 탐지
 
@@ -322,15 +341,14 @@ https://example.com/.well-known/webauthn
 
 ## 비밀번호에서 Passkey로의 전환
 
-현재 주요 서비스들의 passkey 지원 현황입니다.
+FIDO Alliance에 따르면 10억 명 이상이 passkey를 활성화했고, 상위 100개 웹사이트 중 48%가 passkey를 지원합니다. 주요 수치를 보면 다음과 같습니다.
 
-- **Google**: 2023년부터 모든 개인 계정에서 passkey 지원. 2024년부터 Workspace에서도 passkey를 기본 인증 수단으로 권장
-- **Apple**: iOS 16, macOS Ventura부터 iCloud Keychain을 통한 passkey 동기화. Sign in with Apple과 통합
-- **Microsoft**: Windows Hello를 통한 passkey 지원. Microsoft 계정과 Entra ID 모두 지원
-- **GitHub**: 2023년부터 passkey 지원. 2024년부터 2FA 필수화와 함께 passkey를 주요 옵션으로 제공
-- **Amazon, PayPal, WhatsApp, LinkedIn** 등 주요 서비스들이 점진적으로 채택 중
+- **Google**: 8억 개 이상의 계정이 passkey 사용. Workspace에서도 기본 인증 수단으로 권장
+- **Microsoft**: 2025년 5월부터 신규 계정의 기본 로그인 수단을 passkey로 설정. 인증 횟수 120% 증가
+- **Apple**: iOS 26에서 CXP 구현. iCloud Keychain 외부로 passkey 내보내기 가능
+- **Amazon**: 출시 1년 만에 1억 7,500만 명이 passkey 생성
 
-FIDO Alliance에 따르면 2025년 기준으로 전 세계 150억 개 이상의 계정이 passkey로 로그인 가능합니다.
+규제 쪽에서도 움직임이 있습니다. **NIST SP 800-63-4**(2025년 7월)는 AAL2에서 피싱 방지 옵션 제공을 요구하며, synced passkey를 AAL2 인증기로 인정합니다. UAE 중앙은행은 2026년 3월까지 SMS/이메일 OTP 제거 지침을 내렸습니다.
 
 ## OAuth와의 관계
 
@@ -351,8 +369,11 @@ IdP(Google, Apple 등)의 로그인 단계에서 비밀번호 대신 passkey를 
 ## 참고
 
 - [W3C Web Authentication Level 3](https://www.w3.org/TR/webauthn-3/)
-- [FIDO Alliance - CTAP2 Specification](https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html)
+- [FIDO Alliance - CTAP 2.2 Specification](https://fidoalliance.org/specs/fido-v2.2-ps-20250714/fido-client-to-authenticator-protocol-v2.2-ps-20250714.pdf)
+- [FIDO Alliance - Credential Exchange Specifications](https://fidoalliance.org/specifications-credential-exchange-specifications/)
 - [passkeys.dev - A reference for passkey developers](https://passkeys.dev/)
 - [Apple - About the security of passkeys](https://support.apple.com/en-us/102195)
 - [Google - Passkeys on Android](https://developers.google.com/identity/passkeys)
+- [Chrome Developers - Sign in with a passkey through form autofill](https://developer.chrome.com/docs/identity/webauthn-conditional-ui)
+- [FIDO Alliance - Passkey Index 2025](https://fidoalliance.org/passkey-index-2025/)
 - [FIDO Alliance - Passkeys Directory](https://passkeys.directory/)

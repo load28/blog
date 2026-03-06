@@ -4,219 +4,287 @@ date: '2026-03-05'
 tags: ['security', 'authentication', 'webauthn', 'passkey', 'fido2']
 ---
 
-비밀번호는 태생적으로 공유 비밀(shared secret)입니다. 서버와 사용자가 동일한 비밀을 알고 있고, 인증은 그 비밀이 일치하는지 확인하는 과정입니다. 이 구조에서 서버가 침해되면 비밀이 유출되고, 사용자가 피싱에 속으면 비밀이 공격자에게 전달됩니다. 2단계 인증(OTP, SMS)을 추가해도 결국 사용자가 값을 입력하는 구조인 이상 피싱에서 완전히 벗어나지 못합니다.
+Google에 로그인할 때 비밀번호 대신 지문을 찍는 경험을 해본 적이 있을 겁니다. 비밀번호를 입력하지도 않았는데 로그인이 됩니다. 이게 passkey입니다.
 
-Passkey는 이 문제를 공개 키 암호화(public key cryptography)로 해결합니다. 서버에는 공개 키만 저장되고, 인증은 개인 키의 소유를 증명하는 서명으로 이루어집니다. 서버가 침해되어도 공개 키로는 인증할 수 없고, 피싱 사이트에서는 origin이 다르기 때문에 브라우저가 자격 증명을 아예 제공하지 않습니다.
+겉으로는 단순해 보이지만, 그 안에서는 공개 키 암호화, origin 검증, 하드웨어 보안 영역이 조합된 인증 흐름이 동작합니다. 이 글에서는 그 내부 구조를 풀어봅니다.
 
-## FIDO2 아키텍처
+## 비밀번호의 구조적 문제
 
-Passkey를 이해하려면 먼저 그 기반인 FIDO2 아키텍처를 알아야 합니다. FIDO2는 두 개의 표준으로 구성됩니다.
+왜 비밀번호를 대체하려는 걸까요? 불편해서가 아닙니다. **구조가 근본적으로 취약하기 때문**입니다.
 
-| 표준 | 범위 | 담당 |
-|:--|:--|:--|
-| **WebAuthn** (W3C) | 브라우저 ↔ 서버 | JavaScript API. `navigator.credentials.create()`와 `navigator.credentials.get()`으로 자격 증명을 생성하고 사용합니다 |
-| **CTAP2** (FIDO Alliance) | 클라이언트 ↔ 외부 인증기 | 전송 프로토콜. USB, NFC, BLE를 통해 외부 인증기(하드웨어 보안 키 등)와 통신합니다. 플랫폼 인증기(Touch ID, Windows Hello)는 OS 내부 API로 직접 통신하므로 CTAP2를 거치지 않습니다 |
+비밀번호는 공유 비밀(shared secret)입니다. "서버와 내가 같은 비밀을 알고 있다"는 사실로 본인을 증명합니다. 자물쇠의 비밀번호를 서버도 알고 나도 아는 구조라고 생각하면 됩니다.
+
+이 구조에서 문제가 생기는 지점은 두 군데입니다.
+
+**서버가 털리면?** 비밀번호 해시가 유출됩니다. 오프라인에서 크래킹할 수 있습니다.
+
+**피싱 사이트에 입력하면?** 비밀번호는 "값"이기 때문에, 사용자가 가짜 사이트에 입력하면 그대로 공격자에게 전달됩니다. OTP도 마찬가지입니다. 사용자가 직접 읽고 타이핑하는 구조인 이상, 실시간으로 중계하면 뚫립니다.
+
+Passkey는 이 두 문제를 동시에 해결합니다.
+
+- 서버에는 **공개 키만** 저장합니다. 유출되어도 쓸모없습니다.
+- 인증은 브라우저가 **도메인을 자동 검증**합니다. 가짜 사이트에서는 아예 동작하지 않습니다.
+
+## 핵심 아이디어: 자물쇠와 열쇠
+
+Passkey의 원리를 한 문장으로 요약하면 이렇습니다.
+
+> 서버에는 자물쇠(공개 키)를 주고, 열쇠(개인 키)는 내 기기에만 보관한다.
+
+비밀번호 방식은 서버와 내가 같은 열쇠를 공유하는 구조입니다. Passkey는 아예 다릅니다. 서버가 가진 건 자물쇠뿐이라, 서버가 해킹당해도 열쇠는 안전합니다.
+
+인증할 때는 서버가 "이 상자를 열어봐"(챌린지)라고 보내면, 내 기기가 열쇠로 열어서 증거를 돌려보냅니다. 서버는 자물쇠로 "맞는 열쇠로 열었는지" 확인만 합니다.
+
+이게 공개 키 암호화(public key cryptography)의 핵심이고, Passkey는 이걸 웹 인증에 적용한 것입니다.
+
+## FIDO2: 두 개의 표준
+
+이 인증 구조를 실현하는 기술 표준이 FIDO2입니다. FIDO2는 두 개의 표준이 합쳐진 이름입니다.
+
+**WebAuthn** (W3C): 웹 개발자가 실제로 사용하는 JavaScript API입니다. `navigator.credentials.create()`로 키 쌍을 만들고, `navigator.credentials.get()`으로 인증합니다. 브라우저와 서버 사이의 통신을 담당합니다.
+
+**CTAP2** (FIDO Alliance): 브라우저와 외부 인증기(YubiKey 같은 하드웨어 보안 키) 사이의 통신 프로토콜입니다. USB, NFC, Bluetooth로 통신합니다.
 
 ```
-[Relying Party(서버)] ←── WebAuthn API ──→ [브라우저/클라이언트] ←── CTAP2 ──→ [외부 인증기]
-                                                    ↑                              ↑
-                                            OS 내부 API                    YubiKey, Titan Key 등
-                                                    ↓                      (USB, NFC, BLE)
-                                           [플랫폼 인증기]
-                                            Touch ID, Windows Hello,
-                                            Android 생체인식
+서버(Relying Party)                   브라우저                    인증기
+       │                                │                         │
+       │◄──── WebAuthn API ────►│                         │
+       │      (웹 개발자가                │◄──── CTAP2 ────►│ 외부: YubiKey 등
+       │       다루는 영역)              │                         │   (USB/NFC/BLE)
+       │                                │                         │
+       │                                │◄── OS 내부 API ──►│ 내장: Touch ID,
+       │                                │    (CTAP2 안 거침)       │   Windows Hello 등
 ```
 
-웹 개발자가 직접 다루는 건 WebAuthn API뿐입니다. CTAP2는 브라우저와 OS가 처리합니다. 서버(Relying Party)는 챌린지를 생성하고, 응답의 서명을 검증합니다.
+핵심은 이겁니다. **웹 개발자가 직접 다루는 건 WebAuthn API뿐**입니다. CTAP2는 브라우저와 OS가 알아서 처리합니다. Touch ID나 Windows Hello 같은 내장 인증기는 CTAP2도 거치지 않고 OS가 직접 통신합니다.
 
-## 두 가지 의식(Ceremony)
+서버(WebAuthn 스펙에서는 Relying Party, 줄여서 RP라고 부릅니다)는 챌린지를 생성하고, 돌아온 서명을 검증하는 역할만 합니다.
 
-WebAuthn에는 두 가지 핵심 흐름이 있습니다. 등록(Registration)과 인증(Authentication)입니다.
+## 등록: 키 쌍 만들기
 
-### Registration (Attestation)
+WebAuthn에는 두 가지 흐름이 있습니다. 등록(Registration)과 인증(Authentication)입니다. 스펙에서는 이 흐름을 "ceremony"라고 부릅니다.
 
-새로운 자격 증명을 만드는 과정입니다.
+먼저 등록입니다. 사용자가 서비스에 passkey를 처음 설정하는 과정입니다.
 
 ```
-1. 서버가 challenge(랜덤 바이트)와 등록 옵션을 클라이언트에 전달
-2. 브라우저가 navigator.credentials.create() 호출
-3. 인증기가 새 공개 키/개인 키 쌍을 생성
-4. 개인 키는 인증기에 저장, 공개 키는 서버로 전달
-5. 서버가 응답을 검증하고 공개 키를 저장
+1. 서버가 "이 랜덤 값에 서명해봐" (challenge)를 보냄
+2. 브라우저가 인증기에게 전달
+3. 인증기가 새 키 쌍을 생성 → 개인 키는 기기에 저장
+4. 공개 키 + 서명을 서버에 전달
+5. 서버가 공개 키를 사용자 계정에 저장
 ```
 
-서버 측 코드 흐름을 보면 다음과 같습니다.
+코드로 보면 이렇습니다.
 
 ```typescript
-// 1. 서버: 등록 옵션 생성
+// 서버가 만드는 등록 옵션
 const options: PublicKeyCredentialCreationOptions = {
+  // 랜덤 챌린지. 매번 새로 생성해야 합니다.
+  // 이전에 쓴 값을 재사용하면 재전송 공격(replay attack)에 취약합니다.
   challenge: crypto.getRandomValues(new Uint8Array(32)),
+
+  // Relying Party 정보.
+  // id는 도메인 이름이고, 등록 이후 변경할 수 없습니다.
+  // 이 값이 피싱 방어의 핵심입니다 (뒤에서 자세히 다룹니다).
   rp: {
-    id: 'example.com',  // origin binding의 핵심
+    id: 'example.com',
     name: 'Example Service',
   },
+
+  // 사용자 정보.
+  // id는 내부 식별자로, 이메일 같은 개인정보를 넣으면 안 됩니다.
+  // 인증기에 저장되기 때문입니다.
   user: {
-    id: new Uint8Array(16),  // 사용자 고유 식별자 (username 아님)
+    id: new Uint8Array(16),
     name: 'user@example.com',
     displayName: 'User',
   },
+
+  // 허용할 암호화 알고리즘.
+  // -7은 ES256 (타원곡선), -257은 RS256 (RSA).
+  // ES256이 가장 널리 쓰이고, 서명 크기도 작습니다.
   pubKeyCredParams: [
-    { alg: -7, type: 'public-key' },   // ES256 (P-256 + SHA-256)
-    { alg: -257, type: 'public-key' },  // RS256 (RSASSA-PKCS1-v1_5)
+    { alg: -7, type: 'public-key' },
+    { alg: -257, type: 'public-key' },
   ],
+
+  // 인증기 요구사항.
   authenticatorSelection: {
-    residentKey: 'required',           // discoverable credential 강제
-    userVerification: 'preferred',     // 생체인식/PIN 확인
+    // 'required': 인증기가 키를 자체 저장해야 함 (passkey의 필수 조건)
+    residentKey: 'required',
+    // 'preferred': 가능하면 생체인식/PIN으로 본인 확인
+    userVerification: 'preferred',
   },
+
   timeout: 60000,
 };
 ```
 
 ```typescript
-// 2. 클라이언트: 자격 증명 생성
+// 브라우저에서 실행. 이 시점에 생체인식 프롬프트가 뜹니다.
 const credential = await navigator.credentials.create({
   publicKey: options,
 });
 
-// credential.response는 AuthenticatorAttestationResponse
-// - clientDataJSON: origin, challenge, type 포함
-// - attestationObject: 공개 키, credential ID, 선택적 attestation 서명
+// 응답에는 두 가지가 들어있습니다:
+// - clientDataJSON: 브라우저가 만든 메타데이터 (origin, challenge 등)
+// - attestationObject: 인증기가 만든 공개 키와 credential ID
 ```
 
 ```typescript
-// 3. 서버: 응답 검증
-// - clientDataJSON의 origin이 rp.id와 일치하는지 확인
-// - challenge가 서버가 발급한 것과 일치하는지 확인
-// - attestationObject에서 공개 키를 추출하여 저장
-// - credential ID를 사용자 계정에 매핑
+// 서버에서 검증할 것들:
+// 1. clientDataJSON의 origin이 우리 도메인인지 (피싱 방어)
+// 2. challenge가 우리가 발급한 것과 같은지 (재전송 방어)
+// 3. attestationObject에서 공개 키를 꺼내서 사용자 계정에 저장
 ```
 
-`rp.id`는 피싱 방어의 핵심입니다. `example.com`으로 등록된 자격 증명은 `evil-example.com`에서 절대 사용될 수 없습니다. 브라우저가 현재 origin과 `rp.id`를 비교하고, 불일치하면 요청 자체를 차단합니다. 사용자가 판단할 필요가 없습니다.
+여기서 `rp.id`가 왜 중요한지 짚고 넘어갑니다. `example.com`으로 등록된 passkey는 `evil-example.com`에서 **절대 동작하지 않습니다**. 브라우저가 현재 페이지의 도메인과 `rp.id`를 비교해서, 다르면 인증기에 아예 요청을 보내지 않습니다. 사용자가 URL을 꼼꼼히 확인할 필요가 없습니다. 브라우저가 대신 해줍니다.
 
-### Authentication (Assertion)
+## 인증: 본인 증명하기
 
-기존 자격 증명으로 본인을 증명하는 과정입니다.
+등록이 끝나면, 이후 로그인은 인증 흐름을 탑니다.
 
 ```
-1. 서버가 challenge를 클라이언트에 전달
-2. 브라우저가 navigator.credentials.get() 호출
-3. 인증기가 개인 키로 challenge에 서명
-4. 서명과 authenticator data를 서버로 전달
-5. 서버가 저장된 공개 키로 서명을 검증
+1. 서버가 새 challenge를 보냄
+2. 인증기가 저장된 개인 키로 challenge에 서명
+3. 서명을 서버에 전달
+4. 서버가 등록 때 저장한 공개 키로 서명을 검증
 ```
 
 ```typescript
-// 1. 서버: 인증 옵션 생성
+// 서버가 만드는 인증 옵션
 const options: PublicKeyCredentialRequestOptions = {
   challenge: crypto.getRandomValues(new Uint8Array(32)),
   rpId: 'example.com',
-  allowCredentials: [],  // 비워두면 discoverable credential 사용 (usernameless)
+  // allowCredentials를 비워두면 인증기가 알아서
+  // 이 도메인에 맞는 passkey를 찾아서 보여줍니다.
+  // 사용자가 이메일을 먼저 입력할 필요가 없습니다.
+  allowCredentials: [],
   userVerification: 'preferred',
   timeout: 60000,
 };
 ```
 
 ```typescript
-// 2. 클라이언트: 자격 증명 사용
 const assertion = await navigator.credentials.get({
   publicKey: options,
 });
 
-// assertion.response는 AuthenticatorAssertionResponse
-// - clientDataJSON: origin, challenge, type
-// - authenticatorData: rpIdHash, flags(UV, UP), signCount
-// - signature: authenticatorData + clientDataHash에 대한 서명
-// - userHandle: 등록 시 설정한 user.id (discoverable credential인 경우)
+// 응답 구조:
+// - clientDataJSON: origin, challenge (브라우저가 채움)
+// - authenticatorData: 도메인 해시, 사용자 확인 여부, 서명 카운터
+// - signature: 위 두 값을 개인 키로 서명한 결과
+// - userHandle: 등록 때 설정한 user.id (이걸로 누구인지 식별)
 ```
+
+서버 검증 과정을 풀어보면 이렇습니다.
 
 ```typescript
-// 3. 서버: 서명 검증
-// - clientDataJSON의 origin, challenge 확인
-// - authenticatorData에서 rpIdHash가 rp.id의 SHA-256과 일치하는지 확인
-// - userHandle로 사용자 식별 (usernameless 로그인)
-// - 저장된 공개 키로 signature 검증
-// - signCount가 이전보다 큰지 확인 (cloning 탐지)
+// 서버가 확인하는 것들:
+
+// 1. origin 확인: clientDataJSON의 origin이 'https://example.com'인지
+//    → 다른 도메인에서 온 요청이면 거부
+
+// 2. challenge 확인: 우리가 방금 발급한 challenge와 같은지
+//    → 이전 요청을 복사해서 보내는 재전송 공격 차단
+
+// 3. 서명 검증: 등록 때 저장한 공개 키로 signature가 유효한지 확인
+//    검증 대상 = authenticatorData + SHA-256(clientDataJSON)
+//    → 이 데이터가 조금이라도 변조되었으면 서명이 깨짐
+
+// 4. 사용자 식별: userHandle 값으로 어떤 계정인지 확인
+
+// 5. signCount 확인: 이전 로그인 때보다 큰 값인지
+//    → 인증기가 복제되었는지 탐지 (뒤에서 자세히)
 ```
 
-서명 검증 대상은 `authenticatorData + SHA-256(clientDataJSON)`입니다. 이 구조 덕분에 서버는 클라이언트의 origin과 challenge가 변조되지 않았음을 암호학적으로 확인할 수 있습니다.
+서명 검증 대상이 `authenticatorData + SHA-256(clientDataJSON)`이라는 점이 중요합니다. clientDataJSON에는 origin과 challenge가 들어있고, 이걸 해싱한 값이 서명에 포함되므로, **origin이나 challenge가 한 비트라도 바뀌면 서명 검증이 실패**합니다. 중간에서 값을 바꾸는 것이 불가능한 구조입니다.
 
-## Passkey: 동기화되는 자격 증명
+## Passkey: 동기화되는 키
 
-WebAuthn의 원래 설계에서 개인 키는 하드웨어 인증기 안에 갇혀 있었습니다. YubiKey를 잃어버리면 접근 권한도 함께 사라졌습니다. 이건 보안적으로는 강력하지만, 일반 사용자에게 비밀번호보다 불편한 경험이었습니다.
+여기까지가 WebAuthn의 원래 설계입니다. 그런데 이 설계에는 실용적인 문제가 있었습니다.
 
-Passkey는 이 문제를 **개인 키의 클라우드 동기화**로 해결합니다.
+개인 키가 하드웨어 인증기(YubiKey 등) 안에 갇혀 있으니, **기기를 잃어버리면 키도 같이 사라집니다**. 보안적으로는 이상적이지만, 일반 사용자에게 "YubiKey를 항상 들고 다니세요"라고 할 수는 없었습니다.
 
-| 구분 | Device-bound Credential | Synced Credential (Passkey) |
+Passkey는 이 문제를 **개인 키의 클라우드 동기화**로 해결합니다. "Passkey"라는 단어는 기술 표준 이름이 아니라, Apple/Google/Microsoft가 만든 마케팅 용어입니다. 기술적으로는 "동기화되는 WebAuthn discoverable credential"입니다.
+
+| | Device-bound (기기 귀속) | Synced Passkey (동기화) |
 |:--|:--|:--|
-| 개인 키 저장 | 하드웨어 보안 영역 (TPM, Secure Enclave) | 클라우드에 E2E 암호화되어 동기화 |
-| 기기 분실 시 | 복구 불가 (백업 인증 수단 필요) | 다른 기기에서 자동 복원 |
-| 사용 범위 | 등록한 기기에서만 사용 | 동일 생태계의 모든 기기 |
-| 보안 수준 | 가장 높음 (물리적 소유 증명) | 높음 (클라우드 계정 보안에 의존) |
-| 적합한 용도 | 엔터프라이즈, 고보안 환경 | 일반 소비자 서비스 |
+| 개인 키 위치 | 기기의 보안 칩 안. 절대 밖으로 안 나감 | 클라우드에 E2E 암호화로 저장, 기기 간 동기화 |
+| 기기를 잃으면 | 키도 사라짐. 백업 수단 필요 | 다른 기기에서 자동 복원 |
+| 어디서 쓸 수 있나 | 등록한 기기에서만 | 같은 생태계(Apple/Google/MS)의 모든 기기 |
+| 보안 수준 | 최고 (물리적 소유 증명) | 높음 (클라우드 계정 보안에 의존) |
+| 적합한 상황 | 기업 환경, 고보안 시스템 | 일반 소비자 서비스 |
 
-### 플랫폼별 동기화 구현
+### 플랫폼별 동작 방식
 
-**Apple**: iCloud Keychain을 통해 동기화합니다. 개인 키는 Secure Enclave에서 생성된 후 AES-256-GCM으로 암호화되어 iCloud에 저장됩니다. 복호화는 사용 시점에 기기의 Secure Enclave에서만 수행됩니다. Apple ID + 기기 패스코드가 보안 경계입니다.
+**Apple**: iCloud Keychain으로 동기화합니다. iPhone에서 만든 passkey가 Mac에서도 쓸 수 있는 이유입니다. 개인 키는 기기의 Secure Enclave에서만 복호화되고, iCloud에는 암호화된 상태로만 존재합니다.
 
-**Google**: Google Password Manager를 통해 Android 기기 간 동기화합니다. 화면 잠금 비밀이 E2E 암호화의 키로 사용됩니다. Chrome 데스크톱에서도 Google Password Manager를 통해 passkey를 사용할 수 있습니다.
+**Google**: Google Password Manager를 통해 Android 기기 간, 그리고 Chrome 데스크톱에서도 사용할 수 있습니다.
 
-**Microsoft**: Windows Hello를 통해 관리합니다. Microsoft 계정에 연결된 기기 간 동기화를 지원합니다.
+**Microsoft**: Windows Hello를 통해 관리하며, Microsoft 계정에 연결된 기기 간 동기화를 지원합니다.
 
-중요한 점은 **크로스 생태계 동기화는 기본적으로 되지 않는다**는 것입니다. Apple에서 만든 passkey는 Android로 자동 동기화되지 않습니다. 다른 생태계 기기에서 사용하려면 Cross-Device Authentication(하이브리드 전송)을 통해 기존 기기를 인증기로 사용해야 합니다.
+### 생태계 간 이동: CXP/CXF
 
-### Credential Exchange Protocol (CXP/CXF)
+한 가지 제약이 있습니다. Apple에서 만든 passkey는 Android로 **자동 동기화되지 않습니다**. 생태계가 다르기 때문입니다.
 
-크로스 생태계 이동 문제를 해결하기 위해 FIDO Alliance가 두 가지 보완 표준을 개발했습니다.
+이 문제를 해결하기 위해 FIDO Alliance가 두 가지 표준을 만들었습니다.
 
-- **CXF (Credential Exchange Format)**: 어떤 데이터를 교환할지 정의합니다. 2025년 8월 Proposed Standard으로 승인되었습니다.
-- **CXP (Credential Exchange Protocol)**: 교환이 어떻게 이루어지는지 정의합니다. HPKE(Hybrid Public Key Encryption)를 사용하여 전송 중 E2E 암호화를 보장합니다.
+- **CXF** (Credential Exchange Format): passkey 데이터의 교환 형식. 2025년 8월 표준 승인.
+- **CXP** (Credential Exchange Protocol): 교환이 어떻게 이루어지는지. 전송 중 E2E 암호화를 보장합니다.
 
-Apple이 iOS 26(2025년 9월)에서 CXP를 최초로 구현하여, passkey를 서드파티 패스워드 매니저(Bitwarden 등)로 내보낼 수 있게 되었습니다. 이전까지는 iCloud Keychain에 갇혀 있던 passkey가 생태계 잠금에서 벗어나는 첫 단계입니다.
+Apple이 iOS 26(2025년 9월)에서 CXP를 최초 구현하여, iCloud Keychain의 passkey를 Bitwarden 같은 서드파티 앱으로 내보낼 수 있게 되었습니다.
+
+당장 다른 생태계 기기에서 passkey를 써야 한다면, **Cross-Device Authentication**을 사용합니다.
 
 ```
-[Cross-Device Authentication 흐름]
-
 1. PC 브라우저에서 로그인 시도
 2. "다른 기기의 패스키 사용" 선택
-3. QR 코드 표시 (BLE 광고 데이터 + 라우팅 정보 포함)
+3. QR 코드가 표시됨
 4. 스마트폰으로 QR 스캔
-5. BLE로 근접성(proximity) 확인 → 원격 피싱 방지
-6. 스마트폰에서 생체인식 확인
-7. CTAP2 hybrid transport를 통해 서명 전달
-8. PC 브라우저가 서명을 서버로 전달
+5. 스마트폰과 PC가 Bluetooth(BLE)로 가까이 있는지 확인
+6. 스마트폰에서 생체인식
+7. 서명이 PC 브라우저를 통해 서버로 전달
 ```
 
-QR 코드와 BLE 근접성 확인의 조합은 의도적입니다. 원격의 공격자가 QR 코드를 캡처하더라도 BLE 범위 내에 물리적으로 존재해야 하므로, 원격 피싱이 구조적으로 차단됩니다.
+5번의 Bluetooth 근접성 확인이 핵심입니다. QR 코드만으로는 원격 공격자가 스크린샷을 찍어서 악용할 수 있지만, Bluetooth 범위(약 10m) 안에 물리적으로 있어야 하므로 원격 피싱이 차단됩니다.
 
-## Discoverable Credential과 Usernameless 인증
+## 이메일 입력 없이 로그인하기
 
-전통적인 WebAuthn에서는 서버가 `allowCredentials` 목록을 클라이언트에 전달하여 "이 credential ID 중 하나를 사용하라"고 지정했습니다. 이건 서버가 먼저 사용자를 식별해야 한다는 의미이므로, 사용자 이름 입력이 여전히 필요했습니다.
+비밀번호 로그인에서는 이메일을 먼저 입력해야 합니다. 서버가 "이 사용자의 비밀번호 해시가 뭐였지?" 하고 찾아야 하니까요.
 
-Discoverable Credential(과거 Resident Key)은 이 제약을 없앱니다. 인증기가 credential ID와 함께 `user.id`를 자체 저장하므로, 서버가 `allowCredentials`를 비워두어도 인증기가 해당 RP에 대한 자격 증명을 스스로 찾아냅니다.
+초기 WebAuthn에서도 비슷했습니다. 서버가 `allowCredentials`에 "이 credential ID들 중 하나를 써라"고 목록을 넘겨줘야 했고, 그러려면 먼저 누구인지 알아야 했습니다.
+
+**Discoverable Credential**(과거에는 Resident Key라고 불렀습니다)이 이 제약을 없앱니다. 인증기가 credential ID와 user.id를 자체 저장하므로, 서버가 목록을 안 넘겨줘도 인증기가 "이 도메인에 내가 가진 키가 있네" 하고 알아서 찾습니다.
 
 ```typescript
-// Usernameless 인증 흐름
 const options: PublicKeyCredentialRequestOptions = {
   challenge: crypto.getRandomValues(new Uint8Array(32)),
   rpId: 'example.com',
-  allowCredentials: [],  // 비어있음 → 인증기가 자체적으로 credential 선택
+  // 빈 배열 = "네가 알아서 찾아봐"
+  // 인증기가 이 도메인에 등록된 passkey를 자체적으로 찾아서 보여줌
+  allowCredentials: [],
   userVerification: 'required',
 };
 
 const assertion = await navigator.credentials.get({ publicKey: options });
 
-// assertion.response.userHandle에 user.id가 포함됨
-// 서버는 이 값으로 사용자를 식별
+// assertion.response.userHandle에 등록 때 설정한 user.id가 담겨옴
+// 서버는 이 값으로 "아, 이 사용자구나" 하고 식별
 ```
 
-Passkey는 기본적으로 discoverable credential입니다. 모든 passkey가 usernameless 인증을 지원합니다.
+모든 passkey는 정의상 discoverable credential입니다. Passkey를 지원한다면 이메일 입력 없는 로그인이 자동으로 가능합니다.
 
-## Conditional UI: 자동 완성 통합
+## Conditional UI: 기존 로그인 폼과 공존하기
 
-Passkey의 UX 핵심은 Conditional UI입니다. 별도의 "패스키로 로그인" 버튼 없이, 기존의 사용자 이름 입력 필드에 자동 완성 형태로 passkey 옵션이 나타납니다.
+"passkey로만 로그인"을 강제하면 passkey가 없는 사용자는 로그인을 못 합니다. 현실적으로는 비밀번호와 passkey가 공존해야 합니다.
+
+Conditional UI가 이 문제를 해결합니다. 별도의 "패스키로 로그인" 버튼 없이, **기존 이메일 입력 필드의 자동 완성 목록에** passkey 옵션이 나타납니다. 비밀번호 자동 완성 옆에 passkey가 함께 뜨는 거라고 생각하면 됩니다.
+
+구현은 세 단계입니다.
 
 ```html
-<!-- autocomplete="username webauthn" 이 핵심 -->
+<!-- 1단계: input에 webauthn 힌트 추가 -->
 <input
   type="text"
   name="username"
@@ -226,9 +294,9 @@ Passkey의 UX 핵심은 Conditional UI입니다. 별도의 "패스키로 로그�
 ```
 
 ```typescript
-// 1. 브라우저 지원 여부 확인
+// 2단계: 브라우저가 이 기능을 지원하는지 확인
 if (await PublicKeyCredential.isConditionalMediationAvailable()) {
-  // 2. mediation: 'conditional'로 호출
+  // 3단계: mediation: 'conditional'로 호출
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: serverChallenge,
@@ -236,143 +304,143 @@ if (await PublicKeyCredential.isConditionalMediationAvailable()) {
       allowCredentials: [],
       userVerification: 'preferred',
     },
-    mediation: 'conditional',
+    mediation: 'conditional',  // 이게 핵심
   });
 }
 ```
 
-`mediation: 'conditional'`은 일반적인 `navigator.credentials.get()`과 다르게, 즉시 모달을 띄우지 않습니다. 대신 사용자가 입력 필드에 포커스했을 때 자동 완성 목록에 passkey 옵션을 표시합니다. 사용자가 passkey를 선택하면 그때 인증 흐름이 시작됩니다.
+`mediation: 'conditional'`이 없으면 `navigator.credentials.get()`은 즉시 모달 팝업을 띄웁니다. `'conditional'`을 주면 팝업 대신 자동 완성 목록에 조용히 끼어듭니다. 사용자가 passkey를 선택하면 그때 생체인식이 시작되고, passkey가 없으면 기존대로 비밀번호를 입력합니다.
 
-이 방식의 장점은 **점진적 도입이 가능**하다는 것입니다. 기존 비밀번호 로그인 폼을 유지하면서 passkey 지원을 추가할 수 있고, passkey가 없는 사용자는 기존대로 비밀번호를 입력합니다.
+### Conditional Create: 비밀번호에서 Passkey로 자연스러운 전환
 
-### Conditional Create
+반대 방향도 있습니다. 사용자가 비밀번호로 로그인에 성공한 후, 자동 완성 영역에 "이 사이트에 패스키 만들기" 옵션을 표시합니다. 별도 페이지로 보내거나 배너를 띄우지 않아도, 비밀번호 사용자를 passkey로 자연스럽게 전환할 수 있습니다. 현재 Safari와 일부 패스워드 매니저에서 지원합니다.
 
-Conditional UI의 반대 방향도 있습니다. 사용자가 비밀번호로 로그인에 성공한 후, 별도의 UI 없이 자동 완성 영역에 "이 사이트에 패스키 만들기" 옵션을 표시합니다. 비밀번호 사용자를 passkey로 자연스럽게 전환시키는 업그레이드 경로입니다. 현재 WebKit(Safari)과 일부 패스워드 매니저에서 지원합니다.
+## 보안: 왜 비밀번호보다 안전한가
 
-## 보안 속성 비교
+구체적으로 어떤 공격을 막을 수 있는지 비교해보겠습니다.
 
-| 위협 | 비밀번호 | OTP (TOTP/SMS) | Passkey |
+| 공격 유형 | 비밀번호 | OTP (TOTP/SMS) | Passkey |
 |:--|:--|:--|:--|
-| **피싱** | 취약 (사용자가 직접 입력) | 취약 (실시간 중계 가능) | **차단** (origin binding) |
-| **서버 침해** | 해시 유출 → 오프라인 크래킹 | 시드 유출 → OTP 생성 가능 | **무의미** (공개 키만 저장) |
-| **재사용 공격** | 같은 비밀번호로 다른 서비스 침투 | 시간 기반이라 제한적 | **불가** (RP별 키 쌍) |
-| **중간자 공격** | 가능 (자격 증명 중계) | 가능 (실시간 OTP 중계) | **차단** (챌린지-응답 서명) |
-| **무차별 대입** | 가능 (약한 비밀번호) | 가능 (6자리 숫자) | **불가** (비대칭 키) |
+| **피싱** | 가짜 사이트에 입력하면 끝 | 실시간 중계하면 뚫림 | **차단**. 도메인이 다르면 아예 동작 안 함 |
+| **서버 해킹** | 해시 유출 → 크래킹 가능 | 시드 유출 → OTP 생성 가능 | **무의미**. 공개 키만 있어서 할 수 있는 게 없음 |
+| **크리덴셜 스터핑** | 같은 비밀번호를 다른 사이트에 시도 | 해당 없음 | **불가**. 키 쌍이 도메인별로 다름 |
+| **중간자 공격** | 값을 가로채서 그대로 사용 가능 | 실시간 OTP 중계 가능 | **차단**. 챌린지 서명이 origin에 묶여 있음 |
 
-### Origin Binding이 피싱을 차단하는 구조
+### 피싱 방어가 동작하는 원리
 
-비밀번호와 OTP가 피싱에 취약한 이유는 사용자가 값을 **읽고 입력하는** 구조이기 때문입니다. 사용자는 주소창의 도메인을 확인해야 하지만, `examp1e.com`과 `example.com`을 매번 구분하기는 어렵습니다.
+비밀번호와 OTP가 피싱에 취약한 근본 원인은, 사용자가 값을 **눈으로 읽고 손으로 입력하는** 구조이기 때문입니다. `examp1e.com`(숫자 1)과 `example.com`(알파벳 l)을 매번 구분하긴 어렵습니다.
 
-Passkey에서는 사용자가 판단에 개입하지 않습니다.
+Passkey에서는 사용자의 판단이 개입하지 않습니다.
 
 ```
 1. 서버가 rpId: 'example.com'으로 챌린지 발급
 2. 브라우저가 현재 페이지의 origin과 rpId를 비교
-3. evil-example.com ≠ example.com → 자격 증명 접근 자체를 차단
-4. 사용자에게 선택지가 표시되지 않음 → 피싱 성공 불가
+3. evil-example.com ≠ example.com → 인증기에 요청 자체를 안 보냄
+4. 사용자에게 passkey 선택지가 아예 표시되지 않음
 ```
 
-이 검증은 브라우저 레벨에서 수행됩니다. JavaScript로 우회할 수 없고, 사용자의 실수가 개입할 여지가 없습니다.
+이 검증은 브라우저 내부에서 수행됩니다. JavaScript로 우회할 수 없습니다.
 
-### 다운그레이드 공격: Passkey도 만능은 아니다
+### 다운그레이드 공격: 완벽하진 않다
 
-Passkey 자체는 피싱에 면역이지만, **인증 시스템 전체**가 안전한 것은 별개 문제입니다. Proofpoint 연구팀이 문서화한 Microsoft Entra ID 대상 다운그레이드 공격이 대표적입니다. 피싱 프록시가 지원하지 않는 브라우저를 가장하면, Entra가 passkey를 비활성화하고 사용자를 비밀번호 같은 약한 폴백 수단으로 유도합니다.
+Passkey 자체의 암호학은 안전하지만, **인증 시스템 전체**가 안전한 건 별개입니다.
 
-이건 passkey의 암호학적 결함이 아니라 **폴백 경로의 설계 결함**입니다. Passkey의 보안 이점을 온전히 얻으려면, 약한 인증 수단으로의 폴백을 제거하거나 최소한 추가 검증을 요구해야 합니다.
+예를 들어 Proofpoint 연구팀이 발견한 Microsoft Entra ID 공격이 있습니다. 피싱 프록시가 "이 브라우저는 passkey를 지원하지 않습니다"라고 거짓말하면, Entra가 passkey를 비활성화하고 비밀번호 폴백으로 유도합니다. 사용자는 비밀번호를 입력하게 되고, 그걸 공격자가 가로챕니다.
 
-### signCount를 이용한 복제 탐지
+이건 passkey의 결함이 아니라 **폴백 경로의 설계 문제**입니다. Passkey의 보안을 온전히 얻으려면, 약한 인증 수단으로의 폴백을 없애거나 추가 검증을 걸어야 합니다.
 
-인증기는 매 인증 시 `signCount`를 1씩 증가시킵니다. 서버는 이전에 저장한 `signCount`보다 큰 값이 오는지 확인합니다.
+### signCount: 복제 탐지
+
+인증기는 인증할 때마다 내부 카운터(`signCount`)를 1씩 올립니다. 서버는 "지난번에 42였는데 이번에 43이 왔으니 정상"이라고 판단합니다. 만약 42 이하가 오면 인증기가 복제되었을 가능성이 있습니다.
 
 ```
-서버 저장된 signCount: 42
-→ 인증 요청의 signCount가 43 → 정상
-→ 인증 요청의 signCount가 42 이하 → 복제된 인증기 가능성 → 경고 또는 차단
+서버에 저장된 signCount: 42
+→ 이번 요청의 signCount가 43 → 정상
+→ 이번 요청의 signCount가 42 이하 → 복제 의심 → 경고 또는 차단
 ```
 
-다만 synced credential(passkey)의 경우 여러 기기에서 동시에 사용할 수 있어서 signCount의 단조 증가가 보장되지 않습니다. 일부 플랫폼은 synced credential에서 signCount를 항상 0으로 반환합니다. Device-bound credential에서는 여전히 유효한 보안 신호입니다.
+다만 synced passkey는 여러 기기에서 동시에 쓸 수 있어서, 카운터가 순서대로 증가하지 않을 수 있습니다. 일부 플랫폼은 synced passkey의 signCount를 항상 0으로 반환합니다. 하드웨어 보안 키 같은 device-bound credential에서는 여전히 유효한 탐지 수단입니다.
 
-## Attestation: 인증기의 출처 증명
+## Attestation: "어떤 인증기로 만들었나"
 
-Registration 과정에서 인증기는 선택적으로 **attestation**을 제공할 수 있습니다. 이건 "이 공개 키가 특정 제조사의 검증된 하드웨어에서 생성되었다"는 증명입니다.
+등록할 때 인증기는 선택적으로 **attestation**(증명)을 제공할 수 있습니다. "이 키 쌍은 인증받은 하드웨어에서 만들어졌습니다"라는 일종의 원산지 증명서입니다.
 
-| Attestation 유형 | 설명 | 용도 |
+| 유형 | 의미 | 언제 쓰나 |
 |:--|:--|:--|
-| **None** | attestation 없음 | 일반 소비자 서비스 (대부분) |
-| **Self** | 생성된 키 쌍 자체로 서명 | 인증기 종류 확인 불필요 시 |
-| **Packed** | 인증기 제조사의 인증서로 서명 | 엔터프라이즈, 인증기 모델 검증 필요 시 |
-| **TPM** | TPM 2.0 표준 attestation | Windows Hello 등 |
-| **Android Key** | Android Keystore attestation | Android 기기 |
-| **Apple** | Apple Anonymous Attestation | Apple 기기 (iCloud Keychain passkey) |
-| **FIDO U2F** | 레거시 U2F attestation | 이전 세대 보안 키 (CTAP1 호환) |
+| **None** | 증명 안 함. 인증기가 뭐든 상관없음 | 일반 소비자 서비스 (대부분 이걸 씀) |
+| **Self** | 방금 만든 키 쌍으로 스스로 서명 | 인증기 종류를 굳이 확인 안 할 때 |
+| **Packed** | 제조사가 인증기에 심어둔 인증서로 서명 | 특정 모델만 허용하고 싶을 때 (기업용) |
+| **TPM** | TPM 2.0 칩의 표준 attestation | Windows Hello |
+| **Android Key** | Android Keystore attestation | Android |
+| **Apple** | Apple Anonymous Attestation | Apple 기기 |
+| **FIDO U2F** | 이전 세대(CTAP1) 보안 키의 attestation | 레거시 호환 |
 
-대부분의 소비자 서비스에서는 `attestation: 'none'`이 적절합니다. 어떤 인증기를 사용하든 상관없이 공개 키 기반 인증의 보안 이점은 동일합니다. 엔터프라이즈 환경에서는 특정 FIDO Certified 인증기만 허용하기 위해 attestation을 검증하기도 합니다.
+대부분의 서비스에서는 `attestation: 'none'`이면 충분합니다. 어떤 인증기를 쓰든 공개 키 기반 인증의 보안 이점은 동일하니까요. 기업 환경에서 "반드시 FIDO Certified 하드웨어 키만 허용"하고 싶을 때 attestation 검증이 필요합니다.
 
-## 구현 시 고려사항
+## 구현할 때 알아야 할 것들
 
-### 복구 전략
+### 복구 전략은 반드시 필요하다
 
-Passkey만 지원하고 다른 인증 수단이 없으면, 모든 기기를 잃었을 때 계정에 접근할 수 없습니다. 실무에서는 다음과 같은 복구 전략이 필요합니다.
+Passkey만 지원하고 다른 인증 수단이 없으면, 모든 기기를 잃었을 때 계정에 접근할 방법이 없습니다.
 
 - **다중 passkey 등록**: 여러 기기에 passkey를 등록하도록 유도
-- **Device-bound 백업 키**: YubiKey 같은 하드웨어 키를 백업용으로 등록
-- **복구 코드**: 일회용 복구 코드를 오프라인에 보관하도록 안내
-- **점진적 전환**: 비밀번호를 즉시 제거하지 않고, passkey와 병행 운영
+- **하드웨어 백업 키**: YubiKey 같은 보안 키를 백업용으로 등록
+- **복구 코드**: 일회용 코드를 오프라인에 보관하도록 안내
+- **점진적 전환**: 비밀번호를 바로 제거하지 말고 passkey와 병행 운영
 
-### RP ID 설계
+### RP ID는 한 번 정하면 못 바꾼다
 
-`rp.id`는 등록 후 변경할 수 없습니다. 한 번 `example.com`으로 등록하면 나중에 `auth.example.com`으로 바꿀 수 없습니다.
+`rp.id`는 credential에 영구적으로 묶입니다. 처음에 잘 정해야 합니다.
 
 ```
-rp.id: 'example.com'
-→ example.com ✅
-→ app.example.com ✅ (하위 도메인에서 사용 가능)
-→ sub.app.example.com ✅
-→ other-domain.com ❌
+rp.id를 'example.com'으로 설정하면:
+  example.com       → ✅ 사용 가능
+  app.example.com   → ✅ 하위 도메인에서도 사용 가능
+  other-domain.com  → ❌ 불가
 
-rp.id: 'app.example.com'
-→ app.example.com ✅
-→ example.com ❌ (상위 도메인에서 사용 불가)
+rp.id를 'app.example.com'으로 설정하면:
+  app.example.com   → ✅
+  example.com       → ❌ 상위 도메인에서는 사용 불가
 ```
 
-서브도메인에서도 사용할 계획이 있다면 `rp.id`는 eTLD+1(registrable domain)로 설정하는 것이 안전합니다.
+나중에 서브도메인에서도 쓸 가능성이 있다면, `rp.id`는 가장 상위 도메인(eTLD+1)으로 설정하는 게 안전합니다.
 
-### Related Origin Requests (WebAuthn Level 3)
+### Related Origin Requests: 다른 도메인에서도 같은 Passkey 쓰기
 
-WebAuthn Level 3에서 추가된 기능으로, 서로 다른 origin에서 동일한 자격 증명을 사용할 수 있게 합니다. `example.com`과 `example.co.kr`처럼 RP ID가 다른 도메인 간에도 passkey를 공유할 수 있습니다.
+`example.com`과 `example.co.kr`처럼 아예 다른 도메인에서 같은 passkey를 쓰고 싶다면? WebAuthn Level 3의 Related Origin Requests를 사용합니다.
 
 ```
 https://example.com/.well-known/webauthn
 ```
 
-이 파일에 관련 origin 목록을 선언하면, 브라우저가 cross-origin passkey 사용을 허용합니다.
+이 파일에 관련 도메인 목록을 선언하면, 브라우저가 cross-origin passkey 사용을 허용합니다.
 
-## 비밀번호에서 Passkey로의 전환
+## 채택 현황
 
-FIDO Alliance에 따르면 10억 명 이상이 passkey를 활성화했고, 상위 100개 웹사이트 중 48%가 passkey를 지원합니다. 주요 수치를 보면 다음과 같습니다.
+FIDO Alliance에 따르면 10억 명 이상이 passkey를 활성화했고, 상위 100개 웹사이트 중 48%가 passkey를 지원합니다.
 
 - **Google**: 8억 개 이상의 계정이 passkey 사용. Workspace에서도 기본 인증 수단으로 권장
-- **Microsoft**: 2025년 5월부터 신규 계정의 기본 로그인 수단을 passkey로 설정. 인증 횟수 120% 증가
+- **Microsoft**: 2025년 5월부터 신규 계정의 기본 로그인을 passkey로 설정. 인증 횟수 120% 증가
 - **Apple**: iOS 26에서 CXP 구현. iCloud Keychain 외부로 passkey 내보내기 가능
 - **Amazon**: 출시 1년 만에 1억 7,500만 명이 passkey 생성
 
-규제 쪽에서도 움직임이 있습니다. **NIST SP 800-63-4**(2025년 7월)는 AAL2에서 피싱 방지 옵션 제공을 요구하며, synced passkey를 AAL2 인증기로 인정합니다. UAE 중앙은행은 2026년 3월까지 SMS/이메일 OTP 제거 지침을 내렸습니다.
+규제도 움직이고 있습니다. **NIST SP 800-63-4**(2025년 7월)는 AAL2(인증 보증 레벨 2)에서 피싱 방지 옵션 제공을 요구하며, synced passkey를 AAL2 인증기로 인정합니다. UAE 중앙은행은 2026년 3월까지 SMS/이메일 OTP 제거 지침을 내렸습니다.
 
-## OAuth와의 관계
+## OAuth, Cookie와의 관계
 
-[OAuth Deep Dive](/posts/oauth-deep-dive)에서 다룬 것처럼 OAuth는 **인가(Authorization)** 프로토콜이고, WebAuthn/Passkey는 **인증(Authentication)** 메커니즘입니다. 둘은 경쟁이 아니라 상호보완입니다.
+[OAuth Deep Dive](/posts/oauth-deep-dive)에서 다뤘듯이 OAuth는 **인가**(누가 어떤 리소스에 접근할 수 있는가) 프로토콜입니다. Passkey는 **인증**(이 사람이 누구인가) 메커니즘입니다. 둘은 경쟁이 아니라 다른 계층의 문제를 풉니다.
 
 ```
-[사용자] ──(Passkey로 인증)──→ [Authorization Server]
-                                        ↓
+사용자 ──(Passkey로 인증)──→ IdP (Google, Apple 등)
+                                     │
                               OAuth 토큰 발급 (인가)
-                                        ↓
-                              [Client 앱이 API 접근]
+                                     │
+                              Client 앱이 API 접근
 ```
 
-IdP(Google, Apple 등)의 로그인 단계에서 비밀번호 대신 passkey를 사용하는 것입니다. OAuth의 Authorization Code Grant 흐름은 그대로이고, 사용자가 IdP에서 본인을 증명하는 방법만 비밀번호에서 passkey로 바뀝니다.
+Google 로그인 버튼을 누르면 Google IdP에서 본인 확인을 합니다. 이 단계에서 비밀번호 대신 passkey를 쓰는 겁니다. 그 뒤의 OAuth Authorization Code 흐름은 바뀌지 않습니다.
 
-[Cookie Deep Dive](/posts/cookie-deep-dive)에서 CSRF와 XSS의 위협을 다뤘는데, passkey는 인증 단계의 위협(피싱, 자격 증명 유출)을 제거합니다. 세션이 만들어진 이후의 보안(CSRF, XSS)은 여전히 쿠키 보안과 별도로 다뤄야 합니다.
+[Cookie Deep Dive](/posts/cookie-deep-dive)에서 다뤘던 CSRF, XSS는 **로그인 이후** 세션을 보호하는 문제입니다. Passkey는 **로그인 자체**를 보호합니다. Passkey로 안전하게 로그인한 뒤에도, 세션 쿠키의 보안(HttpOnly, SameSite 등)은 별도로 신경 써야 합니다.
 
 ## 참고
 

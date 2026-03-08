@@ -262,31 +262,54 @@ Push-Pull 알고리즘은 Push 단계에서 `b`, `c`, `d` 모두를 dirty로 표
 
 ### Watcher로 effect 구현하기
 
-표준 폴리필 저장소에서 제공하는 `effect()` 구현 예제입니다.
+공식 폴리필 저장소([signal-polyfill](https://github.com/proposal-signals/signal-polyfill))에서 제공하는 `effect()` 구현 예제입니다.
 
 ```javascript
-function effect(callback) {
+import { Signal } from "signal-polyfill";
+
+// 모든 effect가 공유하는 단일 Watcher
+let needsEnqueue = true;
+
+const w = new Signal.subtle.Watcher(() => {
+  // 여러 Signal이 동시에 dirty해져도 마이크로태스크는 한 번만 등록
+  if (needsEnqueue) {
+    needsEnqueue = false;
+    queueMicrotask(processPending);
+  }
+});
+
+function processPending() {
+  needsEnqueue = true;
+
+  // dirty 상태인 Signal들을 모아서 한꺼번에 처리
+  for (const s of w.getPending()) {
+    s.get(); // Pull → 콜백 재실행
+  }
+
+  // 다시 감시 상태로 리셋
+  w.watch();
+}
+
+export function effect(callback) {
   let cleanup;
 
   const computed = new Signal.Computed(() => {
-    cleanup?.();                      // 이전 정리 함수 실행
-    cleanup = callback();             // 콜백 실행, 정리 함수 저장
+    typeof cleanup === "function" && cleanup();
+    cleanup = callback();
   });
 
-  const watcher = new Signal.subtle.Watcher(() => {
-    // dirty해지면 마이크로태스크로 스케줄링
-    queueMicrotask(() => computed.get());
-  });
-
-  watcher.watch(computed);
+  w.watch(computed);
   computed.get(); // 최초 실행 — 의존성 등록
 
   return () => {
-    watcher.unwatch(computed);
-    cleanup?.();
+    w.unwatch(computed);
+    typeof cleanup === "function" && cleanup();
+    cleanup = undefined;
   };
 }
 ```
+
+핵심 포인트는 **단일 Watcher를 모든 effect가 공유**한다는 것입니다. 여러 Signal이 동시에 바뀌어도 마이크로태스크는 한 번만 등록되고, `processPending()`에서 dirty한 것들을 한꺼번에 처리합니다.
 
 동작 과정을 단계별로 보겠습니다.
 

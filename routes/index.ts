@@ -7,7 +7,7 @@ export default defineEventHandler(async () => {
       (p) =>
         `<div class=pi><a href="/posts/${p.slug}" class=pt>${p.title}</a>${
           p.tags.length
-            ? `<div class=pp>${p.tags.map((t) => `<a href="/t/${t}" class=pg>${t}</a>`).join("")}</div>`
+            ? `<div class=pp>${p.tags.filter((t) => t !== "ai-content").map((t) => `<a href="/t/${t}" class=pg>${t}</a>`).join("")}</div>`
             : ""
         }</div>`
     )

@@ -70,6 +70,7 @@ export async function getAllTags(): Promise<Record<string, number>> {
   const m: Record<string, number> = {};
   posts.forEach((p) => {
     p.tags.forEach((t) => {
+      if (t === "ai-content") return;
       m[t] = (m[t] || 0) + 1;
     });
   });

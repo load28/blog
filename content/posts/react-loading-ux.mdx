@@ -44,41 +44,11 @@ const showSkeleton = useSpinDelay(isLoading, {
 return showSkeleton ? <Skeleton /> : <Content />;
 ```
 
-### Optimistic UI
-
-CRUD 작업(저장, 삭제 등)에 적합합니다. 서버 응답 전에 UI를 먼저 업데이트하고 실패 시 롤백하는 방식입니다.
-
 | 상황 | 권장 패턴 |
 |:--|:--|
 | 페이지 초기 데이터 로딩 | Skeleton + delay |
 | 버튼 클릭 → 목록 갱신 | Delayed Spinner (delay: 300~500ms) |
-| 폼 저장/삭제 | Optimistic UI |
 | 파일 업로드 등 긴 작업 | Determinate Progress Bar |
-
-## React 18의 접근: useTransition
-
-React 18에서는 이 문제를 언어 레벨에서 해결했습니다. `useTransition`은 특정 상태 업데이트의 우선순위를 낮춰서, 새 콘텐츠가 준비될 때까지 이전 콘텐츠를 유지합니다.
-
-```typescript
-const [isPending, startTransition] = useTransition();
-
-function handleTabChange(tab) {
-  startTransition(() => {
-    setActiveTab(tab);
-  });
-}
-
-return (
-  <div style={{ opacity: isPending ? 0.6 : 1 }}>
-    <Content />
-  </div>
-);
-```
-
-React의 정식 답변은 "스켈레톤을 얼마나 보여줄지 고민하지 말고, 이전 콘텐츠를 유지하다가 새 콘텐츠가 준비되면 교체하라"는 방향입니다.
-다만 opacity 처리 자체도 결국 "뭔가 어색한" 느낌이 남습니다. 흐리게 만드는 것 자체가 로딩과 다를 바 없기 때문입니다.
-
-이 한계가 결국 더 근본적인 질문으로 이어집니다. **"로딩을 어떻게 예쁘게 보여줄까"가 아니라 "로딩을 아예 안 보여줄 수 있는가"** 를 먼저 고민하는 것이 React 18의 철학입니다.
 
 ## 로딩을 없애는 전략: 캐시
 

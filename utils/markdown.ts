@@ -65,6 +65,27 @@ export function md2html(s: string): string {
       continue;
     }
 
+    if (l.match(/^<(div|style|svg|section|figure|details|table|iframe|script)\b/i)) {
+      const htmlBuf: string[] = [l];
+      const tagMatch = l.match(/^<(\w+)/);
+      if (tagMatch) {
+        const tag = tagMatch[1].toLowerCase();
+        let depth = 1;
+        if (l.includes("</" + tag + ">")) {
+          depth = 0;
+        }
+        while (depth > 0 && i + 1 < lines.length) {
+          i++;
+          htmlBuf.push(lines[i]);
+          const opens = (lines[i].match(new RegExp("<" + tag + "[\\s>]", "gi")) || []).length;
+          const closes = (lines[i].match(new RegExp("</" + tag + ">", "gi")) || []).length;
+          depth += opens - closes;
+        }
+      }
+      out.push(htmlBuf.join("\n"));
+      continue;
+    }
+
     if (l.match(/^#{1,6}\s/)) {
       const lv = l.indexOf(" ");
       const tg = "h" + lv;

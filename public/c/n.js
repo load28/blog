@@ -1,5 +1,22 @@
 (function(){
-var C={},root=document.getElementById("a");
+var C={},F={},root=document.getElementById("a");
+
+function canPrefetch(){
+  var c=navigator.connection;
+  if(c&&(c.saveData||c.effectiveType==="slow-2g"||c.effectiveType==="2g"))return false;
+  return true;
+}
+
+function prefetch(h){
+  if(C[h]||F[h]||!canPrefetch())return;
+  F[h]=1;
+  fetch(h).then(function(r){return r.text()}).then(function(html){
+    var doc=new DOMParser().parseFromString(html,"text/html");
+    var el=doc.getElementById("a");
+    var t=doc.querySelector("title");
+    C[h]={h:el?el.innerHTML:"",t:t?t.textContent:""};
+  }).catch(function(){delete F[h]});
+}
 
 function init(){
   bind(root);
@@ -8,19 +25,31 @@ function init(){
 }
 
 function bind(el){
+  var io=window.IntersectionObserver&&new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(!e.isIntersecting)return;
+      var h=e.target.getAttribute("href");
+      io.unobserve(e.target);
+      if(typeof requestIdleCallback!=="undefined"){
+        requestIdleCallback(function(){prefetch(h)});
+      }else{
+        setTimeout(function(){prefetch(h)},200);
+      }
+    });
+  },{rootMargin:"200px 0px"});
   el.querySelectorAll("a[href]").forEach(function(a){
     if(a.dataset.b)return;
     a.dataset.b="1";
     var h=a.getAttribute("href");
     if(!h||h.startsWith("http")||h.startsWith("/portfolio")||a.target==="_blank")return;
+    var tid;
     a.addEventListener("pointerenter",function(){
-      if(!C[h])fetch(h).then(function(r){return r.text()}).then(function(html){
-        var doc=new DOMParser().parseFromString(html,"text/html");
-        var el=doc.getElementById("a");
-        var t=doc.querySelector("title");
-        C[h]={h:el?el.innerHTML:"",t:t?t.textContent:""};
-      });
-    },{once:true});
+      tid=setTimeout(function(){prefetch(h)},65);
+    });
+    a.addEventListener("pointerleave",function(){
+      if(tid)clearTimeout(tid);
+    });
+    if(io)io.observe(a);
     a.addEventListener("click",function(e){
       e.preventDefault();
       go(h);

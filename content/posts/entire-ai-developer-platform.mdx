@@ -12,7 +12,7 @@ Entire는 이 빈 공간을 채우는 플랫폼입니다. GitHub가 코드를 �
 
 ## 배경
 
-전 GitHub CEO **Thomas Dohmke**가 2025년 8월 GitHub을 떠난 후 런칭한 프로젝트입니다. **6천만 달러(약 870억 원)의 시드 라운드**를 유치했는데, 이는 개발자 도구 역사상 최대 규모의 시드 투자입니다. Felicis가 리드하고, Madrona, Basis Set, Microsoft의 벤처 펀드인 M12가 참여했습니다.
+전 GitHub CEO **Thomas Dohmke**가 2025년 8월 퇴임을 발표하고, 2025년 말 GitHub을 떠난 뒤 2026년 2월에 런칭한 프로젝트입니다. **6천만 달러(약 870억 원)의 시드 라운드**를 유치했는데, 이는 개발자 도구 역사상 최대 규모의 시드 투자입니다. Felicis가 리드하고, Madrona, Basis Set, Microsoft의 벤처 펀드인 M12가 참여했습니다.
 
 Dohmke는 GitHub를 단순 코드 저장소에서 Copilot 중심의 AI 플랫폼으로 진화시킨 사람입니다. 그가 GitHub을 떠나면서 내린 판단은 명확합니다. **GitHub는 인간 대 인간 협업을 위해 만들어졌고, AI 에이전트 시대를 위해 설계된 게 아니라는 것**입니다.
 
@@ -119,25 +119,26 @@ Entire를 쓰면 프롬프트가 영구 기록으로 남습니다. "이거 고�
 
 ## External Agent Plugin 프로토콜
 
-Entire는 External Agent Plugin 프로토콜을 공개했습니다. `entire-agent-<이름>` 형식의 실행 파일을 만들어 `$PATH`에 두면 CLI가 자동으로 감지합니다.
+Entire는 Claude Code의 훅 시스템을 활용하여 에이전트 세션을 캡처합니다. 내부적으로 다음과 같은 이벤트를 처리합니다.
 
-| 이벤트 | 설명 |
+| 훅 이벤트 | 설명 |
 |---|---|
 | SessionStart / SessionEnd | 에이전트 세션 시작·종료 |
-| TurnStart / TurnEnd | 프롬프트 제출·응답 완료 |
-| Compaction | 컨텍스트 윈도우 압축 |
-| SubagentStart / SubagentEnd | 서브에이전트 생성·완료 |
+| UserPromptSubmit | 프롬프트 제출 시점 |
+| Stop | 에이전트 턴 완료 후 체크포인트 저장 |
+| PreToolUse / PostToolUse[Task] | 서브에이전트 생성·완료 모니터링 |
+| PostToolUse[TodoWrite] | 태스크 상태 변경 캡처 |
 
 MCP가 "에이전트가 외부 도구를 쓰는 표준"이 된 것처럼, 이 프로토콜이 **"에이전트의 컨텍스트를 버전 관리하는 표준"** 이 될 수 있는 구조입니다.
 
-## 3단계 로드맵
+## 3계층 플랫폼 구조
 
-현재 출시한 Checkpoints는 3계층 플랫폼 중 첫 번째 제품에 불과합니다.
+Entire는 3개의 레이어로 구성된 플랫폼을 구축하고 있습니다. Checkpoints는 이 중 첫 번째로 출시된 제품입니다.
 
 ```text
-현재      →  에이전트 세션 기록/리윈드 (Checkpoints)
-가까운 미래 →  "왜 이렇게 만들었나" 전체 추론 쿼리 (시맨틱 레이어)
-먼 미래    →  GitHub 자체를 대체하는 AI 시대용 분산 개발자 플랫폼 (새로운 Git 호환 DB)
+기반 레이어  →  새로운 Git 호환 데이터베이스 (처음부터 AI 에이전트를 위해 설계)
+중간 레이어  →  멀티 에이전트 조율을 위한 시맨틱 추론 레이어
+상위 레이어  →  AI 네이티브 사용자 인터페이스
 ```
 
 ## 마치며

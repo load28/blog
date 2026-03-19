@@ -73,32 +73,34 @@ entire explain --commit abc1234
 
 # AI 요약 자동 생성 (토큰 소모)
 entire explain --checkpoint a3b2c4d5 --generate
-
-# 다른 브랜치의 세션 이어받기 (rewind와 별개 명령어)
-entire resume feature/auth-branch
 ```
 
-## Rewind와 Resume: 별개의 명령어
+## 체크포인트 복원하기: Rewind와 Resume
 
-`entire rewind`와 `entire resume`는 별개의 독립 명령어입니다.
+에이전트 작업을 되돌리거나 이어받을 때 Entire는 두 가지 방식을 제공합니다. 둘 다 체크포인트를 기반으로 코드와 세션 상태를 복원한다는 점은 같지만, **어디에서** 체크포인트를 가져오느냐가 다릅니다.
 
-### Rewind — 현재 세션 내에서 되감기
+### Rewind — 현재 브랜치에서 되감기
 
-리윈드는 현재 세션에서 이전 체크포인트로 **코드 파일**과 **세션 로그(JSONL 파일)**를 롤백합니다. Claude의 컨텍스트 윈도우는 Entire가 직접 제어할 수 없으므로, Claude Code를 종료 후 재시작해서 컨텍스트를 초기화해야 합니다.
+지금 작업 중인 브랜치 안에서 이전 체크포인트로 돌아갑니다. 코드 파일과 세션 로그(JSONL)가 함께 롤백됩니다.
 
-```text
-1. entire rewind --to <checkpoint-id>    ← 코드 + 세션 로그 복원
-2. Claude Code 종료 후 재시작              ← 컨텍스트 윈도우 초기화
+```bash
+entire rewind --list                    # 체크포인트 목록 확인
+entire rewind                           # 대화형으로 선택
+entire rewind --to <checkpoint-id>      # 특정 체크포인트로 이동
 ```
 
-### Resume — 다른 브랜치의 세션 이어받기
+Claude의 컨텍스트 윈도우는 Entire가 직접 제어할 수 없으므로, 리윈드 후 Claude Code를 재시작해서 컨텍스트를 초기화해야 합니다.
 
-`entire resume`는 리윈드의 후속 단계가 아니라, **브랜치를 전환하고 해당 브랜치의 최신 체크포인트 세션을 복원**하는 별도 명령어입니다. 동료가 작업하던 브랜치를 이어받거나, 다른 브랜치에서 중단했던 작업을 재개할 때 사용합니다.
+### Resume — 다른 브랜치에서 이어받기
+
+같은 원리를 브랜치를 넘어서 적용합니다. 다른 브랜치의 최신 체크포인트를 가져와 코드와 세션 상태를 복원합니다. 동료가 작업하던 브랜치를 이어받거나, 다른 브랜치에서 중단했던 작업을 재개할 때 씁니다.
 
 ```bash
 # feature/auth 브랜치의 최신 세션을 복원하고 이어서 작업
 entire resume feature/auth
 ```
+
+정리하면 rewind는 "같은 브랜치, 과거 시점"으로, resume는 "다른 브랜치, 최신 시점"으로 체크포인트를 복원하는 것입니다.
 
 ## 저장 구조
 

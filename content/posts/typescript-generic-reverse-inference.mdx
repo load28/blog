@@ -1,0 +1,221 @@
+---
+title: 'TypeScript 제네릭의 역방향 추론 한계와 infer 패턴'
+date: '2026-03-20'
+tags: ['typescript', 'generic', 'type-system']
+---
+
+제네릭 함수에서 타입 파라미터가 여러 개일 때, TypeScript가 일부 타입을 제대로 추론하지 못하는 경우가 있습니다. 타입 체크 자체는 통과하지만 에러 메시지가 불명확하거나, 반환 타입이 `unknown`으로 폴백되는 현상입니다. 이 글에서는 왜 이런 일이 발생하는지 원리를 분석하고, `infer`를 활용한 해결 패턴을 다룹니다.
+
+## 문제 상황
+
+API 엔드포인트를 타입 세이프하게 호출하는 함수를 만든다고 가정합니다.
+
+```typescript
+interface Endpoint<TParams, TResponse> {
+  path: string;
+  _params: TParams;
+  _response: TResponse;
+}
+
+type UserParams = { userId: string };
+type UserResponse = { name: string; email: string };
+
+declare const getUser: Endpoint<UserParams, UserResponse>;
+```
+
+이 엔드포인트를 호출하는 제네릭 함수를 만들 때, 직관적으로 이렇게 작성하게 됩니다.
+
+```typescript
+declare function fetch<
+  TParams,
+  TResponse,
+  TEndpoint extends Endpoint<TParams, TResponse>
+>(endpoint: TEndpoint, params: TParams): TResponse;
+```
+
+의도는 명확합니다. `endpoint`에서 `TEndpoint`를 추론하고, `extends Endpoint<TParams, TResponse>` 제약에서 `TParams`와 `TResponse`를 역으로 추론하는 것입니다.
+
+```typescript
+const result = fetch(getUser, { userId: '1' });
+//    ^? const result: unknown
+```
+
+`TEndpoint`는 `Endpoint<UserParams, UserResponse>`로 정확히 추론되지만, `TResponse`는 `unknown`으로 폴백됩니다. 반환 타입에서 자동완성이 동작하지 않고, `result.name`에 접근하면 에러가 납니다.
+
+## 왜 역방향 추론이 안 되는가
+
+TypeScript의 제네릭 추론은 **인자에서 타입으로** 흐릅니다. 이걸 순방향 추론이라고 합니다.
+
+```typescript
+declare function identity<T>(value: T): T;
+identity("hello");  // T = string (인자에서 추론)
+```
+
+문제는 `extends` 제약에서의 추론입니다.
+
+```typescript
+TEndpoint extends Endpoint<TParams, TResponse>
+```
+
+이 구문에서 TypeScript가 하는 일은 **"TEndpoint가 Endpoint<TParams, TResponse>의 서브타입인가?"를 검사**하는 것뿐입니다. `Endpoint` 내부에 있는 `UserParams`를 꺼내서 `TParams`에 할당하는 동작은 하지 않습니다. `extends`는 관계 선언이지 타입 추출 지시가 아니기 때문입니다.
+
+결과적으로 각 제네릭은 **독립적으로** 추론됩니다.
+
+| 제네릭 | 추론 소스 | 결과 |
+|:--|:--|:--|
+| `TEndpoint` | `endpoint` 인자 | `Endpoint<UserParams, UserResponse>` |
+| `TParams` | `params` 인자 | 전달된 값의 타입 (예: `{ userId: string }`) |
+| `TResponse` | 추론할 소스 없음 | `unknown` |
+
+`TParams`는 `params` 인자에서 직접 추론됩니다. `extends` 제약을 통해 `TEndpoint` 내부에서 가져오는 게 아닙니다. `TResponse`는 반환 타입에만 사용되므로 추론할 소스 자체가 없어서 `unknown`으로 폴백됩니다.
+
+### 증명
+
+```typescript
+// TParams는 실제 전달된 인자에서 추론됨
+const r1 = fetch(getUser, {});
+//  fetch<{}, unknown, Endpoint<UserParams, UserResponse>>
+//         ↑ params에 {}를 전달 → TParams = {}
+
+const r2 = fetch(getUser, { userId: '1' });
+//  fetch<{ userId: string }, unknown, Endpoint<UserParams, UserResponse>>
+//         ↑ params에 { userId: '1' }을 전달 → TParams = { userId: string }
+```
+
+`TParams`가 전달된 값에 따라 바뀌는 것을 확인할 수 있습니다. 만약 역방향 추론이 작동했다면 `TParams`는 항상 `UserParams`여야 합니다. 그리고 `TResponse`는 어떤 경우에도 `unknown`입니다.
+
+## 해결: any 우회 + infer 추출
+
+핵심 아이디어는 두 단계로 나누는 것입니다.
+
+1. **외부**: `extends`의 제약을 `any`로 느슨하게 열어서 모든 엔드포인트를 허용
+2. **내부**: `infer`로 실제 타입을 정확히 추출
+
+```typescript
+type AnyEndpoint = Endpoint<any, any>;
+
+type ExtractParams<T> = T extends Endpoint<infer P, any> ? P : never;
+type ExtractResponse<T> = T extends Endpoint<any, infer R> ? R : never;
+
+declare function fetch<TEndpoint extends AnyEndpoint>(
+  endpoint: TEndpoint,
+  params: ExtractParams<TEndpoint>
+): ExtractResponse<TEndpoint>;
+```
+
+### 작동 원리
+
+```
+fetch(getUser, { userId: '1' })
+  │
+  ▼
+TEndpoint = Endpoint<UserParams, UserResponse>  (인자에서 순방향 추론)
+  │
+  ├─ ExtractParams<TEndpoint>
+  │    = Endpoint<UserParams, UserResponse> extends Endpoint<infer P, any> ? P : never
+  │    = UserParams                                          ↑ 패턴 매칭으로 추출
+  │
+  └─ ExtractResponse<TEndpoint>
+       = Endpoint<UserParams, UserResponse> extends Endpoint<any, infer R> ? R : never
+       = UserResponse                                             ↑ 패턴 매칭으로 추출
+```
+
+`infer`는 조건부 타입 안에서 **"이 위치의 타입을 변수에 담아라"** 라는 명시적 지시입니다. `extends`가 "서브타입인가?"를 묻는 관계 선언이라면, `infer`는 "내부 타입을 꺼내라"는 추출 명령입니다.
+
+### 결과 비교
+
+```typescript
+// ❌ 역방향 추론 시도
+const broken = fetch(getUser, { userId: '1' });
+//    ^? const broken: unknown
+//    broken.name → 에러
+
+// ✅ infer로 추출
+const fixed = fetch(getUser, { userId: '1' });
+//    ^? const fixed: UserResponse
+//    fixed.name  → 자동완성
+//    fixed.email → 자동완성
+```
+
+파라미터 누락 시 에러 메시지도 달라집니다.
+
+```typescript
+// ❌ 역방향 추론 - TParams가 {}로 추론되어 에러가 불명확하거나 누락
+fetch(getUser, {});
+
+// ✅ infer 추출 - 정확한 타입에서 누락된 필드를 알려줌
+fetch(getUser, {});
+// Property 'userId' is missing in type '{}'
+// but required in type 'UserParams'.
+```
+
+## 왜 any를 쓰는가
+
+`Endpoint<TParams, TResponse>` 대신 `Endpoint<any, any>`로 제약하는 이유는 **공변성(covariance)** 문제 때문입니다.
+
+```typescript
+// 이렇게 쓰면 공변성 문제 발생
+declare function fetch<TEndpoint extends Endpoint<Record<string, string>, unknown>>(
+  endpoint: TEndpoint,
+  params: ExtractParams<TEndpoint>
+): ExtractResponse<TEndpoint>;
+```
+
+`UserParams`(`{ userId: string }`)는 명시적 속성을 가진 타입이고, `Record<string, string>`은 인덱스 시그니처 타입입니다. TypeScript에서 이 둘은 호환되지 않을 수 있습니다. `any`를 쓰면 이 제약을 우회하고, 실제 타입 체크는 `ExtractParams`와 `ExtractResponse`에서 수행합니다.
+
+제약 조건의 역할 분리라고 볼 수 있습니다. **`extends AnyEndpoint`은 "이것은 Endpoint 구조를 가진 값이다"라는 구조 검증**만 담당하고, **`ExtractParams<TEndpoint>`이 실제 타입 정확성을 보장**합니다.
+
+## 실제 적용: 라우팅 타입 시스템
+
+이 패턴은 라우터 타입 시스템에서 동일하게 적용됩니다.
+
+```typescript
+interface TypedRoute<TParams, TQueryStates> {
+  path: string;
+  _params: TParams;
+  _queryStates: TQueryStates;
+}
+
+type AnyTypedRoute = TypedRoute<any, any>;
+type ExtractParams<T> = T extends TypedRoute<infer P, any> ? P : never;
+type ExtractQueryStates<T> = T extends TypedRoute<any, infer Q> ? Q : never;
+```
+
+`router.push`에 이 패턴을 적용하면, 라우트 객체에서 필요한 파라미터 타입을 정확히 추론합니다.
+
+```typescript
+interface Router {
+  push: <TRoute extends AnyTypedRoute>(
+    route: TRoute,
+    options: NavigateOptions<ExtractParams<TRoute>, ExtractQueryStates<TRoute>>
+  ) => void;
+}
+```
+
+```typescript
+router.push(Routes.member.detail, {
+  params: { franchiseId: '1', centerId: '2' }, // memberId 누락
+});
+// Property 'memberId' is missing in type '{ franchiseId: string; centerId: string; }'
+// but required in type 'MemberDetailParams'.
+```
+
+에러 메시지가 어떤 파라미터가 누락되었는지 정확히 알려줍니다.
+
+## 정리
+
+| 구분 | `extends` 제약 | `infer` 추출 |
+|:--|:--|:--|
+| 역할 | 서브타입 관계 검사 | 내부 타입 추출 |
+| 추론 방향 | 순방향만 (인자 → 타입) | 패턴 매칭 (구조 → 타입) |
+| 한계 | 제약에서 역방향 추론 불가 | 조건부 타입 안에서만 사용 가능 |
+
+TypeScript의 제네릭 추론은 순방향으로만 안정적으로 작동합니다. 여러 제네릭 파라미터가 `extends` 제약으로 연결되어 있을 때 역방향 추론을 기대하면, 타입이 `unknown`이나 `{}`로 폴백되는 문제가 발생합니다.
+
+해결 패턴은 단순합니다. **`any`로 제약을 열고, `infer`로 정확히 추출한다.** `extends`에게 관계 검증만 맡기고, 타입 추출은 `infer`에게 명시적으로 지시하는 2단계 전략입니다.
+
+## References
+
+- [TypeScript Handbook — Conditional Types](https://www.typescriptlang.org/docs/handbook/2/conditional-types.html)
+- [TypeScript Handbook — Generics](https://www.typescriptlang.org/docs/handbook/2/generics.html)
+- [TypeScript Playground](https://www.typescriptlang.org/play)

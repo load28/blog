@@ -1,7 +1,7 @@
 ---
 title: 'TypeScript 제네릭의 역방향 추론 한계와 infer 패턴'
 date: '2026-03-20'
-tags: ['typescript', 'generic', 'type-system']
+tags: ['typescript', 'generic', 'type-system', 'ai-content']
 ---
 
 제네릭 함수에서 타입 파라미터가 여러 개일 때, TypeScript가 일부 타입을 제대로 추론하지 못하는 경우가 있습니다. 타입 체크 자체는 통과하지만 에러 메시지가 불명확하거나, 반환 타입이 `unknown`으로 폴백되는 현상입니다. 이 글에서는 왜 이런 일이 발생하는지 원리를 분석하고, `infer`를 활용한 해결 패턴을 다룹니다.

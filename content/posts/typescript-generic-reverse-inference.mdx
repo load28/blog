@@ -151,19 +151,31 @@ fetch(getUser, {});
 
 ## 왜 any를 쓰는가
 
-`Endpoint<TParams, TResponse>` 대신 `Endpoint<any, any>`로 제약하는 이유는 **공변성(covariance)** 문제 때문입니다.
+`Endpoint<TParams, TResponse>` 대신 `Endpoint<any, any>`로 제약하는 이유는 **범용성** 문제 때문입니다.
+
+제약 조건에 구체적인 타입을 넣으면, 그 타입과 호환되지 않는 엔드포인트는 사용할 수 없습니다.
 
 ```typescript
-// 이렇게 쓰면 공변성 문제 발생
+// Record<string, string>으로 제약하면?
 declare function fetch<TEndpoint extends Endpoint<Record<string, string>, unknown>>(
   endpoint: TEndpoint,
   params: ExtractParams<TEndpoint>
 ): ExtractResponse<TEndpoint>;
 ```
 
-`UserParams`(`{ userId: string }`)는 명시적 속성을 가진 타입이고, `Record<string, string>`은 인덱스 시그니처 타입입니다. TypeScript에서 이 둘은 호환되지 않을 수 있습니다. `any`를 쓰면 이 제약을 우회하고, 실제 타입 체크는 `ExtractParams`와 `ExtractResponse`에서 수행합니다.
+`{ userId: string }` 같은 string-only params는 `Record<string, string>`에 호환되므로 통과합니다. 하지만 params에 `number`나 `boolean` 같은 타입이 포함되면 호환되지 않아 에러가 발생합니다.
 
-제약 조건의 역할 분리라고 볼 수 있습니다. **`extends AnyEndpoint`은 "이것은 Endpoint 구조를 가진 값이다"라는 구조 검증**만 담당하고, **`ExtractParams<TEndpoint>`이 실제 타입 정확성을 보장**합니다.
+```typescript
+type OrderParams = { orderId: number; status: string };
+declare const getOrder: Endpoint<OrderParams, OrderResponse>;
+
+// ❌ orderId가 number라서 Record<string, string>에 할당 불가
+fetch(getOrder, { orderId: 1, status: 'pending' });
+```
+
+모든 params 타입을 커버하는 범용 제약 조건을 만드는 것은 불가능합니다. `any`를 쓰면 이 문제를 근본적으로 우회하고, 실제 타입 체크는 `ExtractParams`와 `ExtractResponse`에서 수행합니다.
+
+제약 조건의 역할 분리입니다. **`extends AnyEndpoint`은 "이것은 Endpoint 구조를 가진 값이다"라는 구조 검증**만 담당하고, **`ExtractParams<TEndpoint>`이 실제 타입 정확성을 보장**합니다.
 
 ## 실제 적용: 라우팅 타입 시스템
 

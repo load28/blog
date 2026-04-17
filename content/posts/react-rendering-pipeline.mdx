@@ -4,7 +4,7 @@ date: '2026-04-17'
 tags: ['react', 'fiber', 'rendering', 'internals', 'ai-content']
 ---
 
-React의 렌더링을 "컴포넌트 함수를 다시 실행하는 것"이라고만 이해하면 몇 가지 질문에 답하기 어렵습니다. `useLayoutEffect`는 왜 DOM 측정이 가능한가, `useEffect`는 언제 실행되는가, 리렌더가 여러 번 DOM을 수정하는데 왜 화면이 깜빡이지 않는가. 이 글에서는 React 소스 코드(`ReactFiberWorkLoop`, `ReactFiberCommitWork`, `ReactFiberCompleteWork`)를 기반으로, 초기 마운트와 리렌더의 전체 흐름을 시간순으로 정리합니다.
+React의 렌더링을 "컴포넌트 함수를 다시 실행하는 것"이라고만 이해하면 몇 가지 질문에 답하기 어렵습니다. `useLayoutEffect`는 왜 DOM 측정이 가능한가, `useEffect`는 언제 실행되는가, 리렌더가 여러 번 DOM을 수정하는데 왜 화면이 깜빡이지 않는가. 이 글에서는 초기 마운트와 리렌더의 흐름을 단계별로 정리하면서, 내부에서 실제로 무슨 일이 일어나는지 살펴봅니다.
 
 ## 파이프라인 전체 구조
 
@@ -14,186 +14,115 @@ React는 컴포넌트 생명주기를 네 단계로 나눕니다.
 Trigger → Render → Commit → Passive Effects
 ```
 
-| 단계 | 역할 | 주요 함수 |
-|---|---|---|
-| Trigger | `setState`, props 변경 등 | `scheduleUpdateOnFiber` |
-| Render | Fiber 트리 순회로 변경사항 계산 | `beginWork`, `completeWork` |
-| Commit | 실제 DOM 반영, layout effect 실행 | `commitMutationEffects`, `commitLayoutEffects` |
-| Passive Effects | `useEffect` setup/cleanup | `flushPassiveEffects` |
+| 단계 | 역할 |
+|---|---|
+| Trigger | `setState`, props 변경 등으로 업데이트 시작 |
+| Render | Fiber 트리를 순회하면서 변경사항 계산 |
+| Commit | 실제 DOM 반영 + layout effect 실행 |
+| Passive Effects | `useEffect` setup / cleanup 실행 |
 
 Render는 중단·취소 가능한 비동기 작업이고, Commit은 동기적이며 취소할 수 없습니다. Passive Effects는 브라우저 페인트 이후 별도 태스크로 실행됩니다.
 
-## Fiber 노드의 두 flag 필드
+## Fiber가 "변경된 곳만" 찾아가는 방식
 
-Commit 단계가 트리 전체를 매번 순회하지 않고 필요한 곳만 건드릴 수 있는 이유는 Fiber 노드의 두 flag 필드 덕분입니다.
+Commit 단계가 트리 전체를 매번 훑지 않고 필요한 곳만 건드릴 수 있는 이유는 각 Fiber 노드가 두 가지 정보를 함께 갖기 때문입니다.
 
-```typescript
-type Fiber = {
-  flags: Flags;          // 이 fiber가 할 일 (Placement, Update, Deletion 등)
-  subtreeFlags: Flags;   // 이 fiber의 자손 중 할 일이 있음을 표시
-  // ...
-}
-```
+- **본인이 할 일**: 이 노드가 추가·수정·삭제 대상인지
+- **자손이 할 일**: 자손 중 누군가 작업이 필요한지에 대한 요약 비트
 
-역할이 완전히 분리되어 있습니다.
+Render 단계에서 자식의 작업 플래그가 부모의 "자손 요약 비트"로 올라갑니다. Commit은 트리를 내려가면서 이 요약 비트만 확인하고, 비어 있으면 그 서브트리를 통째로 스킵합니다. 덕분에 변경이 없는 가지는 방문조차 하지 않습니다.
 
-- `flags`: **본인 작업용** (bottom-up 복귀 시점에 확인)
-- `subtreeFlags`: **가지치기 판단용** (top-down 진입 시점에 확인)
-
-`completeWork`의 `bubbleProperties`가 자식의 `flags`와 `subtreeFlags`를 OR 연산으로 부모의 `subtreeFlags`에 집계합니다. 덕분에 Commit 단계는 "이 서브트리에 할 일이 없다"를 단 한 번의 비트 연산으로 판단해 통째로 스킵할 수 있습니다.
-
-## Commit의 공통 순회 구조
-
-모든 commit sub-phase와 passive phase는 동일한 DFS 재귀 구조를 씁니다.
-
-```typescript
-function commitXxxOnFiber(fiber) {
-  // ① Top-down: 자식으로 먼저 내려감
-  recursivelyTraverseXxx(fiber);
-
-  // ② Bottom-up: 본인 작업 (재귀 복귀 후)
-  if (fiber.flags & XxxMask) {
-    // 실제 작업 실행
-  }
-}
-
-function recursivelyTraverseXxx(parentFiber) {
-  if (parentFiber.subtreeFlags & XxxMask) {
-    let child = parentFiber.child;
-    while (child !== null) {
-      commitXxxOnFiber(child);
-      child = child.sibling;
-    }
-  }
-  // subtreeFlags가 0이면 서브트리 전체 스킵
-}
-```
-
-이 패턴을 알고 있으면 "Commit은 bottom-up이다"라는 단순화가 부정확하다는 것을 알 수 있습니다. **Top-down 진입 시점에는 가지치기만, Bottom-up 복귀 시점에는 실제 작업을 합니다.**
-
-각 sub-phase는 서로 다른 마스크를 씁니다.
-
-| Sub-phase | 마스크 | 역할 |
-|---|---|---|
-| `commitBeforeMutationEffects` | `BeforeMutationMask` | `getSnapshotBeforeUpdate` |
-| `commitMutationEffects` | `MutationMask` | DOM 조작, layout cleanup |
-| `commitLayoutEffects` | `LayoutMask` | `useLayoutEffect` setup |
-| `commitPassiveUnmountEffects` | `PassiveMask` | `useEffect` cleanup |
-| `commitPassiveMountEffects` | `PassiveMask` | `useEffect` setup |
-
-## 초기 마운트: 메모리 조립 → 한 번 부착
+## 초기 마운트: 메모리 조립 → 한 번에 부착
 
 ```
 [Render phase — 비동기, 중단 가능]
- 1. Parent beginWork (top-down)
- 2. Child beginWork  (top-down)
- 3. Child completeWork (bottom-up)
-     → createInstance('p')          ← detached DOM 생성
- 4. Parent completeWork (bottom-up)
-     → createInstance('div')        ← detached DOM 생성
-     → appendAllChildren(div, p)    ← detached 상태로 조립
-     → bubbleProperties             ← flags 상위 전파
+ 1. 컴포넌트 함수 실행 (부모 → 자식)
+ 2. 자식부터 DOM 노드 생성
+    ★ 이때 생성된 노드는 document와 분리된 상태(detached)
+ 3. 자식 DOM을 부모 DOM에 조립
+    ★ 여전히 detached, 화면에는 영향 없음
 
 [Commit phase — 동기]
- 5. commitMutationEffects
-     → appendChildToContainer(container, div)
-        ★ 이 한 번의 호출로 live DOM에 부착
- 6. commitLayoutEffects
-     → Child useLayoutEffect setup (bottom-up)
-     → Parent useLayoutEffect setup (bottom-up)
- 7. scheduleCallback(flushPassiveEffects)
+ 4. 조립된 루트 DOM을 container에 한 번에 붙임
+    ★ 실제 화면에 영향을 주는 유일한 DOM 조작
+ 5. useLayoutEffect setup (자식 → 부모)
 
 [브라우저 페인트]
 
-[Passive Effects phase — 별도 태스크]
- 8. Child useEffect setup (bottom-up)
- 9. Parent useEffect setup (bottom-up)
+[Passive Effects phase]
+ 6. useEffect setup (자식 → 부모)
 ```
 
-중요한 지점은 `completeWork`에서 만들어지는 DOM 노드가 **document와 분리된 detached 상태**라는 것입니다. Render phase 전체가 화면에 아무 영향도 주지 않습니다. 실제 live DOM에 영향을 주는 호출은 Commit의 `appendChildToContainer` 단 한 번입니다.
+핵심은 Render 단계에서 만들어지는 DOM이 **document와 분리된 상태**라는 점입니다. Render 전체가 화면에 아무 영향도 주지 않고, 실제 문서에 영향을 주는 호출은 Commit에서 container에 붙이는 단 한 번뿐입니다.
 
-## 리렌더: live DOM을 직접 여러 번 수정
+## 리렌더: live DOM을 직접 수정
 
 ```
 [Render phase]
- 1. Parent beginWork → Child beginWork
- 2. Child completeWork
-     → 변경 감지 시 fiber.flags에 Update 설정
-     → deps 비교로 HookHasEffect 유지/제거
-     ★ 이 단계엔 DOM을 건드리지 않음
- 3. Parent completeWork
-     → bubbleProperties
+ 1. 컴포넌트 함수 실행
+ 2. 이전과 비교해 변경점만 표시
+    ★ 이 단계에선 DOM을 건드리지 않음
 
-[Commit mutation — DFS]
- 4. Top-down: subtreeFlags로 가지치기
- 5. Child layout cleanup (HookHasEffect일 때만)
- 6. Child DOM update
-     → element.setAttribute, insertBefore 등
-     ★ live DOM 직접 수정
- 7. Parent layout cleanup
- 8. Parent DOM update
-     ★ live DOM 직접 수정
+[Commit mutation phase]
+ 3. 이전 useLayoutEffect cleanup (자식 → 부모)
+ 4. 실제 DOM 수정 (속성 변경, 노드 이동 등)
+    ★ live DOM을 직접 여러 번 수정
 
-[Commit layout — DFS, 동기]
- 9. Child useLayoutEffect setup (bottom-up)
-10. Parent useLayoutEffect setup (bottom-up)
+[Commit layout phase]
+ 5. useLayoutEffect setup (자식 → 부모)
 
 [브라우저 페인트]
 
-[Passive Effects — Unmount → Mount]
-11. Child useEffect cleanup (bottom-up)
-12. Parent useEffect cleanup (bottom-up)
-13. Child useEffect setup   (bottom-up)
-14. Parent useEffect setup  (bottom-up)
+[Passive Effects phase]
+ 6. useEffect cleanup (자식 → 부모)
+ 7. useEffect setup   (자식 → 부모)
 ```
 
-cleanup 전체가 끝난 뒤에 setup 전체가 실행됩니다. 방향은 둘 다 bottom-up이고, 차이는 **phase 분리**입니다.
+리렌더는 초기 마운트와 달리 **실제 문서 트리를 직접 여러 번 수정**합니다. cleanup은 setup과 같은 방향(자식 → 부모)으로 흐르고, cleanup 전체가 끝난 뒤 setup 전체가 실행되는 phase 분리 구조입니다.
 
 ## 초기 마운트 vs 리렌더의 DOM 조작
 
-이 둘의 DOM 조작 방식은 근본적으로 다릅니다.
+두 경우의 DOM 조작 방식은 근본적으로 다릅니다.
 
 | 항목 | 초기 마운트 | 리렌더 |
 |---|---|---|
-| DOM 노드 생성 | Render `completeWork` | 필요 시 Commit mutation |
-| DOM 간 조립 | Render `completeWork` (detached) | Commit mutation (live DOM 직접) |
-| 실제 문서에 영향 | `appendChildToContainer` 1회 | `insertBefore`, `setAttribute` 다회 |
+| DOM 노드 생성 | Render 단계 | 필요 시 Commit 단계 |
+| 조립 장소 | 분리된 메모리상 | 실제 문서 트리 |
 | live DOM 조작 횟수 | 1번 | 변경 수만큼 여러 번 |
 
-"React가 DOM 조작을 메모리에 모았다가 한 번에 적용한다"는 설명은 **초기 마운트에만 해당**됩니다. 리렌더에서는 실제 문서 트리에 여러 번 직접 호출합니다.
+"React는 DOM 조작을 메모리에 모았다가 한 번에 적용한다"는 설명은 **초기 마운트에만 해당**됩니다. 리렌더에서는 실제 문서 트리를 직접 여러 번 수정합니다.
 
 ## 그런데 왜 깜빡이지 않는가
 
-리렌더가 live DOM을 여러 번 수정하는데도 중간 상태가 사용자에게 보이지 않는 이유는 React의 배치 전략이 아닙니다. 브라우저와 JavaScript 엔진의 본질적 속성입니다.
+리렌더가 live DOM을 여러 번 수정하는데도 중간 상태가 보이지 않는 이유는 React의 배치 전략이 아닙니다. 브라우저와 JavaScript 엔진의 본질적 속성입니다.
 
 **1. JS 실행 중에는 페인트할 수 없다**  
-Commit phase 전체가 하나의 JS 태스크 안에서 실행되므로, 중간의 DOM 조작은 사용자 눈에 절대 노출되지 않습니다.
+Commit phase 전체가 하나의 JS 태스크 안에서 실행됩니다. 중간 DOM 조작은 사용자 눈에 노출될 수 없습니다.
 
 **2. 브라우저가 reflow를 자동 배치한다**  
-DOM 변경이 여러 번 일어나도 브라우저는 각 변경마다 즉시 reflow하지 않습니다. JS 태스크가 끝날 때까지 미뤘다가 한 번에 처리합니다.
+DOM 변경이 여러 번 일어나도 브라우저는 즉시 reflow하지 않습니다. JS 태스크가 끝날 때까지 미뤘다가 한 번에 처리합니다.
 
-**3. React가 쓰기와 측정을 분리한다**  
-`commitMutationEffects`는 DOM 쓰기만, `commitLayoutEffects`는 필요 시 측정을 합니다. 이 분리 덕분에 mutation 중간에 forced reflow가 발생하지 않고 브라우저의 자동 배치가 온전히 작동합니다.
+**3. React가 쓰기와 측정을 단계로 분리한다**  
+mutation 단계는 DOM 쓰기만, layout 단계는 필요 시 측정을 합니다. mutation 중간에 강제 reflow가 발생하지 않아 브라우저의 자동 배치가 온전히 작동합니다.
 
-사용자 코드의 `useLayoutEffect`에서 `getBoundingClientRect`, `offsetHeight`, `getComputedStyle`을 부르면 강제 동기 reflow(layout thrashing)가 발생할 수 있습니다. React 내부는 이를 피하도록 설계되어 있지만, 사용자 측 코드에서는 주의해야 합니다.
+`useLayoutEffect` 안에서 `getBoundingClientRect`, `offsetHeight`, `getComputedStyle` 같은 측정 API를 부르면 강제 동기 reflow(layout thrashing)가 발생할 수 있습니다. React 내부는 이를 피하도록 설계되어 있지만 사용자 코드에서는 주의가 필요합니다.
 
 ## useLayoutEffect vs useEffect
 
 | | `useLayoutEffect` | `useEffect` |
 |---|---|---|
 | 실행 시점 | Commit layout 단계 | Passive Effects phase |
-| 동기/비동기 | 동기 | 비동기 |
+| 동기 / 비동기 | 동기 | 비동기 |
 | 페인트 블로킹 | O | X |
 | DOM 측정 가능 | O (이미 변경됨) | O |
-| 실행 방향 | bottom-up | bottom-up |
+| 실행 방향 | 자식 → 부모 | 자식 → 부모 |
 
-둘 다 실행 방향은 bottom-up입니다. 차이는 "페인트 전이냐, 페인트 후냐"입니다. `useLayoutEffect`가 "DOM 변경 전"에 실행된다는 건 흔한 오해이고, 실제로는 **DOM 변경 후, 페인트 전**입니다.
+둘 다 실행 방향은 같습니다. 차이는 "페인트 전이냐, 페인트 후냐"입니다. `useLayoutEffect`가 "DOM 변경 전"에 실행된다는 건 흔한 오해이고, 실제로는 **DOM 변경 후, 페인트 전**입니다.
 
 ## 로그로 검증하기
 
 ```jsx
 function Child({ text }) {
-  console.log("Child render");
   useLayoutEffect(() => {
     console.log("Child layout setup");
     return () => console.log("Child layout cleanup");
@@ -207,7 +136,6 @@ function Child({ text }) {
 
 function Parent() {
   const [n, setN] = useState(0);
-  console.log("Parent render");
   useLayoutEffect(() => {
     console.log("Parent layout setup");
     return () => console.log("Parent layout cleanup");
@@ -228,8 +156,6 @@ function Parent() {
 버튼 클릭 후 리렌더의 로그 순서입니다.
 
 ```
-Parent render
-Child render
 Child layout cleanup
 Parent layout cleanup
 Child layout setup
@@ -241,7 +167,7 @@ Child effect setup
 Parent effect setup
 ```
 
-render가 먼저 전부 끝나고, cleanup 전체가 끝난 뒤 setup 전체가 실행됩니다. 그리고 layout effect는 페인트 전, passive effect는 페인트 후입니다.
+cleanup 전체가 끝난 뒤 setup 전체가 실행되고, layout effect는 페인트 전, passive effect는 페인트 후에 실행됩니다.
 
 ## 자주 발생하는 오해
 
@@ -251,36 +177,29 @@ DOM 변경 후, 브라우저 페인트 전입니다. 기준점은 mutation이 �
 **"useEffect는 커밋 단계에서 실행된다"**  
 등록만 커밋 단계에서 하고, 실제 콜백은 커밋 밖의 Passive Effects phase에서 실행됩니다.
 
-**"Commit mutation은 완전히 bottom-up이다"**  
-DFS 재귀에서 top-down 진입(가지치기)과 bottom-up 복귀(작업)가 모두 있습니다. 단순화하면 `subtreeFlags`의 존재 이유를 설명할 수 없습니다.
-
 **"React는 DOM 조작을 메모리에 모았다가 한 번에 적용한다"**  
-초기 마운트에만 해당되고, 리렌더는 live DOM에 여러 번 직접 조작합니다.
+초기 마운트에만 해당되고, 리렌더는 live DOM을 여러 번 직접 조작합니다.
 
 **"cleanup은 리렌더에서만 실행된다"**  
 운영 환경에서는 맞지만, 개발 환경의 StrictMode에서는 초기 마운트에도 mount → unmount → mount 사이클로 cleanup이 한 번 실행됩니다.
 
 ## 정리
 
-React의 렌더링 파이프라인을 이해할 때 세 가지 포인트가 가장 중요합니다.
+React의 렌더링 파이프라인은 세 가지 포인트로 요약됩니다.
 
-첫째, **Fiber의 `flags`와 `subtreeFlags`는 역할이 다릅니다.** 전자는 본인 작업용, 후자는 가지치기용입니다. Commit이 빠른 이유는 이 가지치기 덕분입니다.
+첫째, **Render는 오프스크린에서, Commit은 실제 화면에서** 일어납니다. Render 단계에서 일어나는 모든 작업은 화면에 영향을 주지 않습니다.
 
-둘째, **초기 마운트와 리렌더의 DOM 조작 방식은 완전히 다릅니다.** 초기 마운트는 detached DOM을 조립해서 한 번에 붙이고, 리렌더는 live DOM을 직접 여러 번 수정합니다.
+둘째, **초기 마운트와 리렌더의 DOM 조작 방식이 다릅니다.** 초기 마운트는 분리된 메모리에서 조립해 한 번에 붙이고, 리렌더는 live DOM을 직접 여러 번 수정합니다.
 
-셋째, **리렌더에서 깜빡임이 없는 이유는 React가 아니라 JS 이벤트 루프와 브라우저의 reflow 배치 때문입니다.** React는 그 위에서 쓰기와 측정을 phase로 분리해 자동 배치를 극대화할 뿐입니다.
+셋째, **리렌더에서 깜빡임이 없는 이유는 React가 아니라 JS 이벤트 루프와 브라우저의 reflow 배치 때문입니다.** React는 그 위에서 쓰기와 측정을 단계로 분리해 자동 배치를 극대화할 뿐입니다.
 
-"React 렌더링"이라는 말은 가상 DOM 계산, 실제 DOM 수정, effect 실행이라는 여러 단계를 뭉뚱그린 용어입니다. 각 단계가 언제 실행되고 어떤 규칙으로 순회되는지 분리해서 보면, `useLayoutEffect`를 언제 써야 하는지, `useEffect` 안에서 상태 업데이트를 하면 왜 추가 렌더가 트리거되는지, 최적화가 어디에서 의미 있는지 같은 질문에 일관된 답을 낼 수 있습니다.
+"React 렌더링"이라는 말은 가상 DOM 계산, 실제 DOM 수정, effect 실행을 뭉뚱그린 표현입니다. 각 단계가 언제 실행되고 어떤 순서로 흐르는지 분리해서 보면, `useLayoutEffect`를 언제 써야 하는지, `useEffect` 안에서 상태 업데이트를 하면 왜 추가 렌더가 트리거되는지, 최적화가 어디에서 의미 있는지 같은 질문에 일관된 답을 낼 수 있습니다.
 
 ## References
 
-- [React 공식 react-reconciler](https://github.com/facebook/react/tree/main/packages/react-reconciler)
 - [React 공식 문서 — Render and Commit](https://react.dev/learn/render-and-commit)
 - [React 공식 문서 — useLayoutEffect](https://react.dev/reference/react/useLayoutEffect)
 - [JSer.dev — How does React do the initial mount internally?](https://jser.dev/2023-07-14-initial-mount/)
 - [JSer.dev — How does React re-render internally?](https://jser.dev/2023-07-18-how-react-rerenders/)
 - [JSer.dev — The lifecycle of effect hooks in React](https://jser.dev/react/2022/01/19/lifecycle-of-effect-hook/)
-- [JSer.dev — How does React traverse Fiber tree internally?](https://jser.dev/react/2022/01/16/fiber-traversal-in-react)
-- [How Commit works — how-react-works](https://incepter.github.io/how-react-works/docs/react-dom/how.commit.works/)
 - [Layout Thrashing and Forced Reflows](https://webperf.tips/tip/layout-thrashing/)
-- [What forces layout/reflow — Paul Irish](https://gist.github.com/paulirish/5d52fb081b3570c81e3a)

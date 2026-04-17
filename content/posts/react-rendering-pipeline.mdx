@@ -45,8 +45,14 @@ Commit phase는 하나의 큰 덩어리가 아니라 여러 sub-phase로 나뉘�
 
 한 번의 DFS 안에서 동작은 단순합니다.
 
-- **내려갈 때(top-down)**: `subtreeFlags`에 해당 마스크가 켜져 있는지만 확인해서 갈 가지를 고름. 실제 작업은 하지 않음.
-- **올라올 때(bottom-up)**: 본인 `flags`에 해당 마스크가 켜져 있으면 실제 작업을 수행.
+```
+  ↓ Top-down  : 부모 → 자식으로 내려가며 subtreeFlags 확인
+                해당 마스크 비트가 0이면 서브트리 통째로 스킵
+                (실제 작업은 하지 않음)
+
+  ↑ Bottom-up : 자식 → 부모로 올라오며 본인 flags 확인
+                해당 마스크 비트가 켜져 있으면 실제 작업 수행
+```
 
 "Commit은 bottom-up이다"라는 단순화가 부정확한 이유가 여기 있습니다. top-down으로 내려가긴 하는데 그건 가지치기용이고, 실제 작업은 올라올 때만 일어납니다.
 
@@ -58,70 +64,87 @@ effect 훅에는 한 가지 추가 플래그가 있습니다. 각 effect는 deps
 
 ```
 [Render phase — 비동기, 중단 가능]
- 1. 컴포넌트 함수 실행 (부모 → 자식)
- 2. 올라오면서 자식부터 DOM 노드 생성
-    ★ 이때 생성된 노드는 document와 분리된 상태(detached)
- 3. 자식 DOM을 부모 DOM에 조립 (여전히 detached)
- 4. 루트 fiber에 Placement 플래그 설정
+  ↓ Top-down (beginWork): Parent 함수 실행 → Child 함수 실행
+  ↑ Bottom-up (completeWork):
+      · Child  : DOM 노드 생성(detached) → 부모 DOM에 조립
+      · Parent : DOM 노드 생성(detached) → 자식 DOM 조립
+      · 루트 fiber에 Placement 플래그 설정
+      · subtreeFlags 상위 전파
 
 [Mutation 순회 — DFS]
- 5. Placement 플래그가 켜진 fiber에서
-    조립된 루트 DOM을 container에 한 번에 부착
-    ★ 실제 화면에 영향을 주는 유일한 DOM 조작
+  ↓ Top-down : subtreeFlags & MutationMask 로 가지치기 (작업 없음)
+  ↑ Bottom-up:
+      · Placement 플래그가 켜진 fiber에서
+        조립된 루트 DOM을 container에 한 번에 부착
+        ★ 실제 화면에 영향을 주는 유일한 DOM 조작
 
 [Layout 순회 — DFS]
- 6. useLayoutEffect setup (자식 → 부모)
+  ↓ Top-down : subtreeFlags & LayoutMask 로 가지치기
+  ↑ Bottom-up:
+      · Child useLayoutEffect setup
+      · Parent useLayoutEffect setup
 
 [브라우저 페인트]
 
 [Passive mount 순회 — DFS]
- 7. useEffect setup (자식 → 부모)
+  ↓ Top-down : subtreeFlags & PassiveMask 로 가지치기
+  ↑ Bottom-up:
+      · Child useEffect setup
+      · Parent useEffect setup
 ```
 
-핵심은 Render 단계에서 만들어지는 DOM이 **document와 분리된 상태**라는 점입니다. Render 전체가 화면에 아무 영향도 주지 않고, 실제 문서에 영향을 주는 호출은 Mutation 순회에서 `Placement` 플래그를 만나 container에 붙이는 단 한 번뿐입니다. 자식 fiber들은 이미 부모 DOM 안에 조립되어 있으므로 루트 하나만 붙이면 서브트리 전체가 한 번에 문서에 들어갑니다.
+핵심은 Render 단계의 bottom-up에서 만들어지는 DOM이 **document와 분리된 상태**라는 점입니다. Render 전체가 화면에 아무 영향도 주지 않고, 실제 문서에 영향을 주는 호출은 Mutation 순회의 bottom-up에서 `Placement` 플래그를 만나 container에 붙이는 단 한 번뿐입니다. 자식 fiber들은 이미 부모 DOM 안에 조립되어 있으므로 루트 하나만 붙이면 서브트리 전체가 한 번에 문서에 들어갑니다.
 
 ## 리렌더: live DOM을 직접 수정
 
 ```
 [Render phase]
- 1. 컴포넌트 함수 실행
- 2. 변경된 fiber에 Update 플래그, 삭제 대상에 Deletion 플래그 설정
- 3. deps가 바뀐 effect에만 HookHasEffect 태그 유지
-    ★ 이 단계에선 DOM을 건드리지 않음
+  ↓ Top-down (beginWork): Parent 함수 실행 → Child 함수 실행
+  ↑ Bottom-up (completeWork):
+      · 변경된 fiber에 Update / Deletion 플래그 설정
+      · deps가 바뀐 effect에만 HookHasEffect 태그 유지
+      · subtreeFlags 상위 전파
+      ★ 이 단계에선 DOM을 건드리지 않음
 
 [Mutation 순회 — DFS 한 번]
- MutationMask를 가진 가지만 따라 내려감.
- 자식 fiber에서 올라올 때:
-   - HookHasEffect가 붙은 useLayoutEffect cleanup 실행
-   - Update 플래그가 있으면 해당 fiber의 DOM 직접 수정
- 부모 fiber에서 올라올 때 같은 작업 반복
-   ★ cleanup과 DOM 수정이 같은 순회 안에서 fiber 단위로 묶임
+  ↓ Top-down : subtreeFlags & MutationMask 로 가지치기 (작업 없음)
+  ↑ Bottom-up: 한 fiber에서 올라올 때마다 아래를 이어서 실행
+      · Child fiber 복귀:
+         1) HookHasEffect가 붙은 useLayoutEffect cleanup
+         2) Update 플래그가 있으면 해당 fiber의 DOM 직접 수정
+      · Parent fiber 복귀:
+         1) useLayoutEffect cleanup
+         2) DOM 직접 수정
+      ★ cleanup과 DOM 수정이 같은 순회 안에서 fiber 단위로 묶임
 
 [Layout 순회 — 또 한 번의 DFS]
- LayoutMask를 가진 가지만 따라 내려감.
-   - 자식 useLayoutEffect setup (HookHasEffect인 것만)
-   - 부모 useLayoutEffect setup
+  ↓ Top-down : subtreeFlags & LayoutMask 로 가지치기
+  ↑ Bottom-up:
+      · Child useLayoutEffect setup (HookHasEffect인 것만)
+      · Parent useLayoutEffect setup
 
 [브라우저 페인트]
 
 [Passive unmount 순회 — DFS]
- PassiveMask 기준으로 순회.
-   - 자식 useEffect cleanup (HookHasEffect인 것만)
-   - 부모 useEffect cleanup
+  ↓ Top-down : subtreeFlags & PassiveMask 로 가지치기
+  ↑ Bottom-up:
+      · Child useEffect cleanup (HookHasEffect인 것만)
+      · Parent useEffect cleanup
 
 [Passive mount 순회 — DFS]
- 동일한 가지치기로 순회.
-   - 자식 useEffect setup
-   - 부모 useEffect setup
+  ↓ Top-down : subtreeFlags & PassiveMask 로 가지치기
+  ↑ Bottom-up:
+      · Child useEffect setup
+      · Parent useEffect setup
 ```
 
 핵심 포인트가 두 가지입니다.
 
-**첫째, cleanup과 DOM 수정이 같은 mutation 순회 안에서 fiber별로 묶여 실행됩니다.** "자식 cleanup 전부 → 자식 DOM 수정 전부 → 부모 cleanup → 부모 DOM 수정"이 아니라, 한 fiber에서 올라올 때 그 fiber의 cleanup과 DOM 수정(`Update`·`Deletion` 플래그가 있다면)이 이어서 일어나고, 그 다음 부모로 올라가서 같은 일을 반복합니다.
+**첫째, cleanup과 DOM 수정이 같은 mutation 순회의 bottom-up 안에서 fiber별로 묶여 실행됩니다.** "자식 cleanup 전부 → 자식 DOM 수정 전부 → 부모 cleanup → 부모 DOM 수정"이 아니라, 한 fiber에서 올라올 때 그 fiber의 cleanup과 DOM 수정(`Update`·`Deletion` 플래그가 있다면)이 이어서 일어나고, 그 다음 부모로 올라가서 같은 일을 반복합니다.
 
-**둘째, useLayoutEffect setup은 별개의 DFS 순회입니다.** mutation 순회가 트리 전체를 다 끝낸 뒤 layout 순회가 다시 트리를 돕니다. 그래서 모든 DOM 수정이 끝난 뒤 setup이 실행되고, setup 내부에서 안전하게 변경된 DOM을 측정할 수 있습니다.
+**둘째, useLayoutEffect setup은 별개의 DFS 순회입니다.** mutation 순회의 top-down과 bottom-up이 트리 전체를 다 끝낸 뒤, layout 순회가 top-down 가지치기부터 새로 시작해서 bottom-up에서 setup을 실행합니다. 그래서 모든 DOM 수정이 끝난 뒤 setup이 실행되고, setup 내부에서 안전하게 변경된 DOM을 측정할 수 있습니다.
 
-useEffect도 마찬가지입니다. passive unmount 순회와 passive mount 순회가 분리되어 있어, cleanup 전체가 끝난 뒤 setup 전체가 실행됩니다.
+useEffect도 마찬가지입니다. passive unmount 순회와 passive mount 순회가 완전히 분리되어 있어, unmount의 bottom-up에서 cleanup 전체가 끝난 뒤 mount의 bottom-up에서 setup 전체가 실행됩니다.
 
 ## 초기 마운트 vs 리렌더의 DOM 조작
 

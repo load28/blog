@@ -98,22 +98,17 @@ const pendingSets = new Map<string, Promise<void>>()
 
 ### 4.2 무효화는 캐시 본체가 아니라 태그 매니페스트에 기록된다
 
-`updateTags`의 실제 구현은 다음과 같습니다.
+`updateTags`의 실제 구현을 핵심만 추리면 다음과 같습니다(원본은 `performance.timeOrigin + performance.now()`로 `now`를 계산하고 `TagManifestEntry` 타입을 사용합니다).
 
 ```typescript
 async updateTags(tags, durations) {
-  const now = Math.round(performance.timeOrigin + performance.now())
+  const now = /* performance.timeOrigin + performance.now() */
   for (const tag of tags) {
-    const existingEntry = tagsManifest.get(tag) || {}
-    if (durations) {
-      const updates: TagManifestEntry = { ...existingEntry }
-      updates.stale = now
-      if (durations.expire !== undefined) {
-        updates.expired = now + durations.expire * 1000
-      }
-      tagsManifest.set(tag, updates)
+    const existing = tagsManifest.get(tag) || {}
+    if (durations?.expire !== undefined) {
+      tagsManifest.set(tag, { ...existing, stale: now, expired: now + durations.expire * 1000 })
     } else {
-      tagsManifest.set(tag, { ...existingEntry, expired: now })
+      tagsManifest.set(tag, { ...existing, expired: now })
     }
   }
 }
@@ -130,24 +125,16 @@ async updateTags(tags, durations) {
 
 ### 4.3 조회 시 세 가지 신선도 검사
 
-`get` 메서드의 신선도 검사 순서는 다음과 같습니다.
+`get` 메서드의 신선도 검사 순서를 축약하면 다음과 같습니다(원본은 `now` 자리에 `performance.timeOrigin + performance.now()`를 사용합니다).
 
 ```typescript
-// 1. revalidate 시간 자체 만료 체크
-if (performance.timeOrigin + performance.now() > entry.timestamp + entry.revalidate * 1000) {
-  return undefined
-}
-
-// 2. 태그가 expired 처리됐는지 체크
-if (areTagsExpired(entry.tags, entry.timestamp)) {
-  return undefined
-}
-
-// 3. 태그가 stale 처리됐는지 체크
+// 1. revalidate 자체 만료 → 캐시 미스
+if (now > entry.timestamp + entry.revalidate * 1000) return undefined
+// 2. 태그가 expired 처리됐는지 → 캐시 미스
+if (areTagsExpired(entry.tags, entry.timestamp)) return undefined
+// 3. 태그가 stale 처리됐는지 → revalidate를 -1로 표시
 let revalidate = entry.revalidate
-if (areTagsStale(entry.tags, entry.timestamp)) {
-  revalidate = -1
-}
+if (areTagsStale(entry.tags, entry.timestamp)) revalidate = -1
 ```
 
 세 가지 만료 경로가 독립적으로 동작합니다. `revalidate`는 엔트리 자체 수명, `expired`는 즉시 캐시 미스, `stale`은 revalidate를 -1로 표시하여 백그라운드 재생성을 유도합니다. **무효화는 엔트리 삭제가 아니라 시각 비교라는 점이 핵심**이며, 이 모델은 Redis 핸들러에서도 그대로 유지되어야 합니다.
@@ -180,9 +167,7 @@ return { ...entry, value: returnStream }
 공식 문서가 제시하는 단일 인스턴스용 Redis 핸들러 예시는 다음과 같습니다.
 
 ```javascript
-// cache-handlers/redis-handler.js
-const { createClient } = require('redis')
-
+// cache-handlers/redis-handler.js — 공식 예시를 축약
 const client = createClient({ url: process.env.REDIS_URL })
 client.connect()
 
@@ -190,15 +175,10 @@ module.exports = {
   async get(cacheKey, softTags) {
     const stored = await client.get(cacheKey)
     if (!stored) return undefined
-
     const data = JSON.parse(stored)
-
     return {
       value: new ReadableStream({
-        start(controller) {
-          controller.enqueue(Buffer.from(data.value, 'base64'))
-          controller.close()
-        },
+        start(c) { c.enqueue(Buffer.from(data.value, 'base64')); c.close() },
       }),
       tags: data.tags,
       stale: data.stale,
@@ -210,9 +190,9 @@ module.exports = {
 
   async set(cacheKey, pendingEntry) {
     const entry = await pendingEntry
-    const reader = entry.value.getReader()
+    // 스트림을 끝까지 읽어 단일 페이로드로 직렬화(부분 쓰기 방지)
     const chunks = []
-
+    const reader = entry.value.getReader()
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -222,26 +202,21 @@ module.exports = {
     } finally {
       reader.releaseLock()
     }
-
-    const data = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
-
-    await client.set(
-      cacheKey,
-      JSON.stringify({
-        value: data.toString('base64'),
-        tags: entry.tags,
-        stale: entry.stale,
-        timestamp: entry.timestamp,
-        expire: entry.expire,
-        revalidate: entry.revalidate,
-      }),
-      { EX: entry.expire }
-    )
+    const data = Buffer.concat(chunks.map((c) => Buffer.from(c)))
+    await client.set(cacheKey, JSON.stringify({
+      value: data.toString('base64'),
+      tags: entry.tags,
+      stale: entry.stale,
+      timestamp: entry.timestamp,
+      expire: entry.expire,
+      revalidate: entry.revalidate,
+    }), { EX: entry.expire })
   },
 
+  // 단일 인스턴스 → 태그 무효화 비활성 (no-op)
   async refreshTags() {},
-  async getExpiration(tags) { return 0 },
-  async updateTags(tags, durations) {},
+  async getExpiration() { return 0 },
+  async updateTags() {},
 }
 ```
 
@@ -267,33 +242,22 @@ module.exports = {
 
 ### 6.2 분산 태그 핸들러 예시
 
-공식 문서가 제시하는 분산 태그 핸들러 예시는 다음과 같습니다.
+공식 문서가 제시하는 분산 태그 핸들러 예시를 축약하면 다음과 같습니다(`get`/`set`은 5번 항목과 동일하므로 생략).
 
 ```javascript
 // cache-handlers/distributed-tags.js
-const { createClient } = require('redis')
-
-const client = createClient({ url: process.env.REDIS_URL })
-client.connect()
-
 const localTagTimestamps = new Map()
 
 module.exports = {
-  // get()과 set()은 5번 항목의 Redis 예시와 동일
-
   async refreshTags() {
     const tagKeys = await client.sMembers('revalidated-tags')
-    if (tagKeys.length > 0) {
-      const values = await client.mGet(tagKeys.map((k) => `tag:${k}`))
-      for (let i = 0; i < tagKeys.length; i++) {
-        localTagTimestamps.set(tagKeys[i], Number(values[i]))
-      }
-    }
+    if (!tagKeys.length) return
+    const values = await client.mGet(tagKeys.map((k) => `tag:${k}`))
+    tagKeys.forEach((k, i) => localTagTimestamps.set(k, Number(values[i])))
   },
 
   async getExpiration(tags) {
-    const timestamps = tags.map((tag) => localTagTimestamps.get(tag) || 0)
-    return Math.max(...timestamps, 0)
+    return Math.max(0, ...tags.map((t) => localTagTimestamps.get(t) || 0))
   },
 
   async updateTags(tags, durations) {

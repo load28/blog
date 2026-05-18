@@ -1,0 +1,475 @@
+---
+title: 'Next.js 16 캐시 핸들러와 Redis 리모트 캐시 연동'
+date: '2026-05-18'
+tags: ['next.js', 'redis', 'cache', 'rsc', 'ai-content']
+---
+
+Next.js 16에서 `cacheComponents`를 활성화하면 데이터 페칭은 기본적으로 동적이 되고, 캐시는 `'use cache'`로 명시적으로 선언해야 합니다. 이 글은 캐시 디렉티브가 어떤 핸들러와 연결되는지, 기본 핸들러의 소스 코드는 실제로 어떻게 동작하는지, 그리고 Redis를 이용해 멀티 인스턴스 환경에서 어떻게 리모트 캐시를 구성하는지를 공식 문서와 `canary` 브랜치 소스 코드(`packages/next/src/server/lib/cache-handlers/`)에서 직접 검증된 사실만으로 정리합니다.
+
+## 1. 캐시 디렉티브 세 가지
+
+Cache Components 모델에서 사용 가능한 캐시 디렉티브는 세 가지이며, 각각이 호출하는 핸들러도 정해져 있습니다.
+
+| 디렉티브 | 용도 | 핸들러 |
+|:--|:--|:--|
+| `'use cache'` | 공유 캐시 (모든 사용자) | `cacheHandlers.default` |
+| `'use cache: remote'` | 공유 캐시 (외부 저장소) | `cacheHandlers.remote` |
+| `'use cache: private'` | 사용자별 캐시 (브라우저 메모리) | 커스터마이즈 불가 |
+
+공식 문서는 두 가지 사실을 명시합니다.
+
+> `'use cache: private'` is not configurable.
+> The default `default` and `remote` is the same in-memory LRU cache.  — Next.js 공식 문서, cacheHandlers
+
+`cacheHandlers`를 설정하지 않으면 `default`와 `remote` 모두 동일한 인메모리 LRU 캐시를 사용합니다. 즉, 리모트 캐시는 "기본 동작"이 아니라 **개발자가 핸들러를 명시적으로 구성해야 동작하는 영역**입니다.
+
+## 2. `next.config.ts`에서 핸들러 등록하기
+
+공식 문서가 제시하는 설정 방법은 다음과 같습니다.
+
+```typescript
+// next.config.ts
+import type { NextConfig } from 'next'
+
+const nextConfig: NextConfig = {
+  cacheComponents: true,
+  cacheHandlers: {
+    default: require.resolve('./cache-handlers/default-handler.js'),
+    remote: require.resolve('./cache-handlers/remote-handler.js'),
+  },
+}
+
+export default nextConfig
+```
+
+키와 디렉티브의 대응 관계는 다음과 같습니다.
+
+- `default` 키 → `'use cache'` 디렉티브가 사용
+- `remote` 키 → `'use cache: remote'` 디렉티브가 사용
+- 임의의 명명된 핸들러도 정의 가능하며, `'use cache: <name>'` 형태로 참조
+
+이 설정 구조 덕분에 **메모리 캐시와 리모트 캐시를 같은 라우트 안에서 함께 사용**할 수 있습니다. 자주 변하지 않는 글로벌 콘텐츠는 `'use cache: remote'`로 Redis에 넣고, 사용자 세션 직전 단계에 캐시할 가벼운 계산은 `'use cache'`로 인메모리에 두는 식의 분리가 가능합니다.
+
+## 3. `CacheHandler` 인터페이스
+
+공식 소스 코드 `packages/next/src/server/lib/cache-handlers/types.ts`에 정의된 인터페이스는 다음과 같습니다.
+
+```typescript
+export interface CacheHandler {
+  get(cacheKey: string, softTags: string[]): Promise<undefined | CacheEntry>
+  set(cacheKey: string, pendingEntry: Promise<CacheEntry>): Promise<void>
+  refreshTags(): Promise<void>
+  getExpiration(tags: string[]): Promise<Timestamp>
+  updateTags(tags: string[], durations?: { expire?: number }): Promise<void>
+}
+
+export interface CacheEntry {
+  value: ReadableStream<Uint8Array>
+  tags: string[]
+  stale: number       // duration in seconds, client-side staleness
+  timestamp: Timestamp // when the entry was created (ms)
+  expire: number      // duration in seconds, allowed usage
+  revalidate: number  // duration in seconds, until revalidate
+}
+```
+
+각 메서드에는 공식 주석이 붙어 있고, 동작 의미를 정확하게 규정합니다.
+
+- **`get`**: "Retrieve a cache entry for the given cache key, if available. Will return undefined if there's no valid entry, or if the given soft tags are stale."
+- **`set`**: "When this is called, the entry may still be pending, i.e. its value stream may still be written to. So it needs to be awaited first."
+- **`refreshTags`**: "This function may be called periodically, but always before starting a new request."
+- **`getExpiration`**: "Returns 0 if none of the tags were ever revalidated. Returns Infinity if the soft tags are supposed to be passed into the get method instead."
+- **`updateTags`**: "This function is called when tags are revalidated/expired."
+
+이 다섯 개 메서드 중 **읽기/쓰기는 `get`과 `set`이고, 무효화는 `updateTags`/`refreshTags`/`getExpiration` 세 메서드의 협업으로 처리**됩니다. 이 분리가 멀티 인스턴스 환경에서 결정적인 역할을 합니다.
+
+## 4. 기본 핸들러의 실제 동작
+
+`packages/next/src/server/lib/cache-handlers/default.ts`의 구현을 따라가면, 흔히 오해하기 쉬운 두 가지 사실을 확인할 수 있습니다. 첫째, **무효화는 캐시 본체를 건드리지 않습니다.** 둘째, **`stale`과 `expired`는 분리된 타임스탬프로 관리됩니다.**
+
+### 4.1 저장 구조
+
+```typescript
+const memoryCache = new LRUCache<PrivateCacheEntry>(maxSize, (entry) => entry.size)
+const pendingSets = new Map<string, Promise<void>>()
+```
+
+캐시 본체는 `LRUCache`로 관리되고 메모리 제한 도달 시 LRU 정책으로 evict됩니다. `pendingSets`는 같은 키에 대해 진행 중인 `set`을 추적하여, 동일 키의 중복 쓰기를 방지하는 용도로 사용됩니다.
+
+### 4.2 무효화는 캐시 본체가 아니라 태그 매니페스트에 기록된다
+
+`updateTags`의 실제 구현은 다음과 같습니다.
+
+```typescript
+async updateTags(tags, durations) {
+  const now = Math.round(performance.timeOrigin + performance.now())
+  for (const tag of tags) {
+    const existingEntry = tagsManifest.get(tag) || {}
+    if (durations) {
+      const updates: TagManifestEntry = { ...existingEntry }
+      updates.stale = now
+      if (durations.expire !== undefined) {
+        updates.expired = now + durations.expire * 1000
+      }
+      tagsManifest.set(tag, updates)
+    } else {
+      tagsManifest.set(tag, { ...existingEntry, expired: now })
+    }
+  }
+}
+```
+
+이 코드에서 확인할 수 있는 사실은 다음과 같습니다.
+
+- **`memoryCache`(캐시 본체)에는 접근하지 않습니다.** 무효화는 `tagsManifest`라는 별도의 "태그 → 시각" 매핑에만 기록됩니다.
+- 한 태그에 대해 `stale`과 `expired` 두 가지 시각을 분리해서 저장합니다.
+- `durations` 인자 없이 호출되면 `expired = now`로 즉시 만료 처리됩니다.
+- `durations.expire`가 주어지면 `stale = now`(즉시 stale), `expired = now + expire*1000`(미래 만료) 형태가 됩니다.
+
+즉, `revalidateTag('worksheet:5')`를 호출해도 캐시 엔트리는 메모리에 그대로 남고, 다음 `get` 시점의 시각 비교로 신선도가 판정됩니다.
+
+### 4.3 조회 시 세 가지 신선도 검사
+
+`get` 메서드의 신선도 검사 순서는 다음과 같습니다.
+
+```typescript
+// 1. revalidate 시간 자체 만료 체크
+if (performance.timeOrigin + performance.now() > entry.timestamp + entry.revalidate * 1000) {
+  return undefined
+}
+
+// 2. 태그가 expired 처리됐는지 체크
+if (areTagsExpired(entry.tags, entry.timestamp)) {
+  return undefined
+}
+
+// 3. 태그가 stale 처리됐는지 체크
+let revalidate = entry.revalidate
+if (areTagsStale(entry.tags, entry.timestamp)) {
+  revalidate = -1
+}
+```
+
+세 가지 만료 경로가 독립적으로 동작합니다. `revalidate`는 엔트리 자체 수명, `expired`는 즉시 캐시 미스, `stale`은 revalidate를 -1로 표시하여 백그라운드 재생성을 유도합니다. **무효화는 엔트리 삭제가 아니라 시각 비교라는 점이 핵심**이며, 이 모델은 Redis 핸들러에서도 그대로 유지되어야 합니다.
+
+### 4.4 스트림은 `tee()`로 분기된다
+
+```typescript
+const [returnStream, newSaved] = entry.value.tee()
+entry.value = newSaved
+return { ...entry, value: returnStream }
+```
+
+`CacheEntry.value`는 `ReadableStream<Uint8Array>`이며, 한 번 읽으면 소진됩니다. 그래서 `tee()`로 두 갈래로 나누어 한쪽은 반환하고, 한쪽은 다음 조회를 위해 다시 저장합니다. 이 동작은 Redis 핸들러를 구현할 때 **스트림을 모두 읽어 바이트 배열로 직렬화한 뒤 저장하고, 조회 시 새 스트림을 만들어 반환**하는 패턴으로 바뀝니다.
+
+### 4.5 가용성을 일관성보다 우선한다
+
+공식 문서는 명시적으로 가용성 우선 원칙을 선언합니다.
+
+> The revalidation system prioritizes availability over strict consistency.  — Next.js 공식 문서, How Revalidation Works
+
+소스 코드에서 확인할 수 있는 구체적 동작은 다음과 같습니다.
+
+- `set` 실패 시: 응답은 이미 사용자에게 전달된 후이므로 캐시 엔트리만 손실되고, 다음 요청에서 새 렌더링이 시도됩니다.
+- `get`에서 예외 throw 시: 렌더 에러로 전파됩니다. 따라서 핸들러는 내부 에러를 모두 잡아 `undefined`(캐시 미스)를 반환해야 합니다.
+
+이 두 원칙은 Redis 연결 장애 시 페이지가 죽지 않도록 핸들러를 작성하는 기준이 됩니다.
+
+## 5. 단일 인스턴스용 Redis 핸들러
+
+공식 문서가 제시하는 단일 인스턴스용 Redis 핸들러 예시는 다음과 같습니다.
+
+```javascript
+// cache-handlers/redis-handler.js
+const { createClient } = require('redis')
+
+const client = createClient({ url: process.env.REDIS_URL })
+client.connect()
+
+module.exports = {
+  async get(cacheKey, softTags) {
+    const stored = await client.get(cacheKey)
+    if (!stored) return undefined
+
+    const data = JSON.parse(stored)
+
+    return {
+      value: new ReadableStream({
+        start(controller) {
+          controller.enqueue(Buffer.from(data.value, 'base64'))
+          controller.close()
+        },
+      }),
+      tags: data.tags,
+      stale: data.stale,
+      timestamp: data.timestamp,
+      expire: data.expire,
+      revalidate: data.revalidate,
+    }
+  },
+
+  async set(cacheKey, pendingEntry) {
+    const entry = await pendingEntry
+    const reader = entry.value.getReader()
+    const chunks = []
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    const data = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+
+    await client.set(
+      cacheKey,
+      JSON.stringify({
+        value: data.toString('base64'),
+        tags: entry.tags,
+        stale: entry.stale,
+        timestamp: entry.timestamp,
+        expire: entry.expire,
+        revalidate: entry.revalidate,
+      }),
+      { EX: entry.expire }
+    )
+  },
+
+  async refreshTags() {},
+  async getExpiration(tags) { return 0 },
+  async updateTags(tags, durations) {},
+}
+```
+
+이 예시에는 `set`에서 스트림을 끝까지 읽어 base64로 직렬화하고, `get`에서 다시 새 `ReadableStream`을 만들어 반환하는 패턴이 그대로 드러납니다. 다만 `refreshTags`, `getExpiration`, `updateTags`가 모두 비어 있기 때문에 **태그 무효화가 이 한 인스턴스 내부에서만 동작**합니다. 인스턴스가 둘 이상이면 한 인스턴스에서 호출한 `revalidateTag`가 다른 인스턴스에 전달되지 않습니다.
+
+## 6. 멀티 인스턴스 — 분산 태그 조율
+
+공식 문서는 멀티 인스턴스 환경의 문제를 명시적으로 경고합니다.
+
+> When running multiple Next.js instances, tag invalidation must be coordinated across instances. The default in-memory handler only tracks tags locally, so calling `revalidateTag()` on one instance does not affect others.  — Next.js 공식 문서, cacheHandlers
+
+> When running multiple Next.js instances behind a load balancer, revalidation events are local by default. Without coordination, each instance independently serves content and handles revalidation using only its local cache. Different users may see different content depending on which instance serves their request, and on-demand revalidation only takes effect on the instance that received the call.  — Next.js 공식 문서, How Revalidation Works
+
+### 6.1 공식 권장 조율 패턴
+
+공식 문서가 제시하는 해결 방법은 세 단계로 요약됩니다.
+
+1. `updateTags()`가 호출되면 핸들러는 무효화 타임스탬프를 **공유 저장소**에 기록합니다.
+2. `refreshTags()`는 매 요청 전에 호출되며, 공유 저장소에서 최근 무효화 이벤트를 읽어 로컬 태그 상태를 갱신합니다.
+3. `getExpiration()`은 제공된 태그들의 가장 최근 revalidation 타임스탬프를 반환합니다.
+
+이 패턴이 4.2절에서 확인한 "무효화는 캐시 본체를 건드리지 않고 시각만 비교한다"는 원칙을 분산 환경으로 확장한 모습입니다. 각 인스턴스는 로컬 캐시 본체는 별도로 유지하되, **태그 무효화 시각만은 공유 저장소를 단일 진실의 원천으로 삼습니다.**
+
+### 6.2 분산 태그 핸들러 예시
+
+공식 문서가 제시하는 분산 태그 핸들러 예시는 다음과 같습니다.
+
+```javascript
+// cache-handlers/distributed-tags.js
+const { createClient } = require('redis')
+
+const client = createClient({ url: process.env.REDIS_URL })
+client.connect()
+
+const localTagTimestamps = new Map()
+
+module.exports = {
+  // get()과 set()은 5번 항목의 Redis 예시와 동일
+
+  async refreshTags() {
+    const tagKeys = await client.sMembers('revalidated-tags')
+    if (tagKeys.length > 0) {
+      const values = await client.mGet(tagKeys.map((k) => `tag:${k}`))
+      for (let i = 0; i < tagKeys.length; i++) {
+        localTagTimestamps.set(tagKeys[i], Number(values[i]))
+      }
+    }
+  },
+
+  async getExpiration(tags) {
+    const timestamps = tags.map((tag) => localTagTimestamps.get(tag) || 0)
+    return Math.max(...timestamps, 0)
+  },
+
+  async updateTags(tags, durations) {
+    const now = Date.now()
+    const pipeline = client.multi()
+    for (const tag of tags) {
+      pipeline.set(`tag:${tag}`, String(now))
+      pipeline.sAdd('revalidated-tags', tag)
+      localTagTimestamps.set(tag, now)
+    }
+    await pipeline.exec()
+  },
+}
+```
+
+`localTagTimestamps`는 인스턴스 메모리에 있는 캐시 사본이고, Redis의 `tag:<name>`과 `revalidated-tags` 집합이 진실의 원천입니다. `updateTags`는 두 곳을 함께 갱신해 호출 인스턴스가 즉시 최신 상태를 갖게 하고, 다른 인스턴스들은 다음 요청 시작 시점의 `refreshTags`로 동기화됩니다.
+
+### 6.3 `refreshTags`는 반드시 try-catch로 감싼다
+
+공식 문서는 `refreshTags`의 에러 처리를 명시적으로 요구합니다.
+
+> Your handler must catch errors in `refreshTags()`: if it throws, the exception propagates as a request failure. Catching the error allows requests to continue with the last known local tag state, serving potentially stale content until connectivity is restored.  — Next.js 공식 문서, How Revalidation Works
+
+Redis 연결이 일시적으로 실패하더라도 페이지가 죽지 않으려면, `refreshTags` 내부에서 예외를 잡아 마지막으로 알려진 로컬 태그 상태를 그대로 사용하게 두어야 합니다. 이 또한 4.5절의 가용성 우선 원칙을 분산 환경으로 그대로 옮긴 결과입니다.
+
+## 7. 에러 처리 — 공식 문서 명시 사항
+
+핸들러를 작성할 때 반드시 따라야 하는 세 가지 에러 처리 규칙이 있습니다. 이 규칙들은 공식 문서가 모두 명시적으로 규정합니다.
+
+### 7.1 `set` 실패
+
+> Cache write failure: the response is still served to the user because writes are asynchronous. The cache entry is lost, and the next request triggers a fresh render.  — Next.js 공식 문서, How Revalidation Works
+
+응답은 정상 전달되고, 캐시 엔트리만 손실되며, 다음 요청에서 재시도됩니다. `set` 내부에서 Redis 쓰기 실패가 발생해도 사용자 경험은 손상되지 않는다는 의미입니다.
+
+### 7.2 `get` 실패
+
+> Cache read failure: your handler should catch internal errors and return `undefined` (the cache miss signal). The route is then server-rendered fresh. The framework does not wrap `get()` in a try/catch, so unhandled exceptions will propagate as render errors.  — Next.js 공식 문서, How Revalidation Works
+
+**프레임워크는 `get()`을 try/catch로 감싸지 않습니다.** 핸들러 내부에서 모든 예외를 잡아 `undefined`를 반환해야 하며, 그렇지 않으면 렌더 에러로 전파됩니다.
+
+### 7.3 부분 쓰기
+
+> Partial writes: if a cache entry is partially written and then read, the behavior is undefined. Use atomic writes or a write-then-rename pattern to avoid serving partial entries.  — Next.js 공식 문서, How Revalidation Works
+
+`CacheEntry.value`가 스트림이라 부분 쓰기가 가능하다는 사실에서 비롯되는 위험입니다. Redis라면 5번 항목의 예시처럼 **스트림을 전부 읽어 단일 페이로드로 직렬화한 다음 한 번에 `SET`**하는 방식으로 자연스럽게 회피할 수 있습니다.
+
+## 8. Soft Tags와 `revalidatePath`
+
+`get`의 두 번째 인자 `softTags`는 경로 기반 자동 태그입니다. 공식 문서의 설명은 다음과 같습니다.
+
+> Soft tags are implicit tags that Next.js automatically generates based on the route path. For example, the route `/blog/hello` generates soft tags for `/`, `/blog`, `/blog/hello`, and their corresponding layout entries. These tags are prefixed internally with `_N_T_`.  — Next.js 공식 문서, How Revalidation Works
+
+> Soft tags enable `revalidatePath()` to work through the same tag-based cache system.
+
+> In the cache handler API, soft tags are passed to the `get()` method as the `softTags` parameter. Your handler should check whether any soft tag has been invalidated (via `getExpiration()` or direct timestamp comparison) after the cache entry's `timestamp`.
+
+검증된 사실은 다음과 같습니다.
+
+- `revalidatePath()`도 내부적으로 soft tag 기반 무효화로 동작합니다. 즉, 별도의 메커니즘이 아니라 태그 시스템에 얹혀 있습니다.
+- `softTags`는 `get`의 두 번째 인자로 전달되며, 핸들러가 이 태그도 만료 체크 대상에 포함해야 합니다.
+- 내부 prefix는 `_N_T_`입니다.
+
+이 점은 분산 환경에서 특히 중요한데, **`revalidatePath`가 정상 동작하려면 soft tag도 6번 항목의 분산 태그 조율 메커니즘에 함께 태워야 한다**는 의미이기 때문입니다.
+
+## 9. 플랫폼 지원
+
+공식 문서가 명시하는 지원 범위는 다음과 같습니다.
+
+| 배포 환경 | 지원 |
+|:--|:--|
+| Node.js server | Yes |
+| Docker container | Yes |
+| Static export | No |
+| Adapters | 플랫폼별 |
+
+## 10. 사용자 코드 패턴
+
+핸들러 구성이 끝나면 컴포넌트와 서버 액션 측 코드는 단순합니다.
+
+### 10.1 캐시 적용
+
+```tsx
+import { cacheTag, cacheLife } from 'next/cache'
+
+async function getWorksheet(id: string) {
+  'use cache: remote'
+  cacheTag(`worksheet:${id}`)
+  cacheLife({ expire: 86400 })
+
+  return await db.query.worksheets.findFirst({
+    where: eq(worksheets.id, id),
+  })
+}
+```
+
+`'use cache: remote'` 디렉티브가 2번 항목에서 등록한 `remote` 핸들러를 호출하고, `cacheTag`로 무효화 키를 부여하며, `cacheLife`로 엔트리 수명을 지정합니다.
+
+### 10.2 무효화
+
+```tsx
+'use server'
+import { revalidateTag } from 'next/cache'
+
+export async function updateWorksheet(id: string) {
+  await db.update(worksheets).set({ /* ... */ }).where(eq(worksheets.id, id))
+  revalidateTag(`worksheet:${id}`)
+}
+```
+
+`revalidateTag` 호출은 4.2절에서 본 `updateTags` 경로를 타고, 멀티 인스턴스 환경이라면 6번 항목의 분산 태그 조율 메커니즘을 통해 다른 인스턴스에도 전파됩니다.
+
+## 11. 전체 동작 흐름
+
+`'use cache: remote'`로 선언된 함수의 호출 흐름은 다음과 같습니다.
+
+```text
+요청 진입
+  ① 프레임워크가 핸들러의 refreshTags() 호출
+  ② 함수 ID + props + 빌드 ID 해시로 캐시 키 생성
+  ③ get(cacheKey, softTags) 호출
+        ├─ Redis에 없음 → undefined 반환 (캐시 미스)
+        └─ 있음 → CacheEntry 반환
+  ④ 프레임워크의 신선도 검사
+        ├─ entry.timestamp + entry.revalidate*1000 < now → 만료
+        └─ getExpiration(entry.tags) > entry.timestamp → stale/expired
+  ⑤ 캐시 히트 → 엔트리 값 반환, 함수 본체 미실행
+     캐시 미스 → 함수 본체 실행 → CacheEntry 생성 → set(cacheKey, pendingEntry)
+  ⑥ set은 비동기: 응답 스트림이 사용자에게 흐른 뒤 캐시 저장 진행
+```
+
+`revalidateTag('worksheet:5')` 호출 흐름은 다음과 같습니다.
+
+```text
+revalidateTag 호출
+  ① 프레임워크가 updateTags(['worksheet:5'], durations?) 호출
+  ② 핸들러는 Redis에 무효화 시각 기록 (캐시 엔트리는 건드리지 않음)
+  ③ 호출 인스턴스의 로컬 태그 상태도 즉시 갱신
+  ④ 다른 인스턴스들은 다음 요청 시작 시 refreshTags()로 동기화
+```
+
+이 흐름을 따라가 보면 6번 항목의 분산 태그 조율이 왜 필요한지, 7번 항목의 에러 처리 규칙이 왜 각 단계에 맞게 다르게 적용되는지가 한 번에 드러납니다.
+
+## 12. 검증 출처
+
+이 글의 모든 사실은 다음 출처에서 직접 검증되었습니다.
+
+- **공식 문서**: cacheHandlers, How Revalidation Works
+- **공식 소스 코드 (canary 브랜치)**:
+  - `packages/next/src/server/lib/cache-handlers/types.ts` (인터페이스 정의)
+  - `packages/next/src/server/lib/cache-handlers/default.ts` (기본 핸들러 구현)
+
+본 문서에 포함되지 않은 영역은 다음과 같습니다.
+
+- Redis 직렬화 최적화 전략(공식 예시는 base64 + JSON이며, 대안 비교는 미검증)
+- `tagsManifest` 메모리 누수 정리 패턴(소스 코드에 자동 정리 로직 미발견)
+- 매니지드 Redis(Upstash 등) 연동 디테일(플랫폼별)
+- 성능 벤치마크 수치
+
+## 마치며
+
+Next.js 16의 캐시 핸들러는 `get`/`set`이라는 데이터 경로와 `updateTags`/`refreshTags`/`getExpiration`이라는 무효화 경로를 분리한 구조입니다. 기본 핸들러의 소스 코드가 보여주는 핵심 사실은 **무효화가 캐시 본체를 삭제하지 않고 시각만 비교한다**는 것이며, 이 모델이 Redis 같은 외부 저장소로 확장될 때도 그대로 유지됩니다.
+
+단일 인스턴스 Redis 예시는 `get`/`set`을 외부화하지만 무효화는 여전히 인스턴스 로컬에 갇혀 있으므로 멀티 인스턴스 환경에서는 부적합합니다. 분산 환경에서는 무효화 시각을 Redis에 기록하고 매 요청 시작 시 `refreshTags`로 동기화하는 패턴이 공식 권장이며, 이때 `refreshTags`의 try-catch와 `get`의 `undefined` 반환 규칙은 가용성 우선 원칙을 가용성 우선 동작으로 옮기기 위한 필수 조건입니다.
+
+`'use cache: remote'` 디렉티브 한 줄이 일으키는 동작이 어디까지인지, 그리고 그 동작이 분산 환경에서 정확히 어디서 깨질 수 있는지를 인터페이스 단위로 추적해두는 것이, Next.js 16에서 외부 캐시를 안전하게 운영하기 위한 출발점입니다.
+
+## 참고
+
+- [Next.js: cacheHandlers](https://nextjs.org/docs/app/api-reference/config/next-config-js/cacheHandlers)
+- [Next.js: How Revalidation Works](https://nextjs.org/docs/app/guides/how-revalidation-works)
+- [Next.js: Cache Components](https://nextjs.org/docs/app/getting-started/cache-components)
+- [Next.js: Directives - use cache](https://nextjs.org/docs/app/api-reference/directives/use-cache)
+- [Next.js: cacheTag](https://nextjs.org/docs/app/api-reference/functions/cacheTag)
+- [Next.js: cacheLife](https://nextjs.org/docs/app/api-reference/functions/cacheLife)
+- [Next.js: revalidateTag](https://nextjs.org/docs/app/api-reference/functions/revalidateTag)
+- [Next.js: revalidatePath](https://nextjs.org/docs/app/api-reference/functions/revalidatePath)
+- Next.js canary source: `packages/next/src/server/lib/cache-handlers/types.ts`
+- Next.js canary source: `packages/next/src/server/lib/cache-handlers/default.ts`

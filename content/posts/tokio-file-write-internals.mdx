@@ -1,0 +1,107 @@
+---
+title: 'Tokio File Write Internals'
+date: '2026-05-20'
+tags: ['rust', 'tokio', 'ai-content']
+---
+
+## 파일 I/O는 비동기가 아니다
+
+Tokio로 파일을 쓸 때 가장 먼저 알아야 할 사실이 있습니다.
+운영체제 수준에서 일반 파일의 읽기와 쓰기는 본질적으로 블로킹 작업입니다.
+
+네트워크 소켓은 `epoll`, `kqueue`, `IOCP` 같은 진짜 비동기 통지 메커니즘을 OS가 제공합니다. 하지만 일반 파일에는 그런 것이 없습니다. 그래서 Tokio는 파일 I/O를 진짜 비동기로 만들지 않고, 블로킹 코드를 별도 스레드로 격리하는 방식을 택합니다.
+
+```rust
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+
+async fn example() -> std::io::Result<()> {
+    let mut file = File::create("my_file.txt").await?;
+    file.write_all(b"First line.\n").await?;
+    file.flush().await?;
+    Ok(())
+}
+```
+
+이 코드의 `.await`가 내부에서 무엇을 하는지 단계별로 살펴봅니다.
+
+## spawn_blocking으로 위임한다
+
+`tokio::fs`의 함수들은 내부적으로 `std::fs`의 블로킹 코드를 `spawn_blocking`으로 별도 스레드 풀에 던집니다.
+
+```rust
+use std::fs::File;
+use std::io::Write;
+use tokio::task::spawn_blocking;
+
+spawn_blocking(move || {
+    let mut file = File::create("my_file.txt")?;
+    file.write_all(b"First line.\n")?;
+    Ok::<(), std::io::Error>(())
+}).await??;
+```
+
+`tokio::fs::write`는 이 패턴을 그대로 감싼 것입니다. 동등한 블로킹 연산을 `spawn_blocking`으로 별도 스레드 풀에서 실행합니다.
+
+동작 순서는 다음과 같습니다.
+
+1. 비동기 task가 파일 쓰기를 요청하면 Tokio는 그 블로킹 작업을 블로킹 전용 스레드 풀에 넘긴다
+1. 비동기 task는 그 작업의 결과인 `JoinHandle`을 `.await` 한다
+1. 블로킹 스레드가 일하는 동안 task는 `Poll::Pending`으로 잠들고, executor는 같은 스레드에서 다른 task를 실행한다
+1. 블로킹 스레드가 실제 I/O를 끝내면 `Waker`를 호출해 잠든 task를 깨운다
+1. executor가 task를 다시 poll 하고 `JoinHandle`이 `Poll::Ready`를 반환하면 `.await`가 해소된다
+
+Future, poll, Waker 메커니즘이 그대로 쓰입니다. 다만 깨움을 일으키는 이벤트가 OS 이벤트가 아니라 별도 블로킹 스레드의 작업 완료라는 점만 다릅니다.
+
+## write의 await는 쓰기 완료가 아니다
+
+여기가 직관과 어긋나는 부분입니다.
+`file.write_all(...).await`가 끝나도 데이터가 실제로 파일에 쓰인 것은 아닙니다.
+
+`write` 호출은 쓰기가 끝나기 전에 반환됩니다. `write`의 `.await`는 데이터를 내부 버퍼에 복사하고 블로킹 작업을 제출한 시점에 반환됩니다. 실제 디스크 쓰기는 백그라운드 블로킹 스레드가 나중에 처리합니다.
+
+```rust
+let mut file = File::create("my_file.txt").await?;
+file.write_all(b"First line.\n").await?; // 버퍼에 복사, 작업 제출만 끝남
+file.flush().await?;                     // 실제 쓰기 완료를 여기서 기다림
+```
+
+`flush` 없이 함수가 끝나거나 파일이 drop되면 쓰기 자체는 결국 일어나지만, 완료 시점이 보장되지 않고 에러도 확인할 수 없습니다. 따라서 Tokio File에 쓸 때는 `flush`가 반드시 필요합니다. 이것은 `std::fs::File`과 다른 점이며, `File`이 내부적으로 `spawn_blocking`을 사용한다는 사실에서 비롯됩니다.
+
+## 작은 쓰기는 BufWriter로 묶는다
+
+`spawn_blocking` 호출에는 비용이 있습니다.
+블로킹 스레드로의 왕복, 즉 메시지 전달과 버퍼 처리 비용이 매 호출마다 발생합니다.
+
+작은 쓰기를 여러 번 하면 `spawn_blocking` 호출이 그만큼 늘어납니다. 이때 `BufWriter`로 감싸면 작은 쓰기들이 메모리 버퍼에 모이고, 실제 write와 `spawn_blocking` 호출은 `flush` 시점에 한 번만 일어납니다.
+
+```rust
+use tokio::fs::File;
+use tokio::io::{AsyncWriteExt, BufWriter};
+
+let mut file = BufWriter::new(File::create("my_file.txt").await?);
+file.write_all(b"First line.\n").await?;
+file.write_all(b"Second line.\n").await?;
+file.write_all(b"Third line.\n").await?;
+file.flush().await?; // 세 번의 쓰기가 한 번의 spawn_blocking으로 처리됨
+```
+
+참고로 `BufWriter` 없이도 Tokio의 `File`은 자체 내부 버퍼를 가집니다. `File::set_max_buf_size`가 단일 `spawn_blocking` 호출에서 읽거나 쓰는 최대 바이트 수를 제어하며 기본값은 2메가바이트입니다. 그래도 작은 쓰기를 명시적으로 묶으려면 `BufWriter`를 쓰는 편이 확실합니다.
+
+데이터를 미리 모을 수 있다면 `Vec<u8>`나 `String`에 모아서 `tokio::fs::write`를 한 번만 호출하는 것이 가장 단순합니다.
+
+```rust
+let mut contents = String::new();
+contents.push_str("First line.\n");
+contents.push_str("Second line.\n");
+contents.push_str("Third line.\n");
+tokio::fs::write("my_file.txt", contents.as_bytes()).await?;
+```
+
+Tokio의 파일 I/O 성능을 좋게 하려면 연산을 가능한 한 적은 수의 `spawn_blocking` 호출로 묶는 것이 핵심입니다.
+
+## 정리
+
+Tokio의 파일 쓰기는 블로킹 코드를 별도 스레드 풀에 위임하고, 그동안 메인 스레드는 다른 일을 하다가, 작업이 끝나면 `Waker`로 깨워지는 구조입니다.
+
+`write`의 `.await`는 쓰기 완료가 아니라 버퍼 복사와 작업 제출까지만 보장하므로 `flush`가 반드시 필요합니다. 그리고 `spawn_blocking` 호출 횟수를 줄이는 것이 성능의 관건이므로, 작은 쓰기는 `BufWriter`로 묶거나 데이터를 모아 한 번에 쓰는 것이 좋습니다.

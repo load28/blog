@@ -1,0 +1,323 @@
+---
+title: 'tRPC 없이 JSON-RPC만으로 타입 추론 가능한 RPC 만들기'
+date: '2026-05-21'
+tags: ['typescript', 'json-rpc', 'type-inference', 'ai-content']
+---
+
+클라이언트에서 서버 메서드를 호출할 때 메서드명·인자·반환 타입이 자동완성되는 경험은 tRPC가 익숙합니다. 그러나 tRPC는 자체 프로토콜과 어댑터를 함께 가져옵니다. 통신은 **JSON-RPC 2.0 같은 표준 프로토콜로 유지**하고, 타입 추론만 가져오고 싶을 때가 있습니다. 다른 언어 서버와의 호환성, 게이트웨이 통과, WebSocket·HTTP 동시 사용 등이 이유입니다.
+
+이 글은 tRPC 없이 **JSON-RPC만으로** 타입 추론이 동작하는 RPC 레이어를 직접 만들고, 그 레이어를 **목적에 따라 어떻게 갈아끼울 수 있는지**까지 보여줍니다.
+
+## 1. JSON-RPC 2.0 짧게 짚기
+
+JSON-RPC 2.0은 "원격 호출을 JSON 한 덩어리로 표현하는 방법"을 정의한 작은 스펙입니다. 트랜스포트(HTTP/WebSocket/stdio…)에 종속되지 않고, 요청·응답·알림 세 가지 모양만 약속합니다.
+
+```json
+// Request
+{ "jsonrpc": "2.0", "method": "user.get", "params": { "id": "1" }, "id": 1 }
+
+// Success Response
+{ "jsonrpc": "2.0", "result": { "id": "1", "name": "load28" }, "id": 1 }
+
+// Error Response
+{ "jsonrpc": "2.0", "error": { "code": -32601, "message": "Method not found" }, "id": 1 }
+```
+
+스펙이 약속해주는 것은 **메서드명과 파라미터를 어떤 형태로 실어 보내는지**까지입니다. 메서드명이 어떤 인자를 받고 어떤 결과를 돌려주는지에 대한 **타입 정보는 스펙 바깥의 일**입니다. 이 빈 자리를 TypeScript로 채우는 것이 이 글의 목표입니다.
+
+## 2. tRPC가 해주던 일
+
+tRPC가 마법처럼 보이는 이유를 한 줄로 정리하면 다음과 같습니다.
+
+> 서버에서 정의한 **라우터 타입**을 클라이언트가 그대로 `import`해서, 메서드 호출 한 줄에서 인자·결과 타입이 모두 추론된다.
+
+핵심은 두 가지입니다.
+
+- **단일 진실의 원천**: 라우터 객체 하나가 모든 메서드의 시그니처를 보유합니다.
+- **타입만 공유**: 런타임 코드는 넘어가지 않고, `type AppRouter = typeof appRouter` 같은 타입만 클라이언트로 흐릅니다.
+
+이 두 가지만 재현하면 됩니다. 자체 직렬화 프로토콜이나 batching, observable 같은 부가 기능은 tRPC의 선택일 뿐, 타입 추론의 본질은 아닙니다.
+
+## 3. 프로시저 정의: 입출력 타입을 객체에 가두기
+
+먼저 메서드 하나의 시그니처를 표현하는 `Procedure` 타입을 만듭니다. 입력·출력 타입을 객체에 phantom 필드로 묶어 두는 패턴입니다.
+
+```typescript
+interface Procedure<TInput, TOutput> {
+  _input: TInput;
+  _output: TOutput;
+  handler: (input: TInput) => Promise<TOutput> | TOutput;
+}
+
+function procedure<TInput, TOutput>(
+  handler: (input: TInput) => Promise<TOutput> | TOutput,
+): Procedure<TInput, TOutput> {
+  return { handler } as Procedure<TInput, TOutput>;
+}
+```
+
+`_input`, `_output`은 런타임에는 존재하지 않습니다. 타입 시스템이 나중에 `infer`로 꺼내 쓸 수 있도록 **타입 슬롯**을 열어두는 용도입니다. 이 패턴은 [이전 글](./typescript-generic-reverse-inference)에서 다룬 "구조에 타입을 박아두고 `infer`로 꺼낸다"는 그 패턴입니다.
+
+라우터는 메서드명을 키로 하는 평범한 객체입니다.
+
+```typescript
+type AnyProcedure = Procedure<any, any>;
+type Router = Record<string, AnyProcedure>;
+
+const appRouter = {
+  'user.get': procedure(async (input: { id: string }) => ({
+    id: input.id,
+    name: 'load28',
+  })),
+  'user.update': procedure(async (input: { id: string; name: string }) => ({
+    ok: true,
+  })),
+} satisfies Router;
+
+export type AppRouter = typeof appRouter;
+```
+
+`satisfies Router`는 두 가지를 동시에 해줍니다. 객체가 라우터 모양을 만족하는지 검증하면서도, **`typeof appRouter`로 끌어낸 타입은 좁은 리터럴 형태를 그대로 유지**합니다. 그래야 클라이언트가 `'user.get'`이라는 메서드명까지 인지할 수 있습니다.
+
+## 4. 클라이언트 타입: 메서드별로 인자·결과 추출하기
+
+이제 라우터 타입을 받아 "메서드명 → 호출 함수"로 펼치는 매핑 타입을 만듭니다. 각 메서드의 입출력은 `infer`로 꺼냅니다.
+
+```typescript
+type Client<TRouter extends Router> = {
+  [M in keyof TRouter]: (
+    input: TRouter[M] extends Procedure<infer I, any> ? I : never,
+  ) => Promise<TRouter[M] extends Procedure<any, infer O> ? O : never>;
+};
+```
+
+여기서 두 가지 결정이 보입니다.
+
+- `TRouter extends Router`로 받되 제약은 `Procedure<any, any>`까지만 느슨하게 열어 둡니다. 실제 입출력 타입은 `infer`로 정확히 꺼냅니다.
+- 클라이언트 함수의 반환은 항상 `Promise<…>`입니다. 핸들러가 동기든 비동기든 네트워크를 건너오면 비동기가 되기 때문입니다.
+
+`Client<AppRouter>`를 펼치면 다음과 동치인 타입이 만들어집니다.
+
+```typescript
+type Expanded = {
+  'user.get':    (input: { id: string }) => Promise<{ id: string; name: string }>;
+  'user.update': (input: { id: string; name: string }) => Promise<{ ok: boolean }>;
+};
+```
+
+서버에서 `AppRouter`만 export하면, 클라이언트는 이 타입을 import해서 그대로 사용합니다.
+
+## 5. 트랜스포트와 클라이언트 분리
+
+타입은 끝났습니다. 이제 실제 호출을 어떤 채널로 흘려보낼지가 남았습니다. 여기서 **타입과 트랜스포트를 의도적으로 분리**합니다.
+
+```typescript
+type RpcTransport = (method: string, params: unknown) => Promise<unknown>;
+
+function createClient<TRouter extends Router>(
+  transport: RpcTransport,
+): Client<TRouter> {
+  return new Proxy({} as Client<TRouter>, {
+    get:
+      (_, method: string) =>
+      (input: unknown) =>
+        transport(method, input),
+  });
+}
+```
+
+`Proxy`가 하는 일은 단 하나입니다. 어떤 키로 접근하든 "그 키를 메서드명으로 삼아 트랜스포트를 호출하는 함수"를 돌려줍니다. 타입은 `Client<TRouter>`로 박혀 있으므로, 자동완성과 타입 체크는 컴파일 타임에 끝나고 런타임은 그냥 키만 넘기면 됩니다.
+
+이 분리가 핵심입니다. **`createClient`는 트랜스포트를 모릅니다.** HTTP든 WebSocket든 in-memory든, JSON-RPC 요청을 한 번 보내고 결과를 한 번 받는 함수면 무엇이든 받습니다.
+
+## 6. 목적에 따라 트랜스포트 갈아끼우기
+
+같은 라우터 타입을 서로 다른 채널 위에 올려봅니다.
+
+### 6.1 HTTP fetch 트랜스포트
+
+가장 단순한 형태입니다. 매 요청마다 POST 한 번.
+
+```typescript
+const httpTransport: RpcTransport = async (method, params) => {
+  const res = await fetch('/rpc', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method,
+      params,
+      id: crypto.randomUUID(),
+    }),
+  });
+  const json = await res.json();
+  if (json.error) throw new RpcError(json.error.code, json.error.message);
+  return json.result;
+};
+
+const client = createClient<AppRouter>(httpTransport);
+
+const user = await client['user.get']({ id: '1' });
+//    ^? const user: { id: string; name: string }
+```
+
+`client['user.update']`에 `{ id: '1' }`만 넘기면 컴파일 에러가 납니다. `name`이 빠졌다는 메시지가 정확히 어떤 필드인지 알려줍니다. 이 에러 메시지의 정확도가 [`infer` 추출 패턴](./typescript-generic-reverse-inference)을 쓰는 이유 그 자체입니다.
+
+### 6.2 WebSocket 트랜스포트
+
+JSON-RPC는 트랜스포트에 묶이지 않으므로, 같은 라우터를 그대로 WebSocket 위에 올릴 수 있습니다. 단지 요청과 응답을 `id`로 짝지어 줄 작은 큐만 추가하면 됩니다.
+
+```typescript
+function createWsTransport(url: string): RpcTransport {
+  const ws = new WebSocket(url);
+  const pending = new Map<string, (v: unknown) => void>();
+
+  ws.addEventListener('message', (e) => {
+    const msg = JSON.parse(e.data);
+    const resolve = pending.get(msg.id);
+    if (!resolve) return;
+    pending.delete(msg.id);
+    if (msg.error) resolve(Promise.reject(new RpcError(msg.error.code, msg.error.message)));
+    else resolve(msg.result);
+  });
+
+  return (method, params) =>
+    new Promise((resolve) => {
+      const id = crypto.randomUUID();
+      pending.set(id, resolve);
+      ws.send(JSON.stringify({ jsonrpc: '2.0', method, params, id }));
+    });
+}
+
+const wsClient = createClient<AppRouter>(createWsTransport('wss://example.com/rpc'));
+```
+
+`wsClient`와 `client`는 **타입이 완전히 동일**합니다. 호출 코드 한 줄도 바꾸지 않고 채널만 바꿀 수 있습니다. 실시간 채널이 필요한 화면은 `wsClient`로, 단순 요청은 `httpClient`로 같은 라우터를 공유합니다.
+
+### 6.3 동일 프로세스 트랜스포트 (테스트·SSR)
+
+서버 코드가 같은 프로세스 안에 있다면 네트워크를 건너지 않아도 됩니다. 트랜스포트를 라우터 객체에 직접 연결하면 됩니다.
+
+```typescript
+function createLocalTransport<TRouter extends Router>(router: TRouter): RpcTransport {
+  return async (method, params) => {
+    const proc = (router as Record<string, AnyProcedure>)[method];
+    if (!proc) throw new RpcError(-32601, `Method not found: ${method}`);
+    return await proc.handler(params as never);
+  };
+}
+
+const localClient = createClient<AppRouter>(createLocalTransport(appRouter));
+```
+
+테스트에서 모의 서버 없이 같은 인터페이스를 호출할 수 있고, SSR에서는 자기 자신을 호출하는 비용을 0으로 만들 수 있습니다. 타입 시그니처는 그대로입니다.
+
+## 7. 서버 측: 라우터를 JSON-RPC 핸들러로 펴기
+
+서버 쪽도 트랜스포트와 분리하는 게 자연스럽습니다. 라우터를 받아 "JSON-RPC 요청 한 덩어리를 처리하는 함수"를 만드는 헬퍼만 있으면 됩니다.
+
+```typescript
+interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  method: string;
+  params?: unknown;
+  id?: number | string | null;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: '2.0';
+  id: number | string | null;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}
+
+function createHandler<TRouter extends Router>(router: TRouter) {
+  return async (req: JsonRpcRequest): Promise<JsonRpcResponse> => {
+    const proc = (router as Record<string, AnyProcedure>)[req.method];
+    if (!proc) {
+      return {
+        jsonrpc: '2.0',
+        id: req.id ?? null,
+        error: { code: -32601, message: `Method not found: ${req.method}` },
+      };
+    }
+    try {
+      const result = await proc.handler(req.params as never);
+      return { jsonrpc: '2.0', id: req.id ?? null, result };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Internal error';
+      return {
+        jsonrpc: '2.0',
+        id: req.id ?? null,
+        error: { code: -32603, message },
+      };
+    }
+  };
+}
+```
+
+이 핸들러를 Express, Hono, Nitro, WebSocket 서버 어디에 붙이느냐는 별개의 결정입니다. **라우터·핸들러·트랜스포트가 세 갈래로 분리**되어 있어서, 어느 하나를 바꿔도 나머지는 그대로입니다.
+
+## 8. 입력 검증을 어디에 둘 것인가
+
+여기까지 코드의 타입은 정확하지만, **런타임 검증은 없습니다.** 외부에서 들어온 JSON이 `Procedure`의 `TInput`을 만족한다는 보장은 컴파일러가 해주지 않습니다.
+
+검증을 보태는 가장 자연스러운 자리는 `procedure` 함수입니다. 스키마 라이브러리(zod·valibot·effect schema 등) 하나를 골라 입력 단계에 끼웁니다.
+
+```typescript
+import { z } from 'zod';
+
+function procedure<TSchema extends z.ZodTypeAny, TOutput>(
+  schema: TSchema,
+  handler: (input: z.infer<TSchema>) => Promise<TOutput> | TOutput,
+): Procedure<z.infer<TSchema>, TOutput> {
+  return {
+    handler: async (input) => handler(schema.parse(input)),
+  } as Procedure<z.infer<TSchema>, TOutput>;
+}
+
+const appRouter = {
+  'user.get': procedure(
+    z.object({ id: z.string() }),
+    async (input) => ({ id: input.id, name: 'load28' }),
+  ),
+} satisfies Router;
+```
+
+`z.infer<TSchema>`가 `TInput` 자리에 그대로 들어가므로, 스키마 한 번 선언으로 **런타임 검증과 컴파일 타임 추론을 동시에** 얻습니다. 스키마 라이브러리를 쓰지 않는 경로(내부 호출만 받는 라우터 등)는 처음에 정의한 단순 `procedure`를 그대로 쓰면 됩니다. 두 형태가 같은 `Procedure<TInput, TOutput>`을 만들어내기 때문에 클라이언트 쪽 타입은 영향을 받지 않습니다.
+
+## 9. tRPC와의 경계
+
+같은 결과를 다른 비용으로 얻는 방식이 갈리는 지점을 정리하면 다음과 같습니다.
+
+| 구분 | tRPC | 이 글의 JSON-RPC RPC |
+|:--|:--|:--|
+| 와이어 포맷 | tRPC 자체 포맷 | JSON-RPC 2.0 (표준) |
+| 서버 호환 | TypeScript 서버에 한정 | 다른 언어 서버와 그대로 통신 |
+| 부가 기능 | batching·링크·옵저버블·미들웨어 | 직접 필요할 때만 추가 |
+| 트랜스포트 | HTTP·WS 어댑터 제공 | 함수 하나(`RpcTransport`)로 무엇이든 |
+| 학습 곡선 | 자체 API 학습 필요 | TypeScript와 표준 JSON-RPC만 |
+
+tRPC가 과한 선택이 되는 경우는 명확합니다. **서버가 TypeScript가 아닐 때, 와이어 포맷을 표준으로 유지해야 할 때, 게이트웨이·프록시·다른 클라이언트가 같은 엔드포인트를 함께 써야 할 때.** 반대로 풀스택이 TypeScript이고 batching·서브스크립션 같은 기능을 즉시 쓰고 싶다면 tRPC가 더 빠른 출발점입니다.
+
+## 정리
+
+JSON-RPC만으로도 tRPC 수준의 타입 추론을 얻을 수 있는 이유는 두 가지였습니다.
+
+- **단일 진실의 원천**: 라우터 객체 하나에 메서드명과 입출력 타입을 모두 가둡니다. `satisfies Router`로 리터럴 타입을 유지하고, `typeof`로 그 타입을 그대로 꺼냅니다.
+- **`infer`로 입출력 추출**: 클라이언트 타입은 라우터 타입을 받아 메서드별로 `Procedure<infer I, infer O>`를 패턴 매칭해서 풉니다. 제약은 `any`로 느슨하게 열어 두고, 추출은 `infer`로 정확하게 합니다.
+
+그리고 이 RPC가 표준 위에 있기 때문에, **목적에 맞춰 트랜스포트를 갈아끼울 수 있습니다.**
+
+- HTTP fetch: 단순 요청·응답
+- WebSocket: 실시간·양방향
+- 동일 프로세스: 테스트·SSR
+- 다른 언어 서버: JSON-RPC 호환 백엔드와 그대로 통신
+
+라우터·핸들러·트랜스포트가 분리되어 있어 어느 한쪽의 변화가 다른 쪽으로 새지 않습니다. tRPC가 가져다주는 편의 중에 **타입 추론**만 떼어내고 싶을 때, 이 정도 분량의 코드면 충분합니다.
+
+## References
+
+- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
+- [TypeScript Handbook — Conditional Types](https://www.typescriptlang.org/docs/handbook/2/conditional-types.html)
+- [TypeScript 제네릭의 역방향 추론 한계와 infer 패턴](./typescript-generic-reverse-inference)

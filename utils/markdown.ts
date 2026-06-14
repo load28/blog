@@ -8,6 +8,11 @@ export function inline(s: string): string {
     codes.push("<code>" + esc(code) + "</code>");
     return "\x00" + (codes.length - 1) + "\x00";
   });
+  const maths: string[] = [];
+  s = s.replace(/\$([^$]+?)\$/g, (_, math) => {
+    maths.push("$" + math + "$");
+    return "\x02" + (maths.length - 1) + "\x02";
+  });
   const links: string[] = [];
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
     links.push('<a href="' + url + '" target=_blank>' + esc(text) + '</a>');
@@ -18,6 +23,7 @@ export function inline(s: string): string {
   s = s.replace(/\*\*([\s\S]+?)\*\*/g, "<b>$1</b>");
   s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
   s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[+i]);
+  s = s.replace(/\x02(\d+)\x02/g, (_, i) => maths[+i]);
   s = s.replace(/\x01(\d+)\x01/g, (_, i) => links[+i]);
   return s;
 }
@@ -31,6 +37,17 @@ export function md2html(s: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
+
+    if (l.trim() === "$$") {
+      const mathBuf: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "$$") {
+        mathBuf.push(lines[i]);
+        i++;
+      }
+      out.push("$$\n" + mathBuf.join("\n") + "\n$$");
+      continue;
+    }
 
     if (l.startsWith("```")) {
       if (inCode) {
@@ -183,7 +200,7 @@ export function md2html(s: string): string {
       i + 1 < lines.length &&
       lines[i + 1].trim() &&
       !lines[i + 1].match(
-        /^(#{1,6}\s|[-*]\s|\d+\.\s|>|```|---|\*\*\*|\|)/
+        /^(#{1,6}\s|[-*]\s|\d+\.\s|>|```|---|\*\*\*|\||\$\$)/
       ) &&
       !inCode
     ) {

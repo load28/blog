@@ -5,6 +5,41 @@ export interface Post {
   date: string;
   tags: string[];
   html: string;
+  excerpt: string;
+  minutes: number;
+}
+
+function extractExcerpt(s: string): string {
+  const ls = s.split("\n");
+  let inCode = false;
+  for (const line of ls) {
+    const t = line.trim();
+    if (t.startsWith("```")) {
+      inCode = !inCode;
+      continue;
+    }
+    if (
+      inCode ||
+      !t ||
+      /^#{1,6}\s/.test(t) ||
+      /^[-*]\s/.test(t) ||
+      /^\d+\.\s/.test(t) ||
+      t.startsWith(">") ||
+      t.startsWith("---") ||
+      t.startsWith("***") ||
+      t.startsWith("|") ||
+      t.startsWith("<")
+    )
+      continue;
+    const l = t
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/\*\*|\*|`/g, "")
+      .replace(/<[^>]+>/g, "")
+      .trim();
+    if (!l) continue;
+    return l.length > 140 ? l.slice(0, 140).replace(/\s+\S*$/, "") + "…" : l;
+  }
+  return "";
 }
 
 let _posts: Post[] | null = null;
@@ -40,7 +75,8 @@ export async function getAllPosts(): Promise<Post[]> {
     });
 
     const slug = key.replace(/^posts:/, "").replace(/\.mdx$/, "");
-    const html = md2html(m[2].trim());
+    const body = m[2].trim();
+    const html = md2html(body);
 
     posts.push({
       slug,
@@ -48,6 +84,14 @@ export async function getAllPosts(): Promise<Post[]> {
       date: fm.date || "",
       tags: Array.isArray(fm.tags) ? fm.tags : [],
       html,
+      excerpt:
+        typeof fm.description === "string" && fm.description
+          ? fm.description
+          : extractExcerpt(body),
+      minutes: Math.max(
+        1,
+        Math.round(body.replace(/```[\s\S]*?```/g, "").length / 700)
+      ),
     });
   }
 

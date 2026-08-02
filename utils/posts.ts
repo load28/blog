@@ -76,7 +76,7 @@ export async function getAllPosts(): Promise<Post[]> {
 
     const slug = key.replace(/^posts:/, "").replace(/\.mdx$/, "");
     const body = m[2].trim();
-    const html = md2html(body);
+    const html = await md2html(body);
 
     posts.push({
       slug,

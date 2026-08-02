@@ -31,6 +31,17 @@ function onScroll(){
 addEventListener("scroll",onScroll,{passive:true});
 onScroll();
 
+/* code plate copy button */
+d.addEventListener("click",function(e){
+  var b=e.target.closest(".cp");if(!b)return;
+  var cd=b.closest(".cd"),code=cd&&cd.querySelector("pre code");
+  if(!code||!navigator.clipboard)return;
+  navigator.clipboard.writeText(code.innerText).then(function(){
+    b.textContent="Copied";b.classList.add("ok");
+    setTimeout(function(){b.textContent="Copy";b.classList.remove("ok")},1600);
+  });
+});
+
 /* card navigation (feed cards are not anchors so tag links can nest inside) */
 $("[data-hf]").forEach(function(el){
   el.addEventListener("click",function(e){

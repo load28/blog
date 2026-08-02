@@ -1,5 +1,5 @@
 import { globalStyle, keyframes, style } from '@vanilla-extract/css';
-import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION } from '@/styles/conditions';
+import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION, TOUCH_MEDIA } from '@/styles/conditions';
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
@@ -151,6 +151,9 @@ export const storyTitle = style({
     [HOVER_MEDIA]: {
       selectors: { [`${story}:hover &`]: { color: vars.color.teal } },
     },
+    [TOUCH_MEDIA]: {
+      selectors: { [`${story}:active &`]: { color: vars.color.teal, transitionDuration: '0s' } },
+    },
     [MOBILE_MEDIA]: { fontSize: '24px' },
   },
 });
@@ -211,6 +214,15 @@ export const ctaCard = style({
     [HOVER_MEDIA]: {
       selectors: {
         '&:hover': { borderColor: vars.color.ink, background: vars.color.tint },
+      },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: {
+        '&:active': {
+          borderColor: vars.color.ink,
+          background: vars.color.tint,
+          transitionDuration: '0s',
+        },
       },
     },
   },

@@ -42,6 +42,12 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         {/* 캐스케이드 레이어 순서 확정 — reset < base < recipes < 레이어 없음(1회성 css) */}
         <style>{'@layer reset, base, recipes;'}</style>
+        {/* iOS Safari는 터치 리스너가 있어야 :active를 적용한다 — 터치 피드백용 빈 리스너 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.addEventListener('touchstart',function(){},{passive:true});",
+          }}
+        />
         <HeadContent />
       </head>
       <body>

@@ -1,5 +1,5 @@
 import { globalStyle, keyframes, style } from '@vanilla-extract/css';
-import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION } from '@/styles/conditions';
+import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION, TOUCH_MEDIA } from '@/styles/conditions';
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
@@ -28,6 +28,9 @@ export const backLink = style({
   transition: `color ${vars.duration.fast}`,
   '@media': {
     [HOVER_MEDIA]: { selectors: { '&:hover': { color: vars.color.ink } } },
+    [TOUCH_MEDIA]: {
+      selectors: { '&:active': { color: vars.color.ink, transitionDuration: '0s' } },
+    },
   },
 });
 
@@ -51,6 +54,16 @@ export const tagPill = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { '&:hover': { color: vars.color.ink, borderColor: vars.color.borderStrong } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: {
+        '&:active': {
+          color: vars.color.ink,
+          borderColor: vars.color.borderStrong,
+          background: vars.color.tint,
+          transitionDuration: '0s',
+        },
+      },
     },
   },
 });
@@ -139,6 +152,9 @@ globalStyle(`${bd} a`, {
 });
 globalStyle(`${bd} a:hover`, {
   '@media': { [HOVER_MEDIA]: { opacity: 0.7 } },
+});
+globalStyle(`${bd} a:active`, {
+  '@media': { [TOUCH_MEDIA]: { opacity: 0.7, transitionDuration: '0s' } },
 });
 globalStyle(`${bd} b`, { fontWeight: 650 });
 globalStyle(`${bd} code`, {
@@ -256,6 +272,9 @@ globalStyle(`${bd} .cp`, {
 });
 globalStyle(`${bd} .cp:hover`, {
   '@media': { [HOVER_MEDIA]: { color: vars.color.ink } },
+});
+globalStyle(`${bd} .cp:active`, {
+  '@media': { [TOUCH_MEDIA]: { color: vars.color.ink, transitionDuration: '0s' } },
 });
 globalStyle(`${bd} .cp.ok`, { color: vars.color.teal });
 globalStyle(`${bd} .cd pre`, { margin: 0, overflowX: 'auto', background: 'transparent !important' });

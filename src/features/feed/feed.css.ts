@@ -1,5 +1,5 @@
 import { globalStyle, style } from '@vanilla-extract/css';
-import { HOVER_MEDIA, MOBILE_MEDIA } from '@/styles/conditions';
+import { HOVER_MEDIA, MOBILE_MEDIA, TOUCH_MEDIA } from '@/styles/conditions';
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
@@ -84,6 +84,11 @@ export const featured = style({
         [`${feedList}:hover &:not(:hover)`]: { opacity: 0.45 },
       },
     },
+    [TOUCH_MEDIA]: {
+      selectors: {
+        '&:active': { background: vars.color.tint, transitionDuration: '0s' },
+      },
+    },
     [MOBILE_MEDIA]: { padding: '20px 2px 22px' },
   },
 });
@@ -104,6 +109,9 @@ export const featuredTitle = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { [`${featured}:hover &`]: { color: vars.color.teal } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { [`${featured}:active &`]: { color: vars.color.teal } },
     },
   },
 });
@@ -137,6 +145,11 @@ export const entry = style({
         [`${feedList}:hover &:not(:hover)`]: { opacity: 0.45 },
       },
     },
+    [TOUCH_MEDIA]: {
+      selectors: {
+        '&:active': { background: vars.color.tint, transitionDuration: '0s' },
+      },
+    },
     [MOBILE_MEDIA]: { gridTemplateColumns: '1fr', gap: '2px', padding: '15px 2px' },
   },
 });
@@ -157,6 +170,9 @@ export const entryTitle = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { [`${entry}:hover &`]: { color: vars.color.teal } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { [`${entry}:active &`]: { color: vars.color.teal, transitionDuration: '0s' } },
     },
   },
 });
@@ -210,6 +226,9 @@ export const tagLink = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { '&:hover': { color: vars.color.teal } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { '&:active': { color: vars.color.teal, transitionDuration: '0s' } },
     },
   },
 });
@@ -269,6 +288,9 @@ export const filterClear = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { '&:hover': { color: vars.color.ink } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { '&:active': { color: vars.color.ink, transitionDuration: '0s' } },
     },
   },
 });

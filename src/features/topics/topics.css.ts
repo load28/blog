@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { HOVER_MEDIA, MOBILE_MEDIA } from '@/styles/conditions';
+import { HOVER_MEDIA, MOBILE_MEDIA, TOUCH_MEDIA } from '@/styles/conditions';
 import { vars } from '@/styles/theme.css';
 
 // 토픽 페이지 (구 .tf·.shf·.tl2) — 토픽 선반과 단건 태그 그리드
@@ -57,6 +57,9 @@ export const shelfAll = style({
   transition: `color ${vars.duration.fast}`,
   '@media': {
     [HOVER_MEDIA]: { selectors: { '&:hover': { color: vars.color.teal } } },
+    [TOUCH_MEDIA]: {
+      selectors: { '&:active': { color: vars.color.teal, transitionDuration: '0s' } },
+    },
   },
 });
 
@@ -93,6 +96,11 @@ export const shelfCard = style({
         [`${rail}:hover &:not(:hover)`]: { opacity: 0.5 },
       },
     },
+    [TOUCH_MEDIA]: {
+      selectors: {
+        '&:active': { borderColor: vars.color.borderStrong, transitionDuration: '0s' },
+      },
+    },
     [MOBILE_MEDIA]: { flexBasis: '200px' },
   },
 });
@@ -113,6 +121,9 @@ export const shelfCardTitle = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { [`${shelfCard}:hover &`]: { color: vars.color.teal } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { [`${shelfCard}:active &`]: { color: vars.color.teal } },
     },
   },
 });
@@ -141,6 +152,9 @@ export const tagCard = style({
   transition: `border-color ${vars.duration.base}`,
   '@media': {
     [HOVER_MEDIA]: { selectors: { '&:hover': { borderColor: vars.color.ink } } },
+    [TOUCH_MEDIA]: {
+      selectors: { '&:active': { borderColor: vars.color.ink, transitionDuration: '0s' } },
+    },
   },
 });
 
@@ -152,6 +166,9 @@ export const tagName = style({
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { [`${tagCard}:hover &`]: { color: vars.color.teal } },
+    },
+    [TOUCH_MEDIA]: {
+      selectors: { [`${tagCard}:active &`]: { color: vars.color.teal, transitionDuration: '0s' } },
     },
   },
 });

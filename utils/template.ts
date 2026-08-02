@@ -40,12 +40,16 @@ function navLinks(active: string, arrows: boolean): string {
   );
 }
 
+function themeSwitch(): string {
+  return `<div class=ths><button class=thb data-th=paper title="Paper — Financial Times 페이퍼 팔레트" aria-label="Paper theme"></button><button class=thb data-th=ivory title="Ivory — Kinfolk 미니멀 모노크롬" aria-label="Ivory theme"></button><button class=thb data-th=journal title="Journal — The New York Times 화이트" aria-label="Journal theme"></button></div>`;
+}
+
 function topBar(active: string, ds = false): string {
-  return `<header id=hd${ds ? " class=ds" : ""}><div class=hw><a href="/" class=nl><span class=dot></span>${SN}</a><nav class=nr>${navLinks(active, false)}</nav></div></header>`;
+  return `<header id=hd${ds ? " class=ds" : ""}><div class=hw><a href="/" class=nl><span class=dot></span>${SN}</a><nav class=nr>${navLinks(active, false)}${themeSwitch()}</nav></div></header>`;
 }
 
 function sideBar(active: string, posts: number, topics: number): string {
-  return `<aside id=sd><a href="/" class=nl><span class=dot></span>${SN}</a><h1 class=ht2>Writing on <em>code &amp; systems</em>.</h1><nav class=sn>${navLinks(active, true)}</nav><p class=sst2>${posts} posts · ${topics} topics</p><p class=sft>© ${YEAR} · ${SN}</p></aside>`;
+  return `<aside id=sd><a href="/" class=nl><span class=dot></span>${SN}</a><h1 class=ht2>Writing on <em>code &amp; systems</em>.</h1><nav class=sn>${navLinks(active, true)}</nav><p class=sst2>${posts} posts · ${topics} topics</p><div style="margin-top:14px">${themeSwitch()}</div><p class=sft>© ${YEAR} · ${SN}</p></aside>`;
 }
 
 function mobileHero(chips?: string): string {
@@ -59,7 +63,7 @@ function footerBar(ds = false): string {
 }
 
 function doc(title: string, body: string): string {
-  return `<!DOCTYPE html><html lang=ko><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=theme-color content="#09090b"><title>${title} — ${SN}</title><link rel=icon href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>"><link rel=preconnect href="https://cdn.jsdelivr.net" crossorigin><link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin><link rel=preload href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2" as=font type="font/woff2" crossorigin><link rel=stylesheet href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"><link rel=stylesheet href="/c/s.css"><link rel=stylesheet href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script></head><body><div id=a>${body}</div><script src="/c/n.js"></script><script>hljs.highlightAll()</script></body></html>`;
+  return `<!DOCTYPE html><html lang=ko><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=theme-color content="#fff1e5"><title>${title} — ${SN}</title><link rel=icon href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>"><script>try{var t=localStorage.getItem("th");if(t)document.documentElement.dataset.theme=t}catch(e){}</script><link rel=preconnect href="https://cdn.jsdelivr.net" crossorigin><link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin><link rel=preconnect href="https://fonts.googleapis.com"><link rel=preconnect href="https://fonts.gstatic.com" crossorigin><link rel=preload href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2" as=font type="font/woff2" crossorigin><link rel=stylesheet href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"><link rel=stylesheet href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400..900&display=swap"><link rel=stylesheet href="/c/s.css"><link rel=stylesheet href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script></head><body><div id=a>${body}</div><script src="/c/n.js"></script><script>hljs.highlightAll()</script></body></html>`;
 }
 
 export function shell(

@@ -7,7 +7,7 @@ export default defineEventHandler(async () => {
   const stack = covers
     .map(
       (p, i) =>
-        `<a href="/posts/${p.slug}" class=stc><div class=stw style="--h:${hue(p.slug)}"><div class=slk><span class=fb>Story ${i + 1} / ${covers.length}</span><span>${fmtDate(p.date)} · ${p.minutes} min read</span></div><h2 class=slt>${p.title}</h2>${
+        `<a href="/posts/${p.slug}" class=stc><div class=stw><i class=srl></i><div class=slk><span class=fb>Story ${String(i + 1).padStart(2, "0")} / ${String(covers.length).padStart(2, "0")}</span><span>${fmtDate(p.date)} · ${p.minutes} min read</span></div><h2 class=slt>${p.title}</h2>${
           p.excerpt ? `<p class=sle>${p.excerpt}</p>` : ""
         }<span class=rm2>Read story <i>→</i></span></div></a>`
     )

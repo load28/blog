@@ -303,38 +303,6 @@ function rehypeBlocks() {
   };
 }
 
-/* CommonMark은 여는 `**` 바로 뒤, 닫는 `**` 바로 앞의 공백을 허용하지 않아
-   `**이거 **`가 문자 그대로 노출된다 — 구분자 안쪽의 한쪽 공백을 지워 보정한다.
-   여는 `**`는 행 시작/공백 뒤에서만 인정해 이미 닫힌 강조의 꼬리를 오인하지 않고,
-   양쪽 모두 공백인 `** x **`는 연산자 표기와 구분할 수 없어 손대지 않는다.
-   코드 펜스는 통째로 건너뛰고, 인라인 코드는 마스킹해 위치만 보존한 채 지나친다. */
-function normalizeLooseBold(src: string): string {
-  let inFence = false;
-  return src
-    .split("\n")
-    .map((line) => {
-      if (/^\s*(```|~~~)/.test(line)) {
-        inFence = !inFence;
-        return line;
-      }
-      if (inFence || !line.includes("**")) return line;
-      const masked = line.replace(/`[^`]*`/g, (m) => "\u0000".repeat(m.length));
-      const re = /(^|\s)\*\*(?:( +)([^*]*?\S)|(\S[^*]*?)( +))\*\*/g;
-      let out = "";
-      let last = 0;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(masked))) {
-        const openStart = m.index + m[1].length;
-        const innerStart = openStart + 2 + (m[2]?.length ?? 0);
-        const innerEnd = innerStart + (m[3] ?? m[4]).length;
-        out += line.slice(last, openStart) + "**" + line.slice(innerStart, innerEnd) + "**";
-        last = innerEnd + (m[5]?.length ?? 0) + 2;
-      }
-      return out + line.slice(last);
-    })
-    .join("\n");
-}
-
 export async function md2html(s: string): Promise<string> {
   const hl = await getHighlighter();
   const file = await unified()
@@ -356,6 +324,6 @@ export async function md2html(s: string): Promise<string> {
     .use(rehypeExternalLinks)
     .use(rehypeBlocks)
     .use(rehypeStringify)
-    .process(normalizeLooseBold(s));
+    .process(s);
   return String(file);
 }

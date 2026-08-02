@@ -156,7 +156,7 @@ globalStyle(`${bd} a:hover`, {
 globalStyle(`${bd} a:active`, {
   '@media': { [TOUCH_MEDIA]: { opacity: 0.7, transitionDuration: '0s' } },
 });
-globalStyle(`${bd} b`, { fontWeight: 650 });
+globalStyle(`${bd} b, ${bd} strong`, { fontWeight: 650 });
 globalStyle(`${bd} code`, {
   padding: '2.5px 7px',
   background: vars.color.surfaceMuted,

@@ -2,6 +2,7 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import remarkCjkFriendly from "remark-cjk-friendly";
 import remarkDirective from "remark-directive";
 import remarkRehype from "remark-rehype";
 import rehypeRaw from "rehype-raw";
@@ -306,6 +307,9 @@ export async function md2html(s: string): Promise<string> {
   const hl = await getHighlighter();
   const file = await unified()
     .use(remarkParse)
+    /* CommonMark 플랭킹 규칙은 `**컬럼(열)**이`처럼 닫는 `**` 앞이 문장부호이고
+       뒤에 한글이 붙으면 강조를 닫지 못한다 — CJK 친화 규칙으로 보정한다. */
+    .use(remarkCjkFriendly)
     .use(remarkGfm)
     .use(remarkBreaks)
     .use(remarkDirective)

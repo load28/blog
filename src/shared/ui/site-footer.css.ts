@@ -1,0 +1,50 @@
+import { style } from '@vanilla-extract/css';
+import { recipe } from '@vanilla-extract/recipes';
+import { DESKTOP_MEDIA } from '@/styles/conditions';
+import { rec } from '@/styles/layers.css';
+import { vars } from '@/styles/theme.css';
+
+// 풋터 (구 .ftr) — mobileOnly는 스플릿 페이지용 (구 .ftr.ds)
+export const siteFooter = recipe({
+  base: rec({
+    borderTop: `1px solid ${vars.color.borderStrong}`,
+    marginTop: '40px',
+  }),
+  variants: {
+    mobileOnly: {
+      true: rec({ '@media': { [DESKTOP_MEDIA]: { display: 'none' } } }),
+    },
+  },
+});
+
+export const footerInner = style(
+  rec({
+    maxWidth: vars.size.shellMax,
+    margin: '0 auto',
+    padding: '26px 24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    flexWrap: 'wrap',
+  }),
+);
+
+export const footerBrand = style(
+  rec({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '9px',
+    font: `650 15px/1 ${vars.font.serif}`,
+  }),
+);
+
+export const footerNote = style(
+  rec({
+    fontFamily: vars.font.mono,
+    fontSize: '12px',
+    fontWeight: 500,
+    lineHeight: 1.6,
+    color: vars.color.inkMuted,
+  }),
+);

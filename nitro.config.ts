@@ -16,6 +16,7 @@ export default defineNitroConfig({
       const files = await readdir(dir);
       for (const f of files) {
         if (!f.endsWith(".mdx")) continue;
+        routes.add(`/posts/${f.replace(/\.mdx$/, "")}`);
         const raw = await readFile(join(dir, f), "utf-8");
         const m = raw.match(/^tags:\s*\[([^\]]*)\]/m);
         if (!m) continue;

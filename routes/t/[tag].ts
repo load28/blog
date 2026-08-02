@@ -5,19 +5,16 @@ export default defineEventHandler(async (event) => {
 
   const decoded = decodeURIComponent(tag);
   const posts = await getPostsByTag(decoded);
+  if (!posts.length) throw createError({ statusCode: 404 });
 
-  const list = posts
-    .map(
-      (p) =>
-        `<div class=pi><a href="/posts/${p.slug}" class=pt>${p.title}</a><div class=pm><span>${fmtDate(p.date)}</span><span>·</span><span>${p.minutes} min read</span></div>${
-          p.tags.length
-            ? `<div class=pp>${p.tags.filter((t) => t !== "ai-content").map((t) => `<a href="/t/${t}" class=pg>${t}</a>`).join("")}</div>`
-            : ""
-        }</div>`
-    )
-    .join("");
+  const all = await getAllPosts();
+  const tags = await getAllTags();
+  const topics = Object.keys(tags).sort();
 
-  const body = `<div class=fh><span class=fp><b>${decoded}</b><span>${posts.length}${posts.length === 1 ? " post" : " posts"}</span><a class=fx href="/tags">✕</a></span></div><div class=pl>${list}</div>`;
+  const main = `<div class=fh><span class=fp><b>${decoded}</b><span>${plz(posts.length)}</span><a href="/tags" class=fx>✕</a></span></div>${feed(posts)}`;
 
-  return shell(decoded, body, "tags");
+  return splitShell(decoded, "tags", main, {
+    posts: all.length,
+    topics: topics.length,
+  }, { chips: chipRow(topics, decoded) });
 });

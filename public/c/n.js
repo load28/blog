@@ -40,20 +40,6 @@ $("[data-hf]").forEach(function(el){
   });
 });
 
-/* editorial theme switcher — persists across pages */
-var TC={paper:"#fff1e5",ivory:"#faf9f6",journal:"#ffffff"};
-function setTheme(t){
-  d.documentElement.dataset.theme=t;
-  try{localStorage.setItem("th",t)}catch(e){}
-  var m=d.querySelector('meta[name=theme-color]');
-  if(m&&TC[t])m.setAttribute("content",TC[t]);
-  $(".thb").forEach(function(b){b.classList.toggle("on",b.dataset.th===t)});
-}
-$(".thb").forEach(function(b){
-  b.addEventListener("click",function(){setTheme(b.dataset.th)});
-});
-setTheme(d.documentElement.dataset.theme||"paper");
-
 /* reveal on scroll */
 var rv=$(".rv");
 if(rv.length){

@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const list = posts
     .map(
       (p) =>
-        `<div class=pi><a href="/posts/${p.slug}" class=pt>${p.title}</a>${
+        `<div class=pi><a href="/posts/${p.slug}" class=pt>${p.title}</a><div class=pm><span>${fmtDate(p.date)}</span><span>·</span><span>${p.minutes} min read</span></div>${
           p.tags.length
             ? `<div class=pp>${p.tags.filter((t) => t !== "ai-content").map((t) => `<a href="/t/${t}" class=pg>${t}</a>`).join("")}</div>`
             : ""
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     )
     .join("");
 
-  const body = `<div class=tf><span class=tft>${decoded}</span><span class=tfc>${posts.length}개의 글</span></div><div class=pl>${list}</div>`;
+  const body = `<div class=fh><span class=fp><b>${decoded}</b><span>${posts.length}${posts.length === 1 ? " post" : " posts"}</span><a class=fx href="/tags">✕</a></span></div><div class=pl>${list}</div>`;
 
   return shell(decoded, body, "tags");
 });

@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { type RecipeVariants, recipe } from '@vanilla-extract/recipes';
-import { HOVER_MEDIA, MOBILE_MEDIA } from '@/styles/conditions';
+import { HOVER_MEDIA, MOBILE_MEDIA, TOUCH_MEDIA } from '@/styles/conditions';
 import { rec } from '@/styles/layers.css';
 import { vars } from '@/styles/theme.css';
 
@@ -16,6 +16,9 @@ export const navLink = recipe({
         padding: '6px 11px',
         '@media': {
           [HOVER_MEDIA]: { selectors: { '&:hover': { color: vars.color.ink } } },
+          [TOUCH_MEDIA]: {
+            selectors: { '&:active': { color: vars.color.ink, transitionDuration: '0s' } },
+          },
           [MOBILE_MEDIA]: { padding: '5px 7px', fontSize: '12px', whiteSpace: 'nowrap' },
         },
       }),
@@ -29,6 +32,9 @@ export const navLink = recipe({
         color: vars.color.inkSecondary,
         '@media': {
           [HOVER_MEDIA]: { selectors: { '&:hover': { color: vars.color.ink } } },
+          [TOUCH_MEDIA]: {
+            selectors: { '&:active': { color: vars.color.ink, transitionDuration: '0s' } },
+          },
         },
       }),
     },

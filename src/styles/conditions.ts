@@ -10,6 +10,18 @@ export function hover(styles: StyleRule, base = '&'): StyleRule {
   return { '@media': { [HOVER_MEDIA]: { selectors: { [`${base}:hover`]: styles } } } };
 }
 
+// 터치 피드백은 (hover: none)의 :active로 준다 — hover의 터치판 대칭.
+// 데스크톱 마우스 다운에서 hover와 겹치는 이중 피드백을 막는다.
+// 관례: 누를 때는 즉시(transitionDuration '0s'), 뗄 때는 base transition으로
+// 잦아들게 해서 빠른 탭에도 눌린 잔상이 남는다.
+
+export const TOUCH_MEDIA = '(hover: none)';
+
+/** _press — @media (hover: none) 안의 :active. hover()와 같은 합성 규칙. */
+export function press(styles: StyleRule, base = '&'): StyleRule {
+  return { '@media': { [TOUCH_MEDIA]: { selectors: { [`${base}:active`]: styles } } } };
+}
+
 export const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 
 /** 모바일 분기 — 기존 s.css의 900px 브레이크포인트를 그대로 쓴다. */

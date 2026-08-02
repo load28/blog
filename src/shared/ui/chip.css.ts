@@ -1,5 +1,5 @@
 import { recipe } from '@vanilla-extract/recipes';
-import { HOVER_MEDIA } from '@/styles/conditions';
+import { HOVER_MEDIA, TOUCH_MEDIA } from '@/styles/conditions';
 import { rec } from '@/styles/layers.css';
 import { vars } from '@/styles/theme.css';
 
@@ -23,6 +23,16 @@ export const chip = recipe({
           '&:hover': { color: vars.color.ink, borderColor: vars.color.borderStrong },
         },
       },
+      [TOUCH_MEDIA]: {
+        selectors: {
+          '&:active': {
+            color: vars.color.ink,
+            borderColor: vars.color.borderStrong,
+            background: vars.color.tint,
+            transitionDuration: '0s',
+          },
+        },
+      },
     },
   }),
   variants: {
@@ -35,6 +45,17 @@ export const chip = recipe({
           [HOVER_MEDIA]: {
             selectors: {
               '&:hover': { color: vars.color.paper, borderColor: vars.color.ink },
+            },
+          },
+          [TOUCH_MEDIA]: {
+            selectors: {
+              '&:active': {
+                background: vars.color.ink,
+                color: vars.color.paper,
+                borderColor: vars.color.ink,
+                opacity: 0.75,
+                transitionDuration: '0s',
+              },
             },
           },
         },

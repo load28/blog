@@ -117,18 +117,21 @@ a{color:inherit;text-decoration:none}
 .scue{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;font:600 10px/1 var(--fm);letter-spacing:.26em;text-transform:uppercase;color:var(--mt);opacity:0;animation:fiu 1s .9s forwards}
 .scue i{font-style:normal;font-size:15px;animation:bnc 1.6s ease-in-out infinite}
 @keyframes bnc{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(7px);opacity:1}}
-/* sticky story stack — flat paper sheets */
-.stk{padding-top:4vh}
-.stc{display:block;position:sticky;top:74px;margin-bottom:14vh;cursor:pointer}
-.stc:last-child{margin-bottom:8vh}
-.stw{position:relative;background:var(--sf);border:1px solid var(--bd2);border-top:3px solid var(--tx);padding:clamp(26px,4vw,54px);min-height:64vh;display:flex;flex-direction:column;justify-content:flex-end;gap:12px;transform-origin:50% 0;will-change:transform,opacity;box-shadow:0 -14px 44px -28px rgba(0,0,0,.35)}
-.stw:hover .slt{color:var(--a1)}
-.slk{display:flex;align-items:center;gap:14px;font:500 11.5px/1 var(--fm);color:var(--mt);flex-wrap:wrap}
-.slt{font:750 clamp(26px,3.6vw,44px)/1.18 var(--fs);letter-spacing:-.02em;max-width:22ch;transition:color .2s}
-.sle{font-size:14.5px;line-height:1.7;color:var(--sb);max-width:58ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rm2{font-size:12.5px;font-weight:600;color:var(--a1);display:inline-flex;align-items:center;gap:7px;margin-top:4px}
+/* flowing story sections — no card chrome, content rides the scroll
+   --i: enter progress (0→1), --o: exit progress (1→0), set by n.js */
+.stk{padding-top:2vh}
+.stc{display:flex;align-items:center;min-height:72vh;cursor:pointer;--i:1;--o:1}
+.stw{position:relative;width:100%;max-width:680px;display:flex;flex-direction:column;gap:12px;padding:6vh 0}
+.stc:nth-child(even) .stw{margin-left:auto}
+.stw>*{opacity:calc(var(--i)*var(--o))}
+.srl{display:block;height:3px;width:100%;background:var(--tx);transform:scaleX(var(--i));transform-origin:0 50%;margin-bottom:12px}
+.stc:hover .slt{color:var(--a1)}
+.slk{display:flex;align-items:center;gap:14px;font:500 11.5px/1 var(--fm);color:var(--mt);flex-wrap:wrap;transform:translateY(calc((1 - var(--i))*22px + (var(--o) - 1)*14px))}
+.slt{font:750 clamp(26px,3.6vw,44px)/1.18 var(--fs);letter-spacing:-.02em;max-width:22ch;transition:color .2s;transform:translateY(calc((1 - var(--i))*36px + (var(--o) - 1)*22px))}
+.sle{font-size:14.5px;line-height:1.7;color:var(--sb);max-width:58ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;transform:translateY(calc((1 - var(--i))*50px + (var(--o) - 1)*28px))}
+.rm2{font-size:12.5px;font-weight:600;color:var(--a1);display:inline-flex;align-items:center;gap:7px;margin-top:4px;transform:translateY(calc((1 - var(--i))*62px + (var(--o) - 1)*32px))}
 .rm2 i{font-style:normal;transition:transform .25s}
-.stw:hover .rm2 i,.sl:hover .rm2 i{transform:translateX(5px)}
+.stc:hover .rm2 i{transform:translateX(5px)}
 .go2{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:2vh 0 8vh}
 
 /* ---- topic shelves ---- */
@@ -254,8 +257,8 @@ a{color:inherit;text-decoration:none}
 .pi{padding:20px 2px 22px}
 #im{padding:0 18px}
 .hro{min-height:calc(100svh - 54px)}
-.stc{top:66px;margin-bottom:10vh}
-.stw{min-height:58vh;padding:24px}
+.stc{min-height:62vh}
+.stw{max-width:none;padding:5vh 0}
 .slt{font-size:24px}
 .sle{-webkit-line-clamp:3}
 .go2{grid-template-columns:1fr;padding-bottom:6vh}

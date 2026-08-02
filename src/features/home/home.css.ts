@@ -45,12 +45,6 @@ export const heroTitle = style({
 
 globalStyle(`${heroTitle} em`, { fontStyle: 'italic', color: vars.color.claret });
 
-export const heroSub = style({
-  fontSize: 'clamp(14px, 1.6vw, 17px)',
-  color: vars.color.inkSecondary,
-  maxWidth: '46ch',
-});
-
 // 등장 애니메이션 (구 .fiu) — 요소별 딜레이는 인라인 스타일 대신 전용 클래스로
 export const fadeIn = style({
   opacity: 0,
@@ -62,13 +56,14 @@ export const fadeIn = style({
 });
 
 export const fadeInTitle = style({ animationDelay: '0.12s' });
-export const fadeInSub = style({ animationDelay: '0.26s' });
 
+// fadeInUp 키프레임이 transform을 none으로 덮어쓰므로 센터링은 transform 없이 잡는다
 export const scrollCue = style({
   position: 'absolute',
   bottom: '30px',
-  left: '50%',
-  transform: 'translateX(-50%)',
+  insetInline: 0,
+  marginInline: 'auto',
+  width: 'fit-content',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import type { PostMeta } from '@/server/posts';
 import { fmtDate } from '@/shared/site';
-import { Flag, Kicker } from '@/shared/ui';
+import { Flag } from '@/shared/ui';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/home/home.css';
 import { useChoreography } from '@/features/home/use-choreography';
@@ -43,15 +43,11 @@ export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: num
   return (
     <div className={css.immersive}>
       <section ref={heroRef} className={css.hero}>
-        <Kicker className={css.fadeIn}>The journal — {posts.length} stories</Kicker>
         <h1 className={cx(css.heroTitle, css.fadeIn, css.fadeInTitle)}>
-          Writing on
+          Code fades,
           <br />
-          <em>code &amp; systems.</em>
+          <em>stories remain.</em>
         </h1>
-        <p className={cx(css.heroSub, css.fadeIn, css.fadeInSub)}>
-          프론트엔드 · Rust · 패턴 — 스크롤해서 최신 이야기를 만나보세요.
-        </p>
         <div className={css.scrollCue}>
           <span>Scroll</span>
           <i className={css.scrollCueArrow}>↓</i>

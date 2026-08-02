@@ -11,7 +11,7 @@ export default defineEventHandler(async () => {
   const shelf = (t: string) => {
     const ps = posts.filter((p) => p.tags.includes(t)).slice(0, 10);
     const h = hue(t);
-    return `<section class="shf rv"><div class=shh><h3 class=sht>${t}</h3><span class=shc>${plz(tags[t])}</span><a href="/t/${t}" class=sha>모두 보기 →</a></div><div class=rl>${ps
+    return `<section class=shf><div class=shh><h3 class=sht>${t}</h3><span class=shc>${plz(tags[t])}</span><a href="/t/${t}" class=sha>모두 보기 →</a></div><div class=rl>${ps
       .map(
         (p) =>
           `<a href="/posts/${p.slug}" class=scd style="--h:${h}"><span class=sdd>${fmtDate(p.date)}</span><h4 class=sct>${p.title}</h4><span class=smm>${p.minutes} min read</span></a>`
@@ -23,8 +23,8 @@ export default defineEventHandler(async () => {
     ones.length
       ? `<div class=shh style="margin-top:14px"><h3 class=sht>그 외</h3><span class=shc>${plz(ones.length)}</span></div><div class=tl2>${ones
           .map(
-            (t, i) =>
-              `<a href="/t/${t}" class="ti rv gl" style="transition-delay:${Math.min(i * 20, 280)}ms"><span class=tn>${t}</span><span class=tc2>${plz(tags[t])}</span></a>`
+            (t) =>
+              `<a href="/t/${t}" class="ti gl"><span class=tn>${t}</span><span class=tc2>${plz(tags[t])}</span></a>`
           )
           .join("")}</div>`
       : ""

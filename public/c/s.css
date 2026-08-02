@@ -97,12 +97,8 @@ a{color:inherit;text-decoration:none}
 .fe:hover .far{opacity:1;transform:none;color:var(--tx)}
 /* focus dim: hovering one entry fades the rest */
 @media(hover:hover){
-#pl:hover .fe.in:not(:hover),#pl:hover .pi.in:not(:hover){opacity:.45}
+#pl:hover .fe:not(:hover),#pl:hover .pi:not(:hover){opacity:.45}
 }
-
-/* reveal */
-.rv{opacity:0;transform:translateY(12px);transition:opacity .55s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1),background .2s}
-.rv.in{opacity:1;transform:none}
 
 /* ---- immersive home ---- */
 #im{max-width:1000px;width:100%;margin:0 auto;padding:0 24px;flex:1}
@@ -281,5 +277,4 @@ a{color:inherit;text-decoration:none}
 
 @media(prefers-reduced-motion:reduce){
 .fiu,.scue,.bk{animation-duration:.01s;animation-delay:0s}
-.rv{opacity:1;transform:none;transition:none}
 }

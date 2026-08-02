@@ -39,21 +39,6 @@ $("[data-hf]").forEach(function(el){
   });
 });
 
-/* reveal on scroll */
-var rv=$(".rv");
-if(rv.length){
-  if(window.IntersectionObserver){
-    var ro=new IntersectionObserver(function(es){
-      es.forEach(function(en){
-        if(en.isIntersecting){en.target.classList.add("in");ro.unobserve(en.target)}
-      });
-    },{rootMargin:"0px 0px -20px 0px"});
-    rv.forEach(function(el){ro.observe(el)});
-  }else{
-    rv.forEach(function(el){el.classList.add("in")});
-  }
-}
-
 /* center active chip in mobile chip bar */
 var on=d.querySelector(".sbi .ch.on");
 if(on)on.scrollIntoView({block:"nearest",inline:"center"});

@@ -111,11 +111,11 @@ export function feed(posts: Post[]): string {
     }
     const tags = p.tags.filter((t) => t !== "ai-content");
     if (i === 0) {
-      out += `<article class="pi rv gl" data-hf="/posts/${p.slug}"><span class=fb>Latest</span><div class=km><span>${fmtDate(p.date)}</span><span>·</span><span>${p.minutes} min read</span></div><h2 class=pt>${p.title}</h2>${
+      out += `<article class="pi gl" data-hf="/posts/${p.slug}"><span class=fb>Latest</span><div class=km><span>${fmtDate(p.date)}</span><span>·</span><span>${p.minutes} min read</span></div><h2 class=pt>${p.title}</h2>${
         p.excerpt ? `<p class=pe>${p.excerpt}</p>` : ""
       }</article>`;
     } else {
-      out += `<article class="fe rv gl" style="transition-delay:${(i % 5) * 50}ms" data-hf="/posts/${p.slug}"><span class=fd>${fmtMonthDay(p.date)}</span><div class=fc><h2 class=ft2>${p.title}</h2>${
+      out += `<article class="fe gl" data-hf="/posts/${p.slug}"><span class=fd>${fmtMonthDay(p.date)}</span><div class=fc><h2 class=ft2>${p.title}</h2>${
         p.excerpt ? `<p class=fex>${p.excerpt}</p>` : ""
       }<div class=fmm>${tags.map((t) => `<a href="/t/${t}" class=kt>${t}</a>`).join("")}<span>${p.minutes} min</span></div></div><i class=far>→</i></article>`;
     }

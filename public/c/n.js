@@ -40,28 +40,6 @@ $("[data-hf]").forEach(function(el){
   });
 });
 
-/* pointer glow */
-$(".gl").forEach(function(el){
-  el.addEventListener("mousemove",function(e){
-    var r=el.getBoundingClientRect();
-    el.style.setProperty("--mx",e.clientX-r.left+"px");
-    el.style.setProperty("--my",e.clientY-r.top+"px");
-  });
-});
-
-/* shelf card tilt */
-if(matchMedia("(hover:hover)").matches){
-  $(".scd").forEach(function(el){
-    el.addEventListener("mousemove",function(e){
-      var r=el.getBoundingClientRect(),
-          x=(e.clientX-r.left)/r.width-.5,
-          y=(e.clientY-r.top)/r.height-.5;
-      el.style.transform="perspective(600px) rotateY("+(x*5).toFixed(2)+"deg) rotateX("+(-y*5).toFixed(2)+"deg) translateY(-2px)";
-    });
-    el.addEventListener("mouseleave",function(){el.style.transform=""});
-  });
-}
-
 /* reveal on scroll */
 var rv=$(".rv");
 if(rv.length){

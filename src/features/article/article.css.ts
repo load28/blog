@@ -137,7 +137,9 @@ globalStyle(`${bd} a`, {
   borderBottom: `1px solid ${vars.color.teal}`,
   transition: `opacity ${vars.duration.fast}`,
 });
-globalStyle(`${bd} a:hover`, { opacity: 0.7 });
+globalStyle(`${bd} a:hover`, {
+  '@media': { [HOVER_MEDIA]: { opacity: 0.7 } },
+});
 globalStyle(`${bd} b`, { fontWeight: 650 });
 globalStyle(`${bd} code`, {
   padding: '2.5px 7px',
@@ -205,7 +207,9 @@ globalStyle(`${bd} td`, {
   verticalAlign: 'top',
 });
 globalStyle(`${bd} tbody tr`, { transition: `background ${vars.duration.fast}` });
-globalStyle(`${bd} tbody tr:hover`, { background: vars.color.tint });
+globalStyle(`${bd} tbody tr:hover`, {
+  '@media': { [HOVER_MEDIA]: { background: vars.color.tint } },
+});
 globalStyle(`${bd} th[align=center], ${bd} td[align=center]`, { textAlign: 'center' });
 globalStyle(`${bd} th[align=right], ${bd} td[align=right]`, { textAlign: 'right' });
 globalStyle(`${bd} img`, { maxWidth: '100%', height: 'auto' });
@@ -250,7 +254,9 @@ globalStyle(`${bd} .cp`, {
   padding: '4px 0',
   transition: `color ${vars.duration.fast}`,
 });
-globalStyle(`${bd} .cp:hover`, { color: vars.color.ink });
+globalStyle(`${bd} .cp:hover`, {
+  '@media': { [HOVER_MEDIA]: { color: vars.color.ink } },
+});
 globalStyle(`${bd} .cp.ok`, { color: vars.color.teal });
 globalStyle(`${bd} .cd pre`, { margin: 0, overflowX: 'auto', background: 'transparent !important' });
 globalStyle(`${bd} .cd pre code`, {

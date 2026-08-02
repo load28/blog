@@ -59,7 +59,7 @@ function footerBar(ds = false): string {
 }
 
 function doc(title: string, body: string): string {
-  return `<!DOCTYPE html><html lang=ko><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=theme-color content="#fff1e5"><title>${title} — ${SN}</title><link rel=icon href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>"><link rel=preconnect href="https://cdn.jsdelivr.net" crossorigin><link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin><link rel=preconnect href="https://fonts.googleapis.com"><link rel=preconnect href="https://fonts.gstatic.com" crossorigin><link rel=preload href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2" as=font type="font/woff2" crossorigin><link rel=stylesheet href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"><link rel=stylesheet href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400..900&display=swap"><link rel=stylesheet href="/c/s.css"><link rel=stylesheet href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script></head><body><div id=a>${body}</div><script src="/c/n.js"></script><script>hljs.highlightAll()</script></body></html>`;
+  return `<!DOCTYPE html><html lang=ko><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=theme-color content="#fff1e5"><title>${title} — ${SN}</title><link rel=icon href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>"><link rel=preconnect href="https://cdn.jsdelivr.net" crossorigin><link rel=preconnect href="https://fonts.googleapis.com"><link rel=preconnect href="https://fonts.gstatic.com" crossorigin><link rel=preload href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2" as=font type="font/woff2" crossorigin><link rel=stylesheet href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"><link rel=stylesheet href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400..900&display=swap"><link rel=stylesheet href="/c/s.css"></head><body><div id=a>${body}</div><script src="/c/n.js"></script></body></html>`;
 }
 
 export function shell(
@@ -122,44 +122,4 @@ export function feed(posts: Post[]): string {
   });
   if (year) out += "</div></section>";
   return `<div id=pl>${out}</div><div class=ed>모든 글을 읽으셨습니다 ✦</div>`;
-}
-
-export function articleBlocks(html: string): string {
-  const r: string[] = [];
-  let b: string[] = [];
-  let ip = false;
-  const ls = html.split("\n");
-  for (let i = 0; i < ls.length; i++) {
-    const l = ls[i];
-    if (ip) {
-      b.push(l);
-      if (l.indexOf("</pre>") >= 0) {
-        r.push(b.join("\n"));
-        b = [];
-        ip = false;
-      }
-      continue;
-    }
-    if (l.indexOf("<pre") >= 0) {
-      if (b.length) r.push(b.join("\n"));
-      b = [l];
-      if (l.indexOf("</pre>") >= 0) {
-        r.push(b.join("\n"));
-        b = [];
-      } else ip = true;
-      continue;
-    }
-    b.push(l);
-    if (b.length >= 3 && !ls[i + 1]) {
-      r.push(b.join("\n"));
-      b = [];
-    }
-  }
-  if (b.length) r.push(b.join("\n"));
-  return r
-    .map(
-      (bk, i) =>
-        `<div class=bk style="animation-delay:${Math.min(i * 50, 200)}ms">${bk}</div>`
-    )
-    .join("");
 }

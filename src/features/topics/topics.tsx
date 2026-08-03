@@ -1,5 +1,6 @@
-import type { PostMeta } from '@/server/posts';
-import { fmtDate, plz } from '@/shared/site';
+import type { PostMeta } from '@/entities/post/post';
+import { postPath, tagPath } from '@/shared/paths';
+import { fmtDate, postCountLabel } from '@/shared/site';
 import { Kicker } from '@/shared/ui';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/topics/topics.css';
@@ -20,14 +21,14 @@ export function TopicShelf({ tag, count, posts }: { tag: string; count: number; 
     <section className={css.shelf}>
       <div className={css.shelfHead}>
         <h3 className={css.shelfTitle}>{tag}</h3>
-        <span className={css.shelfCount}>{plz(count)}</span>
-        <a href={`/t/${tag}`} className={css.shelfAll}>
+        <span className={css.shelfCount}>{postCountLabel(count)}</span>
+        <a href={tagPath(tag)} className={css.shelfAll}>
           모두 보기 →
         </a>
       </div>
       <div className={css.rail}>
         {posts.map((p) => (
-          <a key={p.slug} href={`/posts/${p.slug}`} className={css.shelfCard}>
+          <a key={p.slug} href={postPath(p.slug)} className={css.shelfCard}>
             <span className={css.shelfCardDate}>{fmtDate(p.date)}</span>
             <h4 className={css.shelfCardTitle}>{p.title}</h4>
             <span className={css.shelfCardMeta}>{p.minutes} min read</span>
@@ -45,13 +46,13 @@ export function SingleTagGrid({ tags }: { tags: Array<[name: string, count: numb
     <>
       <div className={cx(css.shelfHead, css.shelfHeadSpaced)}>
         <h3 className={css.shelfTitle}>그 외</h3>
-        <span className={css.shelfCount}>{plz(tags.length)}</span>
+        <span className={css.shelfCount}>{postCountLabel(tags.length)}</span>
       </div>
       <div className={css.tagGrid}>
         {tags.map(([t, n]) => (
-          <a key={t} href={`/t/${t}`} className={css.tagCard}>
+          <a key={t} href={tagPath(t)} className={css.tagCard}>
             <span className={css.tagName}>{t}</span>
-            <span className={css.tagCount}>{plz(n)}</span>
+            <span className={css.tagCount}>{postCountLabel(n)}</span>
           </a>
         ))}
       </div>

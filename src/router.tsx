@@ -1,11 +1,12 @@
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { notFound, notFoundCode, notFoundText } from '@/shared/ui/not-found.css';
 import { routeTree } from './routeTree.gen';
 
 function NotFound() {
   return (
-    <div style={{ padding: 40, textAlign: 'center' }}>
-      <h1>404</h1>
-      <p>페이지를 찾을 수 없습니다.</p>
+    <div className={notFound}>
+      <h1 className={notFoundCode}>404</h1>
+      <p className={notFoundText}>페이지를 찾을 수 없습니다.</p>
     </div>
   );
 }

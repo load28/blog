@@ -72,6 +72,8 @@ export const featured = style({
   borderBottom: `1px solid ${vars.color.border}`,
   padding: '24px 2px 26px',
   cursor: 'pointer',
+  color: 'inherit',
+  textDecoration: 'none',
   display: 'flex',
   flexDirection: 'column',
   gap: '13px',
@@ -177,6 +179,20 @@ export const entryTitle = style({
   },
 });
 
+// 제목 링크에 카드를 덮는 stretched-link — 카드 어디를 눌러도 글로 이동한다.
+// 색은 entryTitle(h2)에서 상속받아 hover 규칙이 그대로 적용된다.
+export const entryTitleLink = style({
+  color: 'inherit',
+  textDecoration: 'none',
+  selectors: {
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+    },
+  },
+});
+
 export const entryExcerpt = style({
   fontSize: '13px',
   lineHeight: 1.65,
@@ -220,6 +236,9 @@ export const entryMeta = style({
 });
 
 export const tagLink = style({
+  // stretched-link(::after) 위로 띄워 태그는 각자 토픽으로 독립 이동한다.
+  position: 'relative',
+  zIndex: 1,
   color: vars.color.inkSecondary,
   cursor: 'pointer',
   transition: `color ${vars.duration.fast}`,

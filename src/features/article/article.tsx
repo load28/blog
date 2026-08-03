@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { Post } from '@/server/posts';
+import { isAiAssisted, type Post, visibleTags } from '@/entities/post/post';
+import { tagPath } from '@/shared/paths';
 import { fmtDate, SITE_NAME } from '@/shared/site';
 import * as css from '@/features/article/article.css';
 
@@ -36,8 +37,8 @@ export function ArticleBody({ html }: { html: string }) {
 }
 
 export function ArticlePage({ post }: { post: Post }) {
-  const tags = post.tags.filter((t) => t !== 'ai-content');
-  const isAi = post.tags.includes('ai-content');
+  const tags = visibleTags(post);
+  const isAi = isAiAssisted(post);
   return (
     <div className={css.container}>
       <a href="/all" className={css.backLink}>
@@ -45,7 +46,7 @@ export function ArticlePage({ post }: { post: Post }) {
       </a>
       <div className={css.tagRow}>
         {tags.map((t) => (
-          <a key={t} href={`/t/${t}`} className={css.tagPill}>
+          <a key={t} href={tagPath(t)} className={css.tagPill}>
             {t}
           </a>
         ))}

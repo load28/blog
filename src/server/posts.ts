@@ -1,104 +1,103 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { AI_CONTENT_TAG, type Post, type PostMeta } from '@/entities/post/post';
 import { md2html } from '@/server/markdown';
 
-/** 목록·피드에 쓰는 메타 — 본문 html은 상세에서만 싣는다(페이로드 절약). */
-export interface PostMeta {
-  slug: string;
-  title: string;
-  date: string;
-  tags: string[];
-  excerpt: string;
-  minutes: number;
-}
+const EXCERPT_MAX = 140;
+/** 대략 분당 읽는 글자 수 — 읽기 시간(minutes) 추정용. */
+const CHARS_PER_MINUTE = 700;
 
-export interface Post extends PostMeta {
-  html: string;
-}
-
-function extractExcerpt(s: string): string {
-  const ls = s.split('\n');
+/** 본문 첫 산문 문단을 발췌로 뽑는다 — 코드·헤딩·목록·인용·표는 건너뛴다. */
+function extractExcerpt(body: string): string {
+  const lines = body.split('\n');
   let inCode = false;
-  for (const line of ls) {
-    const t = line.trim();
-    if (t.startsWith('```')) {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
       inCode = !inCode;
       continue;
     }
     if (
       inCode ||
-      !t ||
-      /^#{1,6}\s/.test(t) ||
-      /^[-*]\s/.test(t) ||
-      /^\d+\.\s/.test(t) ||
-      t.startsWith('>') ||
-      t.startsWith('---') ||
-      t.startsWith('***') ||
-      t.startsWith('|') ||
-      t.startsWith('<')
+      !trimmed ||
+      /^#{1,6}\s/.test(trimmed) ||
+      /^[-*]\s/.test(trimmed) ||
+      /^\d+\.\s/.test(trimmed) ||
+      trimmed.startsWith('>') ||
+      trimmed.startsWith('---') ||
+      trimmed.startsWith('***') ||
+      trimmed.startsWith('|') ||
+      trimmed.startsWith('<')
     )
       continue;
-    const l = t
+    const prose = trimmed
       .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
       .replace(/\*\*|\*|`/g, '')
       .replace(/<[^>]+>/g, '')
       .trim();
-    if (!l) continue;
-    return l.length > 140 ? `${l.slice(0, 140).replace(/\s+\S*$/, '')}…` : l;
+    if (!prose) continue;
+    return prose.length > EXCERPT_MAX ? `${prose.slice(0, EXCERPT_MAX).replace(/\s+\S*$/, '')}…` : prose;
   }
   return '';
 }
 
-function parseFrontmatter(raw: string): { fm: Record<string, unknown>; body: string } | null {
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m || m[1] === undefined || m[2] === undefined) return null;
+function parseFrontmatter(raw: string): { frontmatter: Record<string, unknown>; body: string } | null {
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!match || match[1] === undefined || match[2] === undefined) return null;
 
-  const fm: Record<string, unknown> = {};
-  for (const l of m[1].split('\n')) {
-    const k = l.match(/^(\w+):\s*(.+)$/);
-    if (!k || k[1] === undefined || k[2] === undefined) continue;
-    const rawVal = k[2].replace(/^['"]|['"]$/g, '');
-    fm[k[1]] = rawVal.startsWith('[')
-      ? rawVal
+  const frontmatter: Record<string, unknown> = {};
+  for (const line of match[1].split('\n')) {
+    const keyValue = line.match(/^(\w+):\s*(.+)$/);
+    if (!keyValue || keyValue[1] === undefined || keyValue[2] === undefined) continue;
+    const value = keyValue[2].replace(/^['"]|['"]$/g, '');
+    frontmatter[keyValue[1]] = value.startsWith('[')
+      ? value
           .slice(1, -1)
           .split(',')
-          .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
-      : rawVal;
+          .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+      : value;
   }
-  return { fm, body: m[2].trim() };
+  return { frontmatter, body: match[2].trim() };
 }
 
-let _posts: Post[] | null = null;
+function estimateMinutes(body: string): number {
+  const textOnly = body.replace(/```[\s\S]*?```/g, '');
+  return Math.max(1, Math.round(textOnly.length / CHARS_PER_MINUTE));
+}
+
+let cachedPosts: Post[] | null = null;
 
 export async function getAllPosts(): Promise<Post[]> {
-  if (_posts) return _posts;
+  if (cachedPosts) return cachedPosts;
 
   const dir = join(process.cwd(), 'content', 'posts');
   const files = await readdir(dir);
   const posts: Post[] = [];
 
-  for (const f of files) {
-    if (!f.endsWith('.mdx')) continue;
-    const raw = await readFile(join(dir, f), 'utf-8');
+  for (const file of files) {
+    if (!file.endsWith('.mdx')) continue;
+    const raw = await readFile(join(dir, file), 'utf-8');
     const parsed = parseFrontmatter(raw);
     if (!parsed) continue;
-    const { fm, body } = parsed;
+    const { frontmatter, body } = parsed;
 
-    const slug = f.replace(/\.mdx$/, '');
+    const slug = file.replace(/\.mdx$/, '');
     posts.push({
       slug,
-      title: typeof fm.title === 'string' && fm.title ? fm.title : slug,
-      date: typeof fm.date === 'string' ? fm.date : '',
-      tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
+      title: typeof frontmatter.title === 'string' && frontmatter.title ? frontmatter.title : slug,
+      date: typeof frontmatter.date === 'string' ? frontmatter.date : '',
+      tags: Array.isArray(frontmatter.tags) ? (frontmatter.tags as string[]) : [],
       html: await md2html(body),
       excerpt:
-        typeof fm.description === 'string' && fm.description ? fm.description : extractExcerpt(body),
-      minutes: Math.max(1, Math.round(body.replace(/```[\s\S]*?```/g, '').length / 700)),
+        typeof frontmatter.description === 'string' && frontmatter.description
+          ? frontmatter.description
+          : extractExcerpt(body),
+      minutes: estimateMinutes(body),
     });
   }
 
   posts.sort((a, b) => b.date.slice(0, 10).localeCompare(a.date.slice(0, 10)));
-  _posts = posts;
+  cachedPosts = posts;
   return posts;
 }
 
@@ -108,12 +107,12 @@ export function toMeta({ html: _html, ...meta }: Post): PostMeta {
 
 export async function getAllTags(): Promise<Record<string, number>> {
   const posts = await getAllPosts();
-  const m: Record<string, number> = {};
-  for (const p of posts) {
-    for (const t of p.tags) {
-      if (t === 'ai-content') continue;
-      m[t] = (m[t] || 0) + 1;
+  const counts: Record<string, number> = {};
+  for (const post of posts) {
+    for (const tag of post.tags) {
+      if (tag === AI_CONTENT_TAG) continue;
+      counts[tag] = (counts[tag] || 0) + 1;
     }
   }
-  return m;
+  return counts;
 }

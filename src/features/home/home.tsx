@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import type { PostMeta } from '@/server/posts';
+import type { PostMeta } from '@/entities/post/post';
+import { postPath } from '@/shared/paths';
 import { fmtDate } from '@/shared/site';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/home/home.css';
@@ -7,7 +8,7 @@ import { useChoreography } from '@/features/home/use-choreography';
 
 function StoryCard({ post }: { post: PostMeta }) {
   return (
-    <a href={`/posts/${post.slug}`} className={css.story}>
+    <a href={postPath(post.slug)} className={css.story}>
       <div className={css.storyInner}>
         <i className={css.storyRule} />
         <div className={css.storyMeta}>
@@ -30,7 +31,7 @@ export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: num
   const stackRef = useRef<HTMLDivElement>(null);
   useChoreography(heroRef, stackRef);
 
-  const covers = posts.slice(0, Math.min(5, posts.length));
+  const covers = posts.slice(0, 5);
 
   return (
     <div className={css.immersive}>

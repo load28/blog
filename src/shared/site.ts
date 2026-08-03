@@ -18,8 +18,9 @@ export function fmtMonthDay(d: string): string {
   return d ? d.slice(5, 10).replace(/-/g, '.') : '';
 }
 
-export function plz(n: number): string {
-  return `${n} ${n === 1 ? 'post' : 'posts'}`;
+/** '1 post' / 'N posts' — 개수 라벨(단복수 처리). */
+export function postCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'post' : 'posts'}`;
 }
 
 export function pageTitle(title: string): string {

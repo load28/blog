@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { tagPath } from '@/shared/paths';
 import { chip } from '@/shared/ui/chip.css';
 
 export function Chip({ href, on, children }: { href: string; on?: boolean; children: ReactNode }) {
@@ -17,7 +18,7 @@ export function ChipRow({ tags, active = '' }: { tags: string[]; active?: string
         All
       </Chip>
       {tags.map((t) => (
-        <Chip key={t} href={`/t/${t}`} on={active === t}>
+        <Chip key={t} href={tagPath(t)} on={active === t}>
           {t}
         </Chip>
       ))}

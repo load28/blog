@@ -29,7 +29,7 @@ export function usePrefetch(): void {
             (entries) => {
               for (const e of entries) {
                 if (!e.isIntersecting) continue;
-                const h = e.target.getAttribute('href') || e.target.getAttribute('data-hf');
+                const h = e.target.getAttribute('href');
                 io?.unobserve(e.target);
                 if (typeof requestIdleCallback !== 'undefined') {
                   requestIdleCallback(() => prefetch(h));
@@ -66,9 +66,6 @@ export function usePrefetch(): void {
       if (!h || h.startsWith('http') || h.startsWith('/portfolio') || (a as HTMLAnchorElement).target === '_blank')
         continue;
       watch(a, h);
-    }
-    for (const el of document.querySelectorAll('[data-hf]')) {
-      watch(el, el.getAttribute('data-hf'));
     }
 
     return () => {

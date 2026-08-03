@@ -3,7 +3,8 @@ import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION, TOUCH_MEDIA } from '@/styles
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
-// 이머시브 홈 (구 #im·.hro·.stk) — 히어로와 스토리가 스크롤을 타고 흐른다.
+// 이머시브 홈 (구 #im·.hro·.stk) — 히어로는 스크롤을 타고 물러나고,
+// 스토리는 스티키 스테이지에 핀 고정되어 제자리에서 교체된다.
 // --i(진입)·--o(이탈) 진행값은 choreography 훅이 구동한다.
 
 const fadeInUp = keyframes({
@@ -85,8 +86,28 @@ export const scrollCueArrow = style({
   animation: `${bounce} 1.6s ease-in-out infinite`,
 });
 
-/* ── 스토리 스택 (구 .stk·.stc·.stw) ───────────────────────────────────── */
-export const storyStack = style({ paddingTop: '2vh' });
+/* ── 스토리 스테이지 (구 .stk·.stc·.stw) ───────────────────────────────── */
+// 기본(모션 축소·JS 이전)은 일반 플로우로 스토리를 순서대로 보여주고,
+// 훅이 data-pin을 붙이면 스티키 뷰포트에 스토리가 겹쳐 쌓여
+// 제자리 교체로 전환된다. 스테이지 높이는 훅이 계산한다.
+export const stage = style({});
+
+export const stageSticky = style({
+  selectors: {
+    [`${stage}[data-pin] &`]: {
+      position: 'sticky',
+      top: '58px',
+      height: 'calc(100svh - 58px)',
+    },
+  },
+  '@media': {
+    [MOBILE_MEDIA]: {
+      selectors: {
+        [`${stage}[data-pin] &`]: { top: '54px', height: 'calc(100svh - 54px)' },
+      },
+    },
+  },
+});
 
 export const story = style({
   display: 'flex',
@@ -94,6 +115,9 @@ export const story = style({
   minHeight: '72vh',
   cursor: 'pointer',
   vars: { '--i': '1', '--o': '1' },
+  selectors: {
+    [`${stage}[data-pin] &`]: { position: 'absolute', inset: 0, minHeight: 0 },
+  },
   '@media': { [MOBILE_MEDIA]: { minHeight: '62vh' } },
 });
 
@@ -105,10 +129,6 @@ export const storyInner = style({
   flexDirection: 'column',
   gap: '12px',
   padding: '6vh 0',
-  selectors: {
-    // 짝수 스토리는 오른쪽 정렬 — 지그재그 리듬
-    [`${story}:nth-child(even) &`]: { marginLeft: 'auto' },
-  },
   '@media': { [MOBILE_MEDIA]: { maxWidth: 'none', padding: '5vh 0' } },
 });
 

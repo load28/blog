@@ -27,8 +27,8 @@ function StoryCard({ post }: { post: PostMeta }) {
 
 export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: number }) {
   const heroRef = useRef<HTMLElement>(null);
-  const stackRef = useRef<HTMLDivElement>(null);
-  useChoreography(heroRef, stackRef);
+  const stageRef = useRef<HTMLDivElement>(null);
+  useChoreography(heroRef, stageRef);
 
   const covers = posts.slice(0, Math.min(5, posts.length));
 
@@ -45,10 +45,12 @@ export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: num
           <i className={css.scrollCueArrow}>↓</i>
         </div>
       </section>
-      <div ref={stackRef} className={css.storyStack}>
-        {covers.map((p) => (
-          <StoryCard key={p.slug} post={p} />
-        ))}
+      <div ref={stageRef} className={css.stage}>
+        <div className={css.stageSticky}>
+          {covers.map((p) => (
+            <StoryCard key={p.slug} post={p} />
+          ))}
+        </div>
       </div>
       <div className={css.ctaGrid}>
         <a href="/all" className={css.ctaCard}>

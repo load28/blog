@@ -26,7 +26,8 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
 
     let seg = 0;
     let displayed = 0; // 화면에 그려진 진행 위치 (패널 인덱스 좌표)
-    let target = 0; // 스크롤이 가리키는 목표 인덱스
+    let target = 0; // 지금 재생 중인 전환의 목표 인덱스 — 항상 displayed의 ±1 이내
+    let pending = 0; // 스크롤이 가리키는 원시 목표 인덱스
     let raf = 0;
     let last = 0;
 
@@ -57,15 +58,24 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       });
     };
 
+    // 연달아 스크롤해도 전환은 한 번에 한 콘텐츠씩만 진행한다 — 목표를
+    // 현재 위치의 ±1로 제한해 중간 콘텐츠가 노출 없이 휙 지나가지 않는다.
+    const advance = () => {
+      if (pending === target || displayed !== target) return;
+      target += Math.sign(pending - target);
+      kick();
+    };
+
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const gap = target - displayed;
-      const step = SPEED * Math.max(1, Math.abs(gap)) * dt;
+      const step = SPEED * dt;
       if (Math.abs(gap) <= step) {
         displayed = target;
         render();
         raf = 0;
+        advance();
         return;
       }
       displayed += Math.sign(gap) * step;
@@ -83,8 +93,8 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       if (!stage || !(sticky instanceof HTMLElement) || seg === 0) return;
       const pinTop = Number.parseFloat(getComputedStyle(sticky).top) || 0;
       const progress = (pinTop - stage.getBoundingClientRect().top) / seg;
-      target = Math.min(panels.length - 1, Math.max(0, Math.round(progress)));
-      if (target !== displayed) kick();
+      pending = Math.min(panels.length - 1, Math.max(0, Math.round(progress)));
+      advance();
     };
 
     const onResize = () => {
@@ -92,8 +102,9 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       onScroll();
     };
     layout();
-    render();
     onScroll();
+    displayed = target = pending; // 새로고침 시 현재 스크롤 위치의 패널에서 바로 시작
+    render();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onResize);
 

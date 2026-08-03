@@ -45,8 +45,9 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
         if (t <= 0) {
           // 다음 패널 — 전환 전체에 걸쳐 서서히 진입
           enter = smooth(t + 1);
-        } else if (i < panels.length - 1) {
-          // 지나간 패널 — 타임라인 앞부분에 빠르게 이탈
+        } else if (i < panels.length - 2) {
+          // 지나간 패널 — 타임라인 앞부분에 빠르게 이탈.
+          // 마지막 스토리는 이탈하지 않고 피날레(풋터)와 함께 남는다.
           exit = smooth(1 - t / FADE_OUT);
         }
         el.style.setProperty('--i', enter.toFixed(4));

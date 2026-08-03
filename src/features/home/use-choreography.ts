@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { REDUCED_MOTION } from '@/styles/conditions';
 
 // 홈 스크롤 연출 (구 n.js) — 히어로와 스토리가 스티키 스테이지에 핀 고정된
-// 패널이 되어 제자리에서 교체된다. 스크롤 양을 그대로 따르는 대신 세그먼트
-// 경계를 넘을 때마다 목표 인덱스로 스냅해 매 전환이 같은 속도로 재생된다.
+// 패널이 되어 제자리에서 교체된다. 휠 제스처 하나가 정확히 한 패널 전환이
+// 되도록 창 스크롤을 세그먼트 경계에 직접 스냅하고, 전환이 재생되는 동안의
+// 입력은 삼켜서 콘텐츠가 노출 없이 휙 지나가지 않게 한다.
 
 function smooth(v: number): number {
   return v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v);
@@ -12,6 +13,8 @@ function smooth(v: number): number {
 const FADE_OUT = 0.35; // 전환 타임라인 앞 35%에 이탈이 끝난다 — 빠른 이탈
 const SPEED = 1.25; // 초당 전환 진행량 — 전환 하나에 0.8s
 const BAR_MIN = 0.15; // 바의 시작 폭 비율 — 짧게 시작해 늦게 늘어난다
+const GESTURE_GAP = 150; // ms — 이보다 긴 공백 뒤의 휠 델타는 새 제스처
+const SETTLE_DELAY = 140; // ms — 휠 외 스크롤이 멈춘 뒤 경계로 스냅하기까지
 
 export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): void {
   useEffect(() => {
@@ -23,20 +26,31 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       sticky instanceof HTMLElement
         ? [...sticky.children].filter((el): el is HTMLElement => el instanceof HTMLElement)
         : [];
+    const max = panels.length - 1;
 
     let seg = 0;
+    let pinTop = 0;
     let displayed = 0; // 화면에 그려진 진행 위치 (패널 인덱스 좌표)
     let target = 0; // 지금 재생 중인 전환의 목표 인덱스 — 항상 displayed의 ±1 이내
     let pending = 0; // 스크롤이 가리키는 원시 목표 인덱스
     let raf = 0;
     let last = 0;
+    let lastWheel = 0;
+    let lastDelta = 0;
+    let snapTimer = 0;
 
     const layout = () => {
       if (!stage || !(sticky instanceof HTMLElement) || panels.length === 0) return;
       stage.dataset.pin = '';
+      pinTop = Number.parseFloat(getComputedStyle(sticky).top) || 0;
       seg = window.innerHeight * 0.7;
       stage.style.height = `${panels.length * seg + sticky.offsetHeight}px`;
     };
+
+    // 진행도 0이 되는 문서상 스크롤 좌표 — 인덱스 i의 경계는 여기에 i * seg
+    const stageStart = () =>
+      stage ? stage.getBoundingClientRect().top + window.scrollY - pinTop : 0;
+    const progressNow = () => (window.scrollY - stageStart()) / seg;
 
     const render = () => {
       panels.forEach((el, i) => {
@@ -89,12 +103,45 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       raf = requestAnimationFrame(tick);
     };
 
+    // 휠 제스처 하나 = 패널 하나. 창 스크롤을 다음 경계로 즉시 고정해 탁
+    // 걸리는 느낌을 만들고, 전환 재생 중이거나 관성으로 이어지는 델타는
+    // 삼킨다. 스테이지 밖(위로 벗어나거나 피날레 아래)은 기본 스크롤.
+    const onWheel = (e: WheelEvent) => {
+      if (!stage || seg === 0 || e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const progress = progressNow();
+      const dir = e.deltaY > 0 ? 1 : -1;
+      if (progress < 0 || progress > max) return;
+      if ((progress <= 0 && dir < 0) || (progress >= max && dir > 0)) return;
+      e.preventDefault();
+
+      const busy = raf !== 0 || displayed !== target || target !== pending;
+      const delta = Math.abs(e.deltaY) * (e.deltaMode === 1 ? 40 : 1);
+      // 새 제스처 판정 — 잠깐의 공백 뒤이거나 직전보다 커지는(가속) 델타.
+      // 트랙패드 관성으로 감쇠하며 이어지는 델타는 제스처로 치지 않는다.
+      const fresh = e.timeStamp - lastWheel > GESTURE_GAP || delta > lastDelta * 1.2;
+      lastWheel = e.timeStamp;
+      lastDelta = delta;
+      if (busy || !fresh || delta < 4) return;
+
+      pending = Math.min(max, Math.max(0, Math.round(progress) + dir));
+      window.scrollTo({ top: stageStart() + pending * seg });
+      advance();
+    };
+
+    // 휠 외의 스크롤(터치·스크롤바·키보드)이 멈추면 가장 가까운 경계로 스냅
+    const settle = () => {
+      const progress = progressNow();
+      if (progress <= 0 || progress >= max) return;
+      const top = stageStart() + Math.round(progress) * seg;
+      if (Math.abs(window.scrollY - top) > 1) window.scrollTo({ top, behavior: 'smooth' });
+    };
+
     const onScroll = () => {
       if (!stage || !(sticky instanceof HTMLElement) || seg === 0) return;
-      const pinTop = Number.parseFloat(getComputedStyle(sticky).top) || 0;
-      const progress = (pinTop - stage.getBoundingClientRect().top) / seg;
-      pending = Math.min(panels.length - 1, Math.max(0, Math.round(progress)));
+      pending = Math.min(max, Math.max(0, Math.round(progressNow())));
       advance();
+      window.clearTimeout(snapTimer);
+      snapTimer = window.setTimeout(settle, SETTLE_DELAY);
     };
 
     const onResize = () => {
@@ -106,11 +153,14 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
     displayed = target = pending; // 새로고침 시 현재 스크롤 위치의 패널에서 바로 시작
     render();
     window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('resize', onResize);
 
     return () => {
       window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
+      window.clearTimeout(snapTimer);
       if (raf) cancelAnimationFrame(raf);
     };
   }, [stageRef]);

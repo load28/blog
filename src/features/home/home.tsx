@@ -1,24 +1,16 @@
 import { useRef } from 'react';
 import type { PostMeta } from '@/server/posts';
 import { fmtDate } from '@/shared/site';
-import { Flag } from '@/shared/ui';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/home/home.css';
 import { useChoreography } from '@/features/home/use-choreography';
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function StoryCard({ post, index, total }: { post: PostMeta; index: number; total: number }) {
+function StoryCard({ post }: { post: PostMeta }) {
   return (
     <a href={`/posts/${post.slug}`} className={css.story}>
       <div className={css.storyInner}>
         <i className={css.storyRule} />
         <div className={css.storyMeta}>
-          <Flag>
-            Story {pad2(index + 1)} / {pad2(total)}
-          </Flag>
           <span>
             {fmtDate(post.date)} · {post.minutes} min read
           </span>
@@ -54,8 +46,8 @@ export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: num
         </div>
       </section>
       <div ref={stackRef} className={css.storyStack}>
-        {covers.map((p, i) => (
-          <StoryCard key={p.slug} post={p} index={i} total={covers.length} />
+        {covers.map((p) => (
+          <StoryCard key={p.slug} post={p} />
         ))}
       </div>
       <div className={css.ctaGrid}>

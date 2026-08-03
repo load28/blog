@@ -10,13 +10,16 @@ import { TopBar } from '@/shared/ui/top-bar';
 import { cx } from '@/styles/cx';
 
 // 단일 칼럼 셸 (구 shell()) — 상단바 + 본문 + 풋터
+// footer={false}면 페이지가 풋터를 직접 배치한다 (홈 스테이지 피날레)
 export function PageShell({
   active = '',
   progress,
+  footer = true,
   children,
 }: {
   active?: string;
   progress?: boolean;
+  footer?: boolean;
   children: ReactNode;
 }) {
   usePrefetch();
@@ -25,7 +28,7 @@ export function PageShell({
       {progress && <ProgressBar />}
       <TopBar active={active} />
       {children}
-      <SiteFooter />
+      {footer && <SiteFooter />}
     </>
   );
 }

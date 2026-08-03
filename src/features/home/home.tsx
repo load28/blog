@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import type { PostMeta } from '@/server/posts';
 import { fmtDate } from '@/shared/site';
+import { SiteFooter } from '@/shared/ui';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/home/home.css';
 import { useChoreography } from '@/features/home/use-choreography';
@@ -49,6 +50,9 @@ export function Home({ posts }: { posts: PostMeta[] }) {
           {covers.map((p) => (
             <StoryCard key={p.slug} post={p} />
           ))}
+          <div className={css.finale}>
+            <SiteFooter />
+          </div>
         </div>
       </div>
     </div>

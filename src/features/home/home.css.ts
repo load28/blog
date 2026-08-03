@@ -131,6 +131,22 @@ globalStyle(`${stage}[data-pin] ${hero}`, {
   transform: 'translateY(calc((1 - var(--o)) * -34px))',
 });
 
+// 피날레 패널 — 풋터가 마지막 장으로, 뷰포트 하단에서 제자리 등장한다
+export const finale = style({
+  vars: { '--i': '1', '--o': '1' },
+  selectors: {
+    [`${stage}[data-pin] &`]: {
+      position: 'absolute',
+      inset: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'flex-end',
+      opacity: 'calc(var(--i) * var(--o))',
+      transform: 'translateY(calc((1 - var(--i)) * 30px))',
+    },
+  },
+});
+
 export const storyInner = style({
   position: 'relative',
   width: '100%',

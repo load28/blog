@@ -116,11 +116,12 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       if ((progress <= 0 && dir < 0) || (progress >= max && dir > 0)) return;
       e.preventDefault();
 
-      // 공백(GESTURE_GAP) 없이 이어지는 델타 묶음은 관성 꼬리까지 전부 하나의
-      // 제스처다. 제스처당 이동은 최대 한 칸이고, 방향이 바뀌거나 충분한
-      // 공백이 지나야 다음 제스처로 인정된다.
+      // 공백(GESTURE_GAP) 없이 이어지는 델타 묶음은 관성 꼬리·지터까지 전부
+      // 하나의 제스처다. 제스처당 이동은 무조건 최대 한 칸이고, 진짜 멈춤이
+      // 있어야만 다음 제스처로 인정된다. (관성 중 반대 방향 미세 델타로
+      // 제스처가 리셋되면 한 칸을 더 먹으므로 방향은 리셋 조건에서 뺀다.)
       const delta = e.deltaY * (e.deltaMode === 1 ? 40 : 1);
-      if (e.timeStamp - lastWheel > GESTURE_GAP || Math.sign(delta) !== Math.sign(acc)) {
+      if (e.timeStamp - lastWheel > GESTURE_GAP) {
         acc = 0;
         spent = false;
       }
@@ -130,7 +131,7 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       spent = true; // 전환 재생 중이어도 제스처는 소진 — 관성이 추가 칸을 못 만든다
       if (raf !== 0 || displayed !== target || target !== pending) return;
 
-      pending = Math.min(max, Math.max(0, Math.round(progress) + dir));
+      pending = Math.min(max, Math.max(0, target + (acc > 0 ? 1 : -1)));
       window.scrollTo({ top: stageStart() + pending * seg });
       advance();
     };
@@ -145,7 +146,15 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
 
     const onScroll = () => {
       if (!stage || !(sticky instanceof HTMLElement) || seg === 0) return;
-      pending = Math.min(max, Math.max(0, Math.round(progressNow())));
+      const progress = progressNow();
+      if (progress < 0 || progress > max) return; // 스테이지 밖 — 자유 스크롤
+      const raw = Math.min(max, Math.max(0, Math.round(progress)));
+      // 휠 취소가 안 먹는 브라우저에서 네이티브 스크롤이 새어 나가도 현재
+      // 패널에서 한 칸 이상 못 벗어난다 — 초과 오버슛은 경계로 즉시 되돌린다.
+      // 전환 재생 중에는 다음 칸 예약도 막아 제스처당 한 칸을 보장한다.
+      const idle = displayed === target;
+      pending = Math.min(target + (idle ? 1 : 0), Math.max(target - (idle ? 1 : 0), raw));
+      if (raw !== pending) window.scrollTo({ top: stageStart() + pending * seg });
       advance();
       window.clearTimeout(snapTimer);
       snapTimer = window.setTimeout(settle, SETTLE_DELAY);
@@ -156,8 +165,11 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       onScroll();
     };
     layout();
-    onScroll();
-    displayed = target = pending; // 새로고침 시 현재 스크롤 위치의 패널에서 바로 시작
+    if (seg > 0) {
+      // 새로고침 시 현재 스크롤 위치의 패널에서 바로 시작 — 클램프를 거치지
+      // 않고 원시 인덱스로 동기화해야 제자리로 끌려오지 않는다.
+      displayed = target = pending = Math.min(max, Math.max(0, Math.round(progressNow())));
+    }
     render();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('wheel', onWheel, { passive: false });

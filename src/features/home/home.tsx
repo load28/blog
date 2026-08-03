@@ -25,44 +25,31 @@ function StoryCard({ post }: { post: PostMeta }) {
   );
 }
 
-export function Home({ posts, topicCount }: { posts: PostMeta[]; topicCount: number }) {
-  const heroRef = useRef<HTMLElement>(null);
+export function Home({ posts }: { posts: PostMeta[] }) {
   const stageRef = useRef<HTMLDivElement>(null);
-  useChoreography(heroRef, stageRef);
+  useChoreography(stageRef);
 
   const covers = posts.slice(0, Math.min(5, posts.length));
 
   return (
     <div className={css.immersive}>
-      <section ref={heroRef} className={css.hero}>
-        <h1 className={cx(css.heroTitle, css.fadeIn, css.fadeInTitle)}>
-          Code fades,
-          <br />
-          <em>stories remain.</em>
-        </h1>
-        <div className={css.scrollCue}>
-          <span>Scroll</span>
-          <i className={css.scrollCueArrow}>↓</i>
-        </div>
-      </section>
       <div ref={stageRef} className={css.stage}>
         <div className={css.stageSticky}>
+          <section className={css.hero}>
+            <h1 className={cx(css.heroTitle, css.fadeIn, css.fadeInTitle)}>
+              Code fades,
+              <br />
+              <em>stories remain.</em>
+            </h1>
+            <div className={css.scrollCue}>
+              <span>Scroll</span>
+              <i className={css.scrollCueArrow}>↓</i>
+            </div>
+          </section>
           {covers.map((p) => (
             <StoryCard key={p.slug} post={p} />
           ))}
         </div>
-      </div>
-      <div className={css.ctaGrid}>
-        <a href="/all" className={css.ctaCard}>
-          <b>Archive</b>
-          <span>{posts.length}개의 모든 글, 연대순</span>
-          <i className={css.ctaArrow}>→</i>
-        </a>
-        <a href="/tags" className={css.ctaCard}>
-          <b>Topics</b>
-          <span>{topicCount}개 토픽별로 둘러보기</span>
-          <i className={css.ctaArrow}>→</i>
-        </a>
       </div>
     </div>
   );

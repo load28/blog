@@ -11,10 +11,10 @@ export const Route = createFileRoute('/')({
 });
 
 function HomeRoute() {
-  const { posts, tags } = Route.useLoaderData();
+  const { posts } = Route.useLoaderData();
   return (
     <PageShell active="home">
-      <Home posts={posts} topicCount={Object.keys(tags).length} />
+      <Home posts={posts} />
     </PageShell>
   );
 }

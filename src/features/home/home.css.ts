@@ -36,6 +36,7 @@ export const hero = style({
   gap: '20px',
   position: 'relative',
   willChange: 'transform, opacity',
+  vars: { '--i': '1', '--o': '1' },
   '@media': { [MOBILE_MEDIA]: { minHeight: 'calc(100svh - 54px)' } },
 });
 
@@ -114,11 +115,20 @@ export const story = style({
   alignItems: 'center',
   minHeight: '72vh',
   cursor: 'pointer',
-  vars: { '--i': '1', '--o': '1' },
+  vars: { '--i': '1', '--o': '1', '--b': '1' },
   selectors: {
     [`${stage}[data-pin] &`]: { position: 'absolute', inset: 0, minHeight: 0 },
   },
   '@media': { [MOBILE_MEDIA]: { minHeight: '62vh' } },
+});
+
+// 핀 모드에선 히어로도 스테이지의 첫 장이 되어 제자리에서 교체된다
+globalStyle(`${stage}[data-pin] ${hero}`, {
+  position: 'absolute',
+  inset: 0,
+  minHeight: 0,
+  opacity: 'calc(var(--i) * var(--o))',
+  transform: 'translateY(calc((1 - var(--o)) * -34px))',
 });
 
 export const storyInner = style({
@@ -135,12 +145,13 @@ export const storyInner = style({
 // 진입·이탈 진행값이 스토리 내용 전체의 투명도를 만든다
 globalStyle(`${storyInner} > *`, { opacity: 'calc(var(--i) * var(--o))' });
 
+// 바는 짧게 시작해 늦게 늘어난다(--b) — 스토리가 보이는 동안 성장이 드러나도록
 export const storyRule = style({
   display: 'block',
   height: '3px',
   width: '100%',
   background: vars.color.ink,
-  transform: 'scaleX(var(--i))',
+  transform: 'scaleX(var(--b))',
   transformOrigin: '0 50%',
   marginBottom: '12px',
 });
@@ -207,55 +218,3 @@ export const storyReadArrow = style({
   },
 });
 
-/* ── 홈 하단 CTA (구 .go2·.arc) ─────────────────────────────────────────── */
-export const ctaGrid = style({
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '14px',
-  padding: '2vh 0 8vh',
-  '@media': { [MOBILE_MEDIA]: { gridTemplateColumns: '1fr', paddingBottom: '6vh' } },
-});
-
-export const ctaCard = style({
-  display: 'flex',
-  alignItems: 'baseline',
-  gap: '14px',
-  padding: '22px 24px',
-  border: `1px solid ${vars.color.borderStrong}`,
-  cursor: 'pointer',
-  transition: `all ${vars.duration.base}`,
-  marginTop: '6px',
-  '@media': {
-    [HOVER_MEDIA]: {
-      selectors: {
-        '&:hover': { borderColor: vars.color.ink, background: vars.color.tint },
-      },
-    },
-    [TOUCH_MEDIA]: {
-      selectors: {
-        '&:active': {
-          borderColor: vars.color.ink,
-          background: vars.color.tint,
-          transitionDuration: '0s',
-        },
-      },
-    },
-  },
-});
-
-globalStyle(`${ctaCard} b`, { font: `650 16px/1.4 ${vars.font.serif}` });
-globalStyle(`${ctaCard} span`, { fontSize: '12.5px', color: vars.color.inkMuted });
-
-export const ctaArrow = style({
-  fontStyle: 'normal',
-  marginLeft: 'auto',
-  color: vars.color.inkMuted,
-  transition: `transform ${vars.duration.base}, color ${vars.duration.base}`,
-  '@media': {
-    [HOVER_MEDIA]: {
-      selectors: {
-        [`${ctaCard}:hover &`]: { transform: 'translateX(5px)', color: vars.color.ink },
-      },
-    },
-  },
-});

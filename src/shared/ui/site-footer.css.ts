@@ -30,12 +30,13 @@ export const footerInner = style(
   }),
 );
 
-export const footerBrand = style(
+// 헤더 내비와 같은 결 — 링크 간격만 헤더(topBarNav)를 따른다
+export const footerNav = style(
   rec({
     display: 'flex',
+    gap: '2px',
     alignItems: 'center',
-    gap: '9px',
-    font: `650 15px/1 ${vars.font.serif}`,
+    flexWrap: 'wrap',
   }),
 );
 
@@ -46,5 +47,6 @@ export const footerNote = style(
     fontWeight: 500,
     lineHeight: 1.6,
     color: vars.color.inkMuted,
+    marginLeft: '14px',
   }),
 );

@@ -147,10 +147,17 @@ export const finale = style({
   },
 });
 
+// 풋터는 헤더처럼 홈 칼럼을 벗어나 뷰포트 전체 너비를 차지한다
+globalStyle(`${finale} footer`, {
+  marginInline: 'calc(50% - 50vw)',
+});
+
+// 콘텐츠 블록은 히어로처럼 칼럼 중앙에, 텍스트는 블록 안에서 왼쪽 정렬
 export const storyInner = style({
   position: 'relative',
   width: '100%',
   maxWidth: '680px',
+  marginInline: 'auto',
   display: 'flex',
   flexDirection: 'column',
   gap: '12px',

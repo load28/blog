@@ -13,7 +13,8 @@ function smooth(v: number): number {
 const FADE_OUT = 0.35; // 전환 타임라인 앞 35%에 이탈이 끝난다 — 빠른 이탈
 const SPEED = 1.25; // 초당 전환 진행량 — 전환 하나에 0.8s
 const BAR_MIN = 0.15; // 바의 시작 폭 비율 — 짧게 시작해 늦게 늘어난다
-const GESTURE_GAP = 150; // ms — 이보다 긴 공백 뒤의 휠 델타는 새 제스처
+const GESTURE_GAP = 250; // ms — 이보다 긴 공백이 있어야 다음 휠 제스처로 인정
+const GESTURE_MIN = 50; // px — 제스처 누적 델타가 이만큼 쌓여야 한 칸 이동
 const SETTLE_DELAY = 140; // ms — 휠 외 스크롤이 멈춘 뒤 경계로 스냅하기까지
 
 export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): void {
@@ -36,7 +37,8 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
     let raf = 0;
     let last = 0;
     let lastWheel = 0;
-    let lastDelta = 0;
+    let acc = 0; // 현재 휠 제스처의 누적 델타
+    let spent = false; // 현재 제스처가 이미 한 칸을 소진했는지
     let snapTimer = 0;
 
     const layout = () => {
@@ -114,14 +116,19 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       if ((progress <= 0 && dir < 0) || (progress >= max && dir > 0)) return;
       e.preventDefault();
 
-      const busy = raf !== 0 || displayed !== target || target !== pending;
-      const delta = Math.abs(e.deltaY) * (e.deltaMode === 1 ? 40 : 1);
-      // 새 제스처 판정 — 잠깐의 공백 뒤이거나 직전보다 커지는(가속) 델타.
-      // 트랙패드 관성으로 감쇠하며 이어지는 델타는 제스처로 치지 않는다.
-      const fresh = e.timeStamp - lastWheel > GESTURE_GAP || delta > lastDelta * 1.2;
+      // 공백(GESTURE_GAP) 없이 이어지는 델타 묶음은 관성 꼬리까지 전부 하나의
+      // 제스처다. 제스처당 이동은 최대 한 칸이고, 방향이 바뀌거나 충분한
+      // 공백이 지나야 다음 제스처로 인정된다.
+      const delta = e.deltaY * (e.deltaMode === 1 ? 40 : 1);
+      if (e.timeStamp - lastWheel > GESTURE_GAP || Math.sign(delta) !== Math.sign(acc)) {
+        acc = 0;
+        spent = false;
+      }
       lastWheel = e.timeStamp;
-      lastDelta = delta;
-      if (busy || !fresh || delta < 4) return;
+      acc += delta;
+      if (spent || Math.abs(acc) < GESTURE_MIN) return;
+      spent = true; // 전환 재생 중이어도 제스처는 소진 — 관성이 추가 칸을 못 만든다
+      if (raf !== 0 || displayed !== target || target !== pending) return;
 
       pending = Math.min(max, Math.max(0, Math.round(progress) + dir));
       window.scrollTo({ top: stageStart() + pending * seg });

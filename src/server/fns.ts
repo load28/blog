@@ -19,7 +19,7 @@ export const fetchCatalog = createServerFn({ method: 'GET' }).handler(
 );
 
 export const fetchPost = createServerFn({ method: 'GET' })
-  .inputValidator((slug: string) => slug)
+  .validator((slug: string) => slug)
   .handler(async ({ data: slug }): Promise<Post | null> => {
     const { getAllPosts } = await import('@/server/posts');
     const posts = await getAllPosts();

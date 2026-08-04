@@ -288,16 +288,14 @@ function rehypeCodePlates(hl: Highlighter) {
 }
 
 /* Split the article into h2-bounded magazine sections — an optional lead
-   before the first h2, then spreads whose rail (h2 + counter) alternates
-   left/right on desktop: .sec-lead | .sec-l | .sec-r, each with a rail
-   (.sr > .sri, sticky) and a body (.sb). Body blocks keep their .bk
-   stagger shells; the delay resets per section. */
+   (.sec-lead) before the first h2, then spreads with a left rail
+   (.sr > .sri, sticky h2 + counter) beside the body (.sb). Body blocks
+   keep their .bk stagger shells; the delay resets per section. */
 function rehypeSections() {
   return (tree: any) => {
     const sections: HNode[] = [];
     let rail: HNode | null = null;
     let body: HNode[] = [];
-    let flip = false;
 
     const wrapBlocks = (nodes: HNode[]) => {
       let j = 0;
@@ -315,12 +313,11 @@ function rehypeSections() {
     const push = () => {
       if (rail) {
         sections.push(
-          h("section", { className: ["sec", flip ? "sec-r" : "sec-l"] }, [
+          h("section", { className: ["sec"] }, [
             h("div", { className: ["sr"] }, [h("div", { className: ["sri"] }, [rail])]),
             h("div", { className: ["sb"] }, wrapBlocks(body)),
           ])
         );
-        flip = !flip;
       } else if (body.some((n) => n.type === "element")) {
         sections.push(
           h("section", { className: ["sec", "sec-lead"] }, [

@@ -171,8 +171,8 @@ export const articleBody = style({
 const bd = articleBody;
 
 /* ── 섹션 스프레드 — h2 단위로 지면 구성이 달라진다 ─────────────────────────
-   .sec-lead: 센터드 도입부 / .sec-l·.sec-r: 레일(넘버+제목)이 좌우 교차하는
-   스프레드. 데스크톱에서 레일은 스티키로 따라오고, 읽는 중인 섹션(data-cur)의
+   .sec-lead: 센터드 도입부 / 그 외 .sec: 왼쪽 레일(넘버+제목) 스프레드.
+   데스크톱에서 레일은 스티키로 따라오고, 읽는 중인 섹션(data-cur)의
    레일이 스포트라이트를 받는다. 모바일은 선형 플로우로 접힌다. */
 globalStyle(`${bd} .sec + .sec`, {
   marginTop: '96px',
@@ -185,7 +185,7 @@ globalStyle(`${bd} .sec-lead .sb`, {
   '@media': { [DESKTOP_MEDIA]: { maxWidth: '840px', marginInline: 'auto' } },
 });
 
-globalStyle(`${bd} .sec-l, ${bd} .sec-r`, {
+globalStyle(`${bd} .sec:not(.sec-lead)`, {
   '@media': {
     [DESKTOP_MEDIA]: {
       display: 'grid',
@@ -194,13 +194,6 @@ globalStyle(`${bd} .sec-l, ${bd} .sec-r`, {
       alignItems: 'start',
     },
   },
-});
-
-globalStyle(`${bd} .sec-r`, {
-  '@media': { [DESKTOP_MEDIA]: { gridTemplateColumns: 'minmax(0, 1fr) 264px' } },
-});
-globalStyle(`${bd} .sec-r .sr`, {
-  '@media': { [DESKTOP_MEDIA]: { order: 2, textAlign: 'right' } },
 });
 
 globalStyle(`${bd} .sb`, { minWidth: 0 });
@@ -240,9 +233,6 @@ globalStyle(`${bd} h2::after`, {
   transform: 'scaleX(0.35)',
   transition: `transform 0.6s ${vars.easing.out}`,
   '@media': { [REDUCED_MOTION]: { transition: 'none', transform: 'none' } },
-});
-globalStyle(`${bd} .sec-r h2::after`, {
-  '@media': { [DESKTOP_MEDIA]: { left: 'auto', right: 0, transformOrigin: '100% 50%' } },
 });
 globalStyle(`${bd} .sec[data-cur] h2::after`, { transform: 'none' });
 globalStyle(`${bd} h2::before`, {

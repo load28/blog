@@ -34,6 +34,13 @@
 
 /* ── base — editorial paper theme (FT: paper #FFF1E5 · ink #33302E) ────── */
 @layer base {
+  /* 아티클 레일 네비의 앵커 점프를 부드럽게 — 모션 축소 사용자는 즉시 이동 */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
   html,
   body {
     font:

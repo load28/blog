@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { md2html } from '@/server/markdown';
+import { md2html, type TocEntry } from '@/server/markdown';
 
 /** 목록·피드에 쓰는 메타 — 본문 html은 상세에서만 싣는다(페이로드 절약). */
 export interface PostMeta {
@@ -14,6 +14,7 @@ export interface PostMeta {
 
 export interface Post extends PostMeta {
   html: string;
+  toc: TocEntry[];
 }
 
 function extractExcerpt(s: string): string {
@@ -85,12 +86,14 @@ export async function getAllPosts(): Promise<Post[]> {
     const { fm, body } = parsed;
 
     const slug = f.replace(/\.mdx$/, '');
+    const { html, toc } = await md2html(body);
     posts.push({
       slug,
       title: typeof fm.title === 'string' && fm.title ? fm.title : slug,
       date: typeof fm.date === 'string' ? fm.date : '',
       tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
-      html: await md2html(body),
+      html,
+      toc,
       excerpt:
         typeof fm.description === 'string' && fm.description ? fm.description : extractExcerpt(body),
       minutes: Math.max(1, Math.round(body.replace(/```[\s\S]*?```/g, '').length / 700)),
@@ -102,7 +105,7 @@ export async function getAllPosts(): Promise<Post[]> {
   return posts;
 }
 
-export function toMeta({ html: _html, ...meta }: Post): PostMeta {
+export function toMeta({ html: _html, toc: _toc, ...meta }: Post): PostMeta {
   return meta;
 }
 

@@ -157,6 +157,82 @@ export const footerNav = style({
   borderTop: `1px solid ${vars.color.borderStrong}`,
 });
 
+/* ── 레일 지면 — 데스크톱에서 표지를 이어받는 왼쪽 상주 칼럼 ──────────────── */
+export const layout = style({
+  marginTop: '64px',
+  '@media': {
+    [DESKTOP_MEDIA]: {
+      display: 'grid',
+      gridTemplateColumns: '240px minmax(0, 1fr)',
+      columnGap: '80px',
+      alignItems: 'start',
+    },
+    [MOBILE_MEDIA]: { marginTop: '44px' },
+  },
+});
+
+export const rail = style({
+  display: 'none',
+  '@media': {
+    [DESKTOP_MEDIA]: {
+      display: 'block',
+      position: 'sticky',
+      top: '92px',
+    },
+  },
+});
+
+export const railTitle = style({
+  font: `650 17px/1.45 ${vars.font.serif}`,
+  letterSpacing: '-0.01em',
+});
+
+export const railMeta = style({
+  ...textStyles.monoMeta,
+  color: vars.color.inkMuted,
+  marginTop: '8px',
+});
+
+export const railNav = style({
+  display: 'flex',
+  flexDirection: 'column',
+  marginTop: '22px',
+  borderTop: `2px solid ${vars.color.ink}`,
+  paddingTop: '6px',
+});
+
+export const railLink = style({
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '11px',
+  padding: '8px 0',
+  borderBottom: `1px solid ${vars.color.border}`,
+  cursor: 'pointer',
+  transition: `color ${vars.duration.fast}`,
+});
+
+export const railNo = style({
+  ...textStyles.monoCaption,
+  fontStyle: 'normal',
+  color: vars.color.inkMuted,
+  transition: `color ${vars.duration.fast}`,
+});
+
+export const railLabel = style({
+  fontSize: '13px',
+  fontWeight: 500,
+  lineHeight: 1.5,
+  color: vars.color.inkSecondary,
+  transition: `color ${vars.duration.fast}`,
+});
+
+// 읽는 중인 섹션(data-on) — 넘버가 클라렛으로, 제목이 잉크로 선다
+globalStyle(`${railLink}[data-on] ${railNo}`, { color: vars.color.claret, fontWeight: 700 });
+globalStyle(`${railLink}[data-on] ${railLabel}`, { color: vars.color.ink, fontWeight: 600 });
+globalStyle(`${railLink}:hover ${railLabel}`, {
+  '@media': { [HOVER_MEDIA]: { color: vars.color.ink } },
+});
+
 /* ── 본문 (구 .bd) ──────────────────────────────────────────────────────── */
 export const articleBody = style({
   fontSize: '17px',
@@ -170,10 +246,15 @@ export const articleBody = style({
 
 const bd = articleBody;
 
-/* ── 섹션 스프레드 — h2 단위로 지면 구성이 달라진다 ─────────────────────────
-   .sec-lead: 센터드 도입부 / 그 외 .sec: 왼쪽 레일(넘버+제목) 스프레드.
-   데스크톱에서 레일은 스티키로 따라오고, 읽는 중인 섹션(data-cur)의
-   레일이 스포트라이트를 받는다. 모바일은 선형 플로우로 접힌다. */
+/* ── 섹션 스테이지 — 스크롤이 섹션을 교체한다 ──────────────────────────────
+   데스크톱(모션 허용)에서 루트에 data-pin이 걸리면: 각 섹션은 다 읽힌 뒤
+   화면에 고정(--pin: 뷰포트-섹션 높이, 훅이 계산)되고, 다음 섹션이 위로
+   덮으며 지면이 교체된다. 표지는 스크롤 진행(--x)에 따라 물러난다.
+   모바일·모션 축소·JS 이전은 선형 플로우 그대로다. */
+globalStyle(`${bd} .sec`, {
+  scrollMarginTop: '72px',
+});
+
 globalStyle(`${bd} .sec + .sec`, {
   marginTop: '96px',
   paddingTop: '52px',
@@ -181,27 +262,20 @@ globalStyle(`${bd} .sec + .sec`, {
   '@media': { [MOBILE_MEDIA]: { marginTop: '56px', paddingTop: '36px' } },
 });
 
-globalStyle(`${bd} .sec-lead .sb`, {
-  '@media': { [DESKTOP_MEDIA]: { maxWidth: '840px', marginInline: 'auto' } },
+globalStyle(`${container}[data-pin] ${bd} .sec`, {
+  position: 'sticky',
+  top: 'var(--pin, auto)',
+  background: vars.color.paper,
+  margin: 0,
+  padding: '64px 0 72px',
+  borderTop: `1px solid ${vars.color.borderStrong}`,
 });
 
-globalStyle(`${bd} .sec:not(.sec-lead)`, {
-  '@media': {
-    [DESKTOP_MEDIA]: {
-      display: 'grid',
-      gridTemplateColumns: '264px minmax(0, 1fr)',
-      columnGap: '72px',
-      alignItems: 'start',
-    },
-  },
-});
-
-globalStyle(`${bd} .sb`, { minWidth: 0 });
-
-// 레일 — 데스크톱에선 섹션을 읽는 동안 스티키로 동행한다
-globalStyle(`${bd} .sr`, { minWidth: 0 });
-globalStyle(`${bd} .sri`, {
-  '@media': { [DESKTOP_MEDIA]: { position: 'sticky', top: '92px' } },
+// 표지 시들기 — 물러나며 레일의 축소 타이틀이 이어받는다
+globalStyle(`${container}[data-pin] [data-cover]`, {
+  transformOrigin: '50% 0',
+  transform: 'translateY(calc(var(--x, 0) * 26px)) scale(calc(1 - var(--x, 0) * 0.05))',
+  opacity: 'calc(1 - var(--x, 0))',
 });
 
 // 리드 문단 — 도입부 첫 문단은 세리프로 한 호흡 크게
@@ -211,14 +285,15 @@ globalStyle(`${bd} .sec-lead .bk:first-child > p:first-child`, {
   lineHeight: 1.8,
 });
 
-/* 레일 h2 — 잉크 바(::after) + 큰 넘버 카운터(::before) + 세리프 제목.
+/* 섹션 h2 — 잉크 바(::after) + 큰 넘버 카운터(::before) + 세리프 제목.
    스포트라이트: 섹션이 뷰포트 중앙 밴드에 들어오면 바가 자라고 넘버가 물든다 */
 globalStyle(`${bd} h2`, {
   position: 'relative',
-  font: `700 26px/1.3 ${vars.font.serif}`,
+  font: `700 27px/1.3 ${vars.font.serif}`,
   letterSpacing: '-0.018em',
-  margin: 0,
+  margin: '0 0 26px',
   paddingTop: '22px',
+  scrollMarginTop: '80px',
   '@media': { [MOBILE_MEDIA]: { fontSize: '24px', margin: '0 0 18px', paddingTop: '18px' } },
 });
 globalStyle(`${bd} h2::after`, {

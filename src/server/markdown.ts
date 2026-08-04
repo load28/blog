@@ -287,15 +287,26 @@ function rehypeCodePlates(hl: Highlighter) {
   };
 }
 
+/** 아티클 레일 네비게이션에 싣는 섹션 목차 항목. */
+export interface TocEntry {
+  id: string;
+  title: string;
+}
+
+function textOf(node: HNode): string {
+  if (node.type === "text") return String(node.value || "");
+  return ((node.children || []) as HNode[]).map(textOf).join("");
+}
+
 /* Split the article into h2-bounded magazine sections — an optional lead
-   (.sec-lead) before the first h2, then spreads with a left rail
-   (.sr > .sri, sticky h2 + counter) beside the body (.sb). Body blocks
-   keep their .bk stagger shells; the delay resets per section. */
-function rehypeSections() {
+   (.sec-lead#intro) before the first h2, then one .sec per h2. On desktop
+   each section becomes a stacked stage panel that the next one covers.
+   Body blocks keep their .bk stagger shells (delay resets per section);
+   h2 ids/titles are collected into the caller's toc for the rail nav. */
+function rehypeSections(toc: TocEntry[]) {
   return (tree: any) => {
     const sections: HNode[] = [];
-    let rail: HNode | null = null;
-    let body: HNode[] = [];
+    let cur: HNode[] = [];
 
     const wrapBlocks = (nodes: HNode[]) => {
       let j = 0;
@@ -310,40 +321,36 @@ function rehypeSections() {
       );
     };
 
-    const push = () => {
-      if (rail) {
-        sections.push(
-          h("section", { className: ["sec"] }, [
-            h("div", { className: ["sr"] }, [h("div", { className: ["sri"] }, [rail])]),
-            h("div", { className: ["sb"] }, wrapBlocks(body)),
-          ])
-        );
-      } else if (body.some((n) => n.type === "element")) {
-        sections.push(
-          h("section", { className: ["sec", "sec-lead"] }, [
-            h("div", { className: ["sb"] }, wrapBlocks(body)),
-          ])
-        );
+    const flush = () => {
+      const isLead = !cur.some((n) => n.type === "element" && n.tagName === "h2");
+      if (cur.some((n) => n.type === "element")) {
+        if (isLead) {
+          toc.push({ id: "intro", title: "Intro" });
+          sections.push(
+            h("section", { className: ["sec", "sec-lead"], id: "intro" }, wrapBlocks(cur))
+          );
+        } else {
+          sections.push(h("section", { className: ["sec"] }, wrapBlocks(cur)));
+        }
       }
-      rail = null;
-      body = [];
+      cur = [];
     };
 
     for (const node of tree.children) {
       if (node.type === "element" && node.tagName === "h2") {
-        push();
-        rail = node;
-      } else {
-        body.push(node);
+        flush();
+        toc.push({ id: String(node.properties?.id || ""), title: textOf(node) });
       }
+      cur.push(node);
     }
-    push();
+    flush();
     tree.children = sections;
   };
 }
 
-export async function md2html(s: string): Promise<string> {
+export async function md2html(s: string): Promise<{ html: string; toc: TocEntry[] }> {
   const hl = await getHighlighter();
+  const toc: TocEntry[] = [];
   const file = await unified()
     .use(remarkParse)
     /* CommonMark 플랭킹 규칙은 `**컬럼(열)**이`처럼 닫는 `**` 앞이 문장부호이고
@@ -361,8 +368,8 @@ export async function md2html(s: string): Promise<string> {
     .use(rehypeFigures)
     .use(rehypeTableWrap)
     .use(rehypeExternalLinks)
-    .use(rehypeSections)
+    .use(rehypeSections, toc)
     .use(rehypeStringify)
     .process(s);
-  return String(file);
+  return { html: String(file), toc };
 }

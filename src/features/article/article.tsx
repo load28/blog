@@ -29,10 +29,9 @@ function useCopyButtons(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
-/* 아티클 스테이지 연출 — 데스크톱·모션 허용에서만 data-pin을 걸어
+/* 아티클 스테이지 연출 — 데스크톱·모션 허용에서만 data-stage를 걸어
    1) 표지가 스크롤 진행(--x)에 따라 물러나며 레일에 자리를 내주고
-   2) 각 섹션은 다 읽히면 화면에 고정(--pin)되어 다음 섹션이 덮으며 교체되고
-   3) 뷰포트 중앙 밴드의 섹션(data-cur)이 레일 네비에 하이라이트된다 */
+   2) 뷰포트 중앙 밴드의 섹션(data-cur)이 레일 네비에 하이라이트된다 */
 function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const root = ref.current;
@@ -44,22 +43,13 @@ function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
     const desk = window.matchMedia(DESKTOP_MEDIA);
     const still = window.matchMedia(REDUCED_MOTION);
 
-    // 마지막 섹션은 고정하지 않는다 — 풋터가 자연스럽게 뒤따르도록
-    const layout = () => {
-      const on = desk.matches && !still.matches;
-      root.toggleAttribute('data-pin', on);
-      secs.forEach((s, i) => {
-        if (on && i < secs.length - 1) {
-          s.style.setProperty('--pin', `${Math.round(window.innerHeight - s.offsetHeight)}px`);
-        } else {
-          s.style.removeProperty('--pin');
-        }
-      });
+    const sync = () => {
+      root.toggleAttribute('data-stage', desk.matches && !still.matches);
     };
 
     let raf = 0;
     const onScroll = () => {
-      if (raf || !cover || !root.hasAttribute('data-pin')) return;
+      if (raf || !cover || !root.hasAttribute('data-stage')) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
         const r = cover.getBoundingClientRect();
@@ -81,19 +71,16 @@ function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
     );
     for (const s of secs) io.observe(s);
 
-    const ro = new ResizeObserver(layout);
-    ro.observe(root);
-    desk.addEventListener('change', layout);
-    still.addEventListener('change', layout);
+    desk.addEventListener('change', sync);
+    still.addEventListener('change', sync);
     window.addEventListener('scroll', onScroll, { passive: true });
-    layout();
+    sync();
     onScroll();
 
     return () => {
       io.disconnect();
-      ro.disconnect();
-      desk.removeEventListener('change', layout);
-      still.removeEventListener('change', layout);
+      desk.removeEventListener('change', sync);
+      still.removeEventListener('change', sync);
       window.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);
     };

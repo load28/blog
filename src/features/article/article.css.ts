@@ -246,11 +246,9 @@ export const articleBody = style({
 
 const bd = articleBody;
 
-/* ── 섹션 스테이지 — 스크롤이 섹션을 교체한다 ──────────────────────────────
-   데스크톱(모션 허용)에서 루트에 data-pin이 걸리면: 각 섹션은 다 읽힌 뒤
-   화면에 고정(--pin: 뷰포트-섹션 높이, 훅이 계산)되고, 다음 섹션이 위로
-   덮으며 지면이 교체된다. 표지는 스크롤 진행(--x)에 따라 물러난다.
-   모바일·모션 축소·JS 이전은 선형 플로우 그대로다. */
+/* ── 섹션 — h2 단위 장 구분, 선형 플로우 ──────────────────────────────────
+   데스크톱(모션 허용)에서 루트에 data-stage가 걸리면 표지가 스크롤
+   진행(--x)에 따라 물러나고, 레일 네비가 읽는 위치를 따라간다. */
 globalStyle(`${bd} .sec`, {
   scrollMarginTop: '72px',
 });
@@ -262,17 +260,8 @@ globalStyle(`${bd} .sec + .sec`, {
   '@media': { [MOBILE_MEDIA]: { marginTop: '56px', paddingTop: '36px' } },
 });
 
-globalStyle(`${container}[data-pin] ${bd} .sec`, {
-  position: 'sticky',
-  top: 'var(--pin, auto)',
-  background: vars.color.paper,
-  margin: 0,
-  padding: '64px 0 72px',
-  borderTop: `1px solid ${vars.color.borderStrong}`,
-});
-
 // 표지 시들기 — 물러나며 레일의 축소 타이틀이 이어받는다
-globalStyle(`${container}[data-pin] [data-cover]`, {
+globalStyle(`${container}[data-stage] [data-cover]`, {
   transformOrigin: '50% 0',
   transform: 'translateY(calc(var(--x, 0) * 26px)) scale(calc(1 - var(--x, 0) * 0.05))',
   opacity: 'calc(1 - var(--x, 0))',

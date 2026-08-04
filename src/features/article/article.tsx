@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import type { Post } from '@/server/posts';
-import { fmtDate, SITE_NAME } from '@/shared/site';
+import { fmtDate } from '@/shared/site';
+import { cx } from '@/styles/cx';
 import * as css from '@/features/article/article.css';
 
 // 코드 플레이트 복사 버튼 (구 n.js) — 본문에 위임 리스너 하나만 단다
@@ -43,23 +44,27 @@ export function ArticlePage({ post }: { post: Post }) {
       <a href="/all" className={css.backLink}>
         ← 모든 글
       </a>
-      <div className={css.tagRow}>
-        {tags.map((t) => (
-          <a key={t} href={`/t/${t}`} className={css.tagPill}>
-            {t}
-          </a>
-        ))}
-      </div>
-      <h1 className={css.title}>{post.title}</h1>
-      <div className={css.meta}>
-        <b>{fmtDate(post.date)}</b>
-        <span>·</span>
-        <span>{post.minutes} min read</span>
-        <span>·</span>
-        <span>{SITE_NAME}</span>
-      </div>
-      {isAi && <div className={css.aiBadge}>AI-assisted content</div>}
-      <div className={css.divider} />
+      <header className={css.cover}>
+        <p className={cx(css.kicker, css.rise)}>
+          {tags.map((t, i) => (
+            <Fragment key={t}>
+              {i > 0 && <span aria-hidden>·</span>}
+              <a href={`/t/${t}`} className={css.kickerTag}>
+                {t}
+              </a>
+            </Fragment>
+          ))}
+        </p>
+        <h1 className={cx(css.title, css.rise, css.riseTitle)}>{post.title}</h1>
+        {post.excerpt && <p className={cx(css.deck, css.rise, css.riseDeck)}>{post.excerpt}</p>}
+        <div className={cx(css.meta, css.rise, css.riseMeta)}>
+          <b>{fmtDate(post.date)}</b>
+          <span aria-hidden>·</span>
+          <span>{post.minutes} min read</span>
+        </div>
+        {isAi && <div className={cx(css.aiBadge, css.rise, css.riseMeta)}>AI-assisted content</div>}
+        <i className={css.coverRule} />
+      </header>
       <ArticleBody html={post.html} />
       <div className={css.footerNav}>
         <a href="/all" className={css.backLink}>

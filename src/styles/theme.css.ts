@@ -33,7 +33,8 @@ export const vars = createGlobalTheme(':root', {
 
   size: {
     shellMax: '1240px', // 상단바·풋터·스플릿 레이아웃 폭
-    proseMax: '720px', // 본문 칼럼 폭
+    proseMax: '840px', // 프로즈 페이지(about 등) 칼럼 폭
+    articleMax: '1000px', // 아티클 지면 폭 — 홈 칼럼(homeMax)과 같은 그리드
     homeMax: '1000px', // 홈 이머시브 칼럼 폭
     sidebar: '300px',
   },

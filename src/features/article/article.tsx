@@ -28,10 +28,31 @@ function useCopyButtons(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
+// 섹션 스포트라이트 — 뷰포트 중앙 밴드에 걸친 섹션에 data-cur를 달아
+// 레일의 잉크 바·넘버가 반응하게 한다 (JS 이전에는 휴지 상태로 남는다)
+function useSectionSpotlight(ref: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const secs = ref.current?.querySelectorAll('.sec');
+    if (!secs?.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) e.target.setAttribute('data-cur', '');
+          else e.target.removeAttribute('data-cur');
+        }
+      },
+      { rootMargin: '-38% 0px -38% 0px' },
+    );
+    for (const s of secs) io.observe(s);
+    return () => io.disconnect();
+  }, [ref]);
+}
+
 /** 마크다운 파이프라인 산출 HTML 본문 (구 .bd) */
 export function ArticleBody({ html }: { html: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useCopyButtons(ref);
+  useSectionSpotlight(ref);
   // biome-ignore lint/security/noDangerouslySetInnerHtml: 빌드 시점에 자체 콘텐츠에서 생성한 HTML이다
   return <div ref={ref} className={css.articleBody} dangerouslySetInnerHTML={{ __html: html }} />;
 }

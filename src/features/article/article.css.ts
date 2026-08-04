@@ -1,5 +1,11 @@
 import { globalStyle, keyframes, style } from '@vanilla-extract/css';
-import { HOVER_MEDIA, MOBILE_MEDIA, REDUCED_MOTION, TOUCH_MEDIA } from '@/styles/conditions';
+import {
+  DESKTOP_MEDIA,
+  HOVER_MEDIA,
+  MOBILE_MEDIA,
+  REDUCED_MOTION,
+  TOUCH_MEDIA,
+} from '@/styles/conditions';
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
@@ -164,35 +170,100 @@ export const articleBody = style({
 
 const bd = articleBody;
 
-// 리드 문단 — 표지 직후 첫 문단은 세리프로 한 호흡 크게
-globalStyle(`${bd} .bk:first-child > p:first-child`, {
+/* ── 섹션 스프레드 — h2 단위로 지면 구성이 달라진다 ─────────────────────────
+   .sec-lead: 센터드 도입부 / .sec-l·.sec-r: 레일(넘버+제목)이 좌우 교차하는
+   스프레드. 데스크톱에서 레일은 스티키로 따라오고, 읽는 중인 섹션(data-cur)의
+   레일이 스포트라이트를 받는다. 모바일은 선형 플로우로 접힌다. */
+globalStyle(`${bd} .sec + .sec`, {
+  marginTop: '96px',
+  paddingTop: '52px',
+  borderTop: `1px solid ${vars.color.border}`,
+  '@media': { [MOBILE_MEDIA]: { marginTop: '56px', paddingTop: '36px' } },
+});
+
+globalStyle(`${bd} .sec-lead .sb`, {
+  '@media': { [DESKTOP_MEDIA]: { maxWidth: '840px', marginInline: 'auto' } },
+});
+
+globalStyle(`${bd} .sec-l, ${bd} .sec-r`, {
+  '@media': {
+    [DESKTOP_MEDIA]: {
+      display: 'grid',
+      gridTemplateColumns: '264px minmax(0, 1fr)',
+      columnGap: '72px',
+      alignItems: 'start',
+    },
+  },
+});
+
+globalStyle(`${bd} .sec-r`, {
+  '@media': { [DESKTOP_MEDIA]: { gridTemplateColumns: 'minmax(0, 1fr) 264px' } },
+});
+globalStyle(`${bd} .sec-r .sr`, {
+  '@media': { [DESKTOP_MEDIA]: { order: 2, textAlign: 'right' } },
+});
+
+globalStyle(`${bd} .sb`, { minWidth: 0 });
+
+// 레일 — 데스크톱에선 섹션을 읽는 동안 스티키로 동행한다
+globalStyle(`${bd} .sr`, { minWidth: 0 });
+globalStyle(`${bd} .sri`, {
+  '@media': { [DESKTOP_MEDIA]: { position: 'sticky', top: '92px' } },
+});
+
+// 리드 문단 — 도입부 첫 문단은 세리프로 한 호흡 크게
+globalStyle(`${bd} .sec-lead .bk:first-child > p:first-child`, {
   fontFamily: vars.font.serif,
-  fontSize: '1.22em',
+  fontSize: '1.24em',
   lineHeight: 1.8,
 });
 
-// 섹션 오프너 — 홈 스토리 카드의 잉크 바 + 넘버 카운터가 장 구분을 만든다
-// (짧은 3px 바는 background로 그린다 — ::before는 카운터가 쓰고 있다)
+/* 레일 h2 — 잉크 바(::after) + 큰 넘버 카운터(::before) + 세리프 제목.
+   스포트라이트: 섹션이 뷰포트 중앙 밴드에 들어오면 바가 자라고 넘버가 물든다 */
 globalStyle(`${bd} h2`, {
-  font: `700 28px/1.28 ${vars.font.serif}`,
+  position: 'relative',
+  font: `700 26px/1.3 ${vars.font.serif}`,
   letterSpacing: '-0.018em',
-  margin: '76px 0 18px',
-  paddingTop: '24px',
-  backgroundImage: `linear-gradient(${vars.color.ink}, ${vars.color.ink})`,
-  backgroundSize: '46px 3px',
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: '0 0',
-  '@media': { [MOBILE_MEDIA]: { fontSize: '24px', margin: '58px 0 14px' } },
+  margin: 0,
+  paddingTop: '22px',
+  '@media': { [MOBILE_MEDIA]: { fontSize: '24px', margin: '0 0 18px', paddingTop: '18px' } },
 });
+globalStyle(`${bd} h2::after`, {
+  content: '""',
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  width: '46px',
+  height: '3px',
+  background: vars.color.ink,
+  transformOrigin: '0 50%',
+  transform: 'scaleX(0.35)',
+  transition: `transform 0.6s ${vars.easing.out}`,
+  '@media': { [REDUCED_MOTION]: { transition: 'none', transform: 'none' } },
+});
+globalStyle(`${bd} .sec-r h2::after`, {
+  '@media': { [DESKTOP_MEDIA]: { left: 'auto', right: 0, transformOrigin: '100% 50%' } },
+});
+globalStyle(`${bd} .sec[data-cur] h2::after`, { transform: 'none' });
 globalStyle(`${bd} h2::before`, {
   counterIncrement: 'sec',
   content: 'counter(sec, decimal-leading-zero)',
   display: 'block',
-  font: `650 11px/1 ${vars.font.mono}`,
-  letterSpacing: '0.24em',
-  color: vars.color.claret,
-  marginBottom: '11px',
+  font: `800 52px/1 ${vars.font.serif}`,
+  letterSpacing: '-0.01em',
+  color: vars.color.inkMuted,
+  marginBottom: '16px',
+  transition: `color 0.5s ${vars.easing.out}`,
+  '@media': {
+    [MOBILE_MEDIA]: {
+      font: `650 11px/1 ${vars.font.mono}`,
+      letterSpacing: '0.24em',
+      color: vars.color.claret,
+      marginBottom: '11px',
+    },
+  },
 });
+globalStyle(`${bd} .sec[data-cur] h2::before`, { color: vars.color.claret });
 globalStyle(`${bd} h3`, { font: `650 21px/1.4 ${vars.font.serif}`, margin: '42px 0 12px' });
 globalStyle(`${bd} h4`, { font: `650 17px/1.5 ${vars.font.serif}`, margin: '28px 0 8px' });
 globalStyle(`${bd} p`, { margin: '16px 0', lineHeight: 1.9 });

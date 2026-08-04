@@ -287,19 +287,61 @@ function rehypeCodePlates(hl: Highlighter) {
   };
 }
 
-/* Wrap each top-level block in a .bk stagger-reveal shell
-   (replaces the old string-splitting articleBlocks). */
-function rehypeBlocks() {
+/* Split the article into h2-bounded magazine sections — an optional lead
+   before the first h2, then spreads whose rail (h2 + counter) alternates
+   left/right on desktop: .sec-lead | .sec-l | .sec-r, each with a rail
+   (.sr > .sri, sticky) and a body (.sb). Body blocks keep their .bk
+   stagger shells; the delay resets per section. */
+function rehypeSections() {
   return (tree: any) => {
-    let i = 0;
-    tree.children = tree.children.map((node: any) => {
-      if (node.type !== "element") return node;
-      return h(
-        "div",
-        { className: ["bk"], style: `animation-delay:${Math.min(i++ * 50, 200)}ms` },
-        [node]
+    const sections: HNode[] = [];
+    let rail: HNode | null = null;
+    let body: HNode[] = [];
+    let flip = false;
+
+    const wrapBlocks = (nodes: HNode[]) => {
+      let j = 0;
+      return nodes.map((n) =>
+        n.type === "element"
+          ? h(
+              "div",
+              { className: ["bk"], style: `animation-delay:${Math.min(j++ * 50, 200)}ms` },
+              [n]
+            )
+          : n
       );
-    });
+    };
+
+    const push = () => {
+      if (rail) {
+        sections.push(
+          h("section", { className: ["sec", flip ? "sec-r" : "sec-l"] }, [
+            h("div", { className: ["sr"] }, [h("div", { className: ["sri"] }, [rail])]),
+            h("div", { className: ["sb"] }, wrapBlocks(body)),
+          ])
+        );
+        flip = !flip;
+      } else if (body.some((n) => n.type === "element")) {
+        sections.push(
+          h("section", { className: ["sec", "sec-lead"] }, [
+            h("div", { className: ["sb"] }, wrapBlocks(body)),
+          ])
+        );
+      }
+      rail = null;
+      body = [];
+    };
+
+    for (const node of tree.children) {
+      if (node.type === "element" && node.tagName === "h2") {
+        push();
+        rail = node;
+      } else {
+        body.push(node);
+      }
+    }
+    push();
+    tree.children = sections;
   };
 }
 
@@ -322,7 +364,7 @@ export async function md2html(s: string): Promise<string> {
     .use(rehypeFigures)
     .use(rehypeTableWrap)
     .use(rehypeExternalLinks)
-    .use(rehypeBlocks)
+    .use(rehypeSections)
     .use(rehypeStringify)
     .process(s);
   return String(file);

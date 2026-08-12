@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { REDUCED_MOTION } from '@/styles/conditions';
+import { REDUCED_MOTION, TOUCH_MEDIA } from '@/styles/conditions';
 
 // 홈 스크롤 연출 (구 n.js) — 히어로와 스토리가 스티키 스테이지에 핀 고정된
 // 패널이 되어 제자리에서 교체된다. 휠 제스처 하나가 정확히 한 패널 전환이
@@ -16,6 +16,7 @@ const BAR_MIN = 0.15; // 바의 시작 폭 비율 — 짧게 시작해 늦게 �
 const GESTURE_GAP = 250; // ms — 이보다 긴 공백이 있어야 다음 휠 제스처로 인정
 const GESTURE_MIN = 50; // px — 제스처 누적 델타가 이만큼 쌓여야 한 칸 이동
 const SETTLE_DELAY = 140; // ms — 휠 외 스크롤이 멈춘 뒤 경계로 스냅하기까지
+const TOUCH_SETTLE_DELAY = 220; // ms — 모바일 관성이 잦아든 뒤 한 번만 정렬
 
 export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): void {
   useEffect(() => {
@@ -28,9 +29,11 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
         ? [...sticky.children].filter((el): el is HTMLElement => el instanceof HTMLElement)
         : [];
     const max = panels.length - 1;
+    const touch = window.matchMedia(TOUCH_MEDIA);
 
     let seg = 0;
     let pinTop = 0;
+    let layoutWidth = 0;
     let displayed = 0; // 화면에 그려진 진행 위치 (패널 인덱스 좌표)
     let target = 0; // 지금 재생 중인 전환의 목표 인덱스 — 항상 displayed의 ±1 이내
     let pending = 0; // 스크롤이 가리키는 원시 목표 인덱스
@@ -40,12 +43,14 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
     let acc = 0; // 현재 휠 제스처의 누적 델타
     let spent = false; // 현재 제스처가 이미 한 칸을 소진했는지
     let snapTimer = 0;
+    let touching = false;
 
     const layout = () => {
       if (!stage || !(sticky instanceof HTMLElement) || panels.length === 0) return;
       stage.dataset.pin = '';
       pinTop = Number.parseFloat(getComputedStyle(sticky).top) || 0;
       seg = window.innerHeight * 0.7;
+      layoutWidth = window.innerWidth;
       stage.style.height = `${panels.length * seg + sticky.offsetHeight}px`;
     };
 
@@ -138,10 +143,12 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
 
     // 휠 외의 스크롤(터치·스크롤바·키보드)이 멈추면 가장 가까운 경계로 스냅
     const settle = () => {
+      if (touching) return;
       const progress = progressNow();
       if (progress <= 0 || progress >= max) return;
       const top = stageStart() + Math.round(progress) * seg;
-      if (Math.abs(window.scrollY - top) > 1) window.scrollTo({ top, behavior: 'smooth' });
+      if (Math.abs(window.scrollY - top) <= 1) return;
+      window.scrollTo(touch.matches ? { top } : { top, behavior: 'smooth' });
     };
 
     const onScroll = () => {
@@ -149,6 +156,15 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
       const progress = progressNow();
       if (progress < 0 || progress > max) return; // 스테이지 밖 — 자유 스크롤
       const raw = Math.min(max, Math.max(0, Math.round(progress)));
+
+      if (touch.matches) {
+        pending = raw;
+        advance();
+        window.clearTimeout(snapTimer);
+        snapTimer = window.setTimeout(settle, TOUCH_SETTLE_DELAY);
+        return;
+      }
+
       // 휠 취소가 안 먹는 브라우저에서 네이티브 스크롤이 새어 나가도 현재
       // 패널에서 한 칸 이상 못 벗어난다 — 초과 오버슛은 경계로 즉시 되돌린다.
       // 전환 재생 중에는 다음 칸 예약도 막아 제스처당 한 칸을 보장한다.
@@ -161,8 +177,18 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
     };
 
     const onResize = () => {
+      if (touch.matches && Math.abs(window.innerWidth - layoutWidth) < 1) return;
       layout();
       onScroll();
+    };
+    const onTouchStart = () => {
+      touching = true;
+      window.clearTimeout(snapTimer);
+    };
+    const onTouchEnd = () => {
+      touching = false;
+      window.clearTimeout(snapTimer);
+      snapTimer = window.setTimeout(settle, TOUCH_SETTLE_DELAY);
     };
     layout();
     if (seg > 0) {
@@ -174,11 +200,17 @@ export function useChoreography(stageRef: React.RefObject<HTMLElement | null>): 
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('resize', onResize);
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
     return () => {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
       window.clearTimeout(snapTimer);
       if (raf) cancelAnimationFrame(raf);
     };

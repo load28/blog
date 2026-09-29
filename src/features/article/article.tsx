@@ -1,7 +1,6 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
 import type { Post } from '@/server/posts';
-import { fmtDate } from '@/shared/site';
-import { DESKTOP_MEDIA, REDUCED_MOTION } from '@/styles/conditions';
+import { DESKTOP_MEDIA, MOBILE_MEDIA, REDUCED_MOTION } from '@/styles/conditions';
 import { cx } from '@/styles/cx';
 import * as css from '@/features/article/article.css';
 
@@ -31,8 +30,8 @@ function useCopyButtons(ref: React.RefObject<HTMLDivElement | null>) {
 
 /* 아티클 스테이지 연출 — 데스크톱·모션 허용에서만 data-stage를 걸어
    1) 표지가 스크롤 진행(--x)에 따라 물러나며 레일에 자리를 내주고
-   2) 뷰포트 중앙 밴드의 섹션(data-cur)이 레일 네비에 하이라이트된다 */
-function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
+   2) 뷰포트 중앙 밴드의 섹션이 레일 네비에 하이라이트되고 onSection으로 알려진다 */
+function useArticleStage(ref: React.RefObject<HTMLDivElement | null>, onSection: (id: string) => void) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -61,10 +60,10 @@ function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          e.target.toggleAttribute('data-cur', e.isIntersecting);
           const id = e.target.id || e.target.querySelector('h2')?.id;
           const link = id && nav?.querySelector(`a[href="#${CSS.escape(id)}"]`);
           if (link) link.toggleAttribute('data-on', e.isIntersecting);
+          if (id && e.isIntersecting) onSection(id);
         }
       },
       { rootMargin: '-38% 0px -38% 0px' },
@@ -84,45 +83,71 @@ function useArticleStage(ref: React.RefObject<HTMLDivElement | null>) {
       window.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [ref]);
+  }, [ref, onSection]);
 }
 
-/** 마크다운 파이프라인 산출 HTML 본문 (구 .bd) */
-export function ArticleBody({ html }: { html: string }) {
+/** 마크다운 파이프라인 산출 HTML 본문 (구 .bd)
+    memo — 부모가 현재 섹션 상태로 리렌더돼도 본문 DOM(관찰 대상)을 다시 쓰지 않게 한다 */
+export const ArticleBody = memo(function ArticleBody({ html }: { html: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useCopyButtons(ref);
   // biome-ignore lint/security/noDangerouslySetInnerHtml: 빌드 시점에 자체 콘텐츠에서 생성한 HTML이다
   return <div ref={ref} className={css.articleBody} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+});
 
-// 레일 — 물러난 표지를 이어받는 축소 타이틀·메타와 섹션 네비게이션
-function ArticleRail({ post }: { post: Post }) {
+// 레일 — 물러난 표지를 이어받는 축소 타이틀과 섹션 목차.
+// 목차는 기본으로 접혀 있고 토글 버튼이 읽는 중인 섹션을 보여준다.
+// 데스크톱은 왼쪽 스티키 칼럼, 모바일은 상단바 아래 스티키 바가 된다.
+function ArticleRail({ post, current }: { post: Post; current: string }) {
+  const [open, setOpen] = useState(false);
   const intro = post.toc[0]?.id === 'intro';
+  const now = post.toc.find((t) => t.id === current);
+  const hasToc = post.toc.length > 1;
+  if (!hasToc) {
+    return (
+      <aside className={css.rail}>
+        <p className={css.railTitle}>{post.title}</p>
+      </aside>
+    );
+  }
   return (
-    <aside className={css.rail}>
+    <aside className={cx(css.rail, css.railToc)} data-open={open || undefined}>
       <p className={css.railTitle}>{post.title}</p>
-      <p className={css.railMeta}>
-        {fmtDate(post.date)} · {post.minutes} min read
-      </p>
-      {post.toc.length > 1 && (
-        <nav className={css.railNav} aria-label="섹션 목차" data-nav="">
-          {post.toc.map((t, i) => (
-            <a key={t.id} href={`#${t.id}`} className={css.railLink}>
-              <i className={css.railNo}>{String(intro ? i : i + 1).padStart(2, '0')}</i>
-              <span className={css.railLabel}>{t.title}</span>
-            </a>
-          ))}
-        </nav>
-      )}
+      <button
+        type="button"
+        className={css.tocToggle}
+        aria-expanded={open}
+        aria-controls="article-toc"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={css.tocToggleLabel}>목차</span>
+        <span className={css.tocToggleNow}>{now?.title ?? `${post.toc.length}개 섹션`}</span>
+        <span className={css.tocAction}>{open ? '접기' : '펼치기'}</span>
+      </button>
+      <nav id="article-toc" className={css.railNav} aria-label="섹션 목차" data-nav="" hidden={!open}>
+        {post.toc.map((t, i) => (
+          <a
+            key={t.id}
+            href={`#${t.id}`}
+            className={css.railLink}
+            onClick={() => {
+              if (window.matchMedia(MOBILE_MEDIA).matches) setOpen(false);
+            }}
+          >
+            <i className={css.railNo}>{String(intro ? i : i + 1).padStart(2, '0')}</i>
+            <span className={css.railLabel}>{t.title}</span>
+          </a>
+        ))}
+      </nav>
     </aside>
   );
 }
 
 export function ArticlePage({ post }: { post: Post }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  useArticleStage(rootRef);
+  const [current, setCurrent] = useState('');
+  useArticleStage(rootRef, setCurrent);
   const tags = post.tags.filter((t) => t !== 'ai-content');
-  const isAi = post.tags.includes('ai-content');
   return (
     <div ref={rootRef} className={css.container}>
       <a href="/all" className={css.backLink}>
@@ -140,17 +165,10 @@ export function ArticlePage({ post }: { post: Post }) {
           ))}
         </p>
         <h1 className={cx(css.title, css.rise, css.riseTitle)}>{post.title}</h1>
-        {post.excerpt && <p className={cx(css.deck, css.rise, css.riseDeck)}>{post.excerpt}</p>}
-        <div className={cx(css.meta, css.rise, css.riseMeta)}>
-          <b>{fmtDate(post.date)}</b>
-          <span aria-hidden>·</span>
-          <span>{post.minutes} min read</span>
-        </div>
-        {isAi && <div className={cx(css.aiBadge, css.rise, css.riseMeta)}>AI-assisted content</div>}
         <i className={css.coverRule} />
       </header>
       <div className={css.layout}>
-        <ArticleRail post={post} />
+        <ArticleRail post={post} current={current} />
         <ArticleBody html={post.html} />
       </div>
       <div className={css.footerNav}>

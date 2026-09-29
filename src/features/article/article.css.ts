@@ -67,8 +67,6 @@ export const rise = style({
 });
 
 export const riseTitle = style({ animationDelay: '0.08s' });
-export const riseDeck = style({ animationDelay: '0.16s' });
-export const riseMeta = style({ animationDelay: '0.24s' });
 
 export const kicker = style({
   display: 'flex',
@@ -99,42 +97,6 @@ export const title = style({
   letterSpacing: '-0.024em',
   maxWidth: '22ch',
   textWrap: 'balance',
-});
-
-export const deck = style({
-  font: `italic 400 18px/1.75 ${vars.font.serif}`,
-  color: vars.color.inkSecondary,
-  maxWidth: '52ch',
-  '@media': { [MOBILE_MEDIA]: { fontSize: '16px' } },
-});
-
-// 메타 룰 — 날짜·분량 양옆에 짧은 클라렛 괘선
-export const meta = style({
-  display: 'flex',
-  gap: '10px',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontFamily: vars.font.mono,
-  fontSize: '12.5px',
-  fontWeight: 500,
-  lineHeight: 1,
-  color: vars.color.inkMuted,
-  flexWrap: 'wrap',
-  '::before': { content: '""', width: '26px', height: '1px', background: vars.color.claret },
-  '::after': { content: '""', width: '26px', height: '1px', background: vars.color.claret },
-});
-
-globalStyle(`${meta} b`, { color: vars.color.inkSecondary, fontWeight: 500 });
-
-export const aiBadge = style({
-  display: 'inline-flex',
-  width: 'fit-content',
-  font: `600 10.5px/1 ${vars.font.mono}`,
-  letterSpacing: '0.14em',
-  textTransform: 'uppercase',
-  padding: '6px 0',
-  borderTop: `2px solid ${vars.color.teal}`,
-  color: vars.color.teal,
 });
 
 // 본문 진입 룰 — 홈 스토리 카드의 3px 잉크 바가 표지 아래에서 자라난다
@@ -182,23 +144,92 @@ export const rail = style({
   },
 });
 
+// 목차가 있는 레일 — 모바일에선 상단바 아래에 붙는 스티키 바가 된다
+export const railToc = style({
+  '@media': {
+    [MOBILE_MEDIA]: {
+      display: 'block',
+      position: 'sticky',
+      top: '57px',
+      zIndex: vars.zIndex.chipBar,
+      margin: '-12px -18px 32px',
+      padding: '0 18px',
+      background: vars.color.paper,
+      borderBottom: `1px solid ${vars.color.border}`,
+    },
+  },
+});
+
 export const railTitle = style({
   font: `650 17px/1.45 ${vars.font.serif}`,
   letterSpacing: '-0.01em',
+  '@media': { [MOBILE_MEDIA]: { display: 'none' } },
 });
 
-export const railMeta = style({
-  ...textStyles.monoMeta,
-  color: vars.color.inkMuted,
-  marginTop: '8px',
+export const tocToggle = style({
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '10px',
+  width: '100%',
+  marginTop: '22px',
+  padding: '10px 0',
+  borderTop: `2px solid ${vars.color.ink}`,
+  background: 'none',
+  color: vars.color.ink,
+  font: 'inherit',
+  textAlign: 'left',
+  cursor: 'pointer',
+  '@media': {
+    [MOBILE_MEDIA]: { marginTop: 0, padding: '12px 0', borderTop: 'none' },
+  },
+});
+
+export const tocToggleLabel = style({
+  ...textStyles.kicker,
+  color: vars.color.claret,
+  flexShrink: 0,
+});
+
+export const tocToggleNow = style({
+  flex: 1,
+  minWidth: 0,
+  fontSize: '13px',
+  fontWeight: 500,
+  lineHeight: 1.5,
+  color: vars.color.inkSecondary,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+});
+
+export const tocAction = style({
+  flexShrink: 0,
+  fontSize: '12.5px',
+  fontWeight: 600,
+  color: vars.color.teal,
 });
 
 export const railNav = style({
   display: 'flex',
   flexDirection: 'column',
-  marginTop: '22px',
-  borderTop: `2px solid ${vars.color.ink}`,
-  paddingTop: '6px',
+  borderTop: `1px solid ${vars.color.border}`,
+  overflowY: 'auto',
+  maxHeight: 'calc(100svh - 280px)',
+  selectors: { '&[hidden]': { display: 'none' } },
+  '@media': {
+    // 모바일은 바 아래로 떠서 펼쳐진다 — 본문을 밀어내지 않는다
+    [MOBILE_MEDIA]: {
+      position: 'absolute',
+      top: '100%',
+      left: 0,
+      right: 0,
+      maxHeight: '60svh',
+      padding: '0 18px 8px',
+      background: vars.color.paper,
+      borderBottom: `1px solid ${vars.color.borderStrong}`,
+      boxShadow: '0 12px 24px -16px rgba(0, 0, 0, 0.25)',
+    },
+  },
 });
 
 export const railLink = style({
@@ -208,14 +239,13 @@ export const railLink = style({
   padding: '8px 0',
   borderBottom: `1px solid ${vars.color.border}`,
   cursor: 'pointer',
-  transition: `color ${vars.duration.fast}`,
+  selectors: { '&:last-child': { borderBottom: 'none' } },
 });
 
 export const railNo = style({
   ...textStyles.monoCaption,
   fontStyle: 'normal',
   color: vars.color.inkMuted,
-  transition: `color ${vars.duration.fast}`,
 });
 
 export const railLabel = style({
@@ -223,7 +253,6 @@ export const railLabel = style({
   fontWeight: 500,
   lineHeight: 1.5,
   color: vars.color.inkSecondary,
-  transition: `color ${vars.duration.fast}`,
 });
 
 // 읽는 중인 섹션(data-on) — 넘버가 클라렛으로, 제목이 잉크로 선다
@@ -237,7 +266,6 @@ globalStyle(`${railLink}:hover ${railLabel}`, {
 export const articleBody = style({
   fontSize: '17px',
   color: vars.color.ink,
-  counterReset: 'sec',
   // 긴 URL·식별자가 칼럼을 밀어내지 않게 — 스크롤 래퍼(.tw·pre) 밖 오버플로 안전망
   overflowWrap: 'break-word',
   overflowX: 'clip',
@@ -249,8 +277,10 @@ const bd = articleBody;
 /* ── 섹션 — h2 단위 장 구분, 선형 플로우 ──────────────────────────────────
    데스크톱(모션 허용)에서 루트에 data-stage가 걸리면 표지가 스크롤
    진행(--x)에 따라 물러나고, 레일 네비가 읽는 위치를 따라간다. */
+// 모바일은 상단바 아래 목차 바까지 비켜서 멈춘다
 globalStyle(`${bd} .sec`, {
   scrollMarginTop: '72px',
+  '@media': { [MOBILE_MEDIA]: { scrollMarginTop: '104px' } },
 });
 
 globalStyle(`${bd} .sec + .sec`, {
@@ -274,8 +304,7 @@ globalStyle(`${bd} .sec-lead .bk:first-child > p:first-child`, {
   lineHeight: 1.8,
 });
 
-/* 섹션 h2 — 잉크 바(::after) + 큰 넘버 카운터(::before) + 세리프 제목.
-   스포트라이트: 섹션이 뷰포트 중앙 밴드에 들어오면 바가 자라고 넘버가 물든다 */
+/* 섹션 h2 — 짧은 잉크 바(::after) + 세리프 제목 */
 globalStyle(`${bd} h2`, {
   position: 'relative',
   font: `700 27px/1.3 ${vars.font.serif}`,
@@ -283,7 +312,9 @@ globalStyle(`${bd} h2`, {
   margin: '0 0 26px',
   paddingTop: '22px',
   scrollMarginTop: '80px',
-  '@media': { [MOBILE_MEDIA]: { fontSize: '24px', margin: '0 0 18px', paddingTop: '18px' } },
+  '@media': {
+    [MOBILE_MEDIA]: { fontSize: '24px', margin: '0 0 18px', paddingTop: '18px', scrollMarginTop: '104px' },
+  },
 });
 globalStyle(`${bd} h2::after`, {
   content: '""',
@@ -293,31 +324,7 @@ globalStyle(`${bd} h2::after`, {
   width: '46px',
   height: '3px',
   background: vars.color.ink,
-  transformOrigin: '0 50%',
-  transform: 'scaleX(0.35)',
-  transition: `transform 0.6s ${vars.easing.out}`,
-  '@media': { [REDUCED_MOTION]: { transition: 'none', transform: 'none' } },
 });
-globalStyle(`${bd} .sec[data-cur] h2::after`, { transform: 'none' });
-globalStyle(`${bd} h2::before`, {
-  counterIncrement: 'sec',
-  content: 'counter(sec, decimal-leading-zero)',
-  display: 'block',
-  font: `800 52px/1 ${vars.font.serif}`,
-  letterSpacing: '-0.01em',
-  color: vars.color.inkMuted,
-  marginBottom: '16px',
-  transition: `color 0.5s ${vars.easing.out}`,
-  '@media': {
-    [MOBILE_MEDIA]: {
-      font: `650 11px/1 ${vars.font.mono}`,
-      letterSpacing: '0.24em',
-      color: vars.color.claret,
-      marginBottom: '11px',
-    },
-  },
-});
-globalStyle(`${bd} .sec[data-cur] h2::before`, { color: vars.color.claret });
 globalStyle(`${bd} h3`, { font: `650 21px/1.4 ${vars.font.serif}`, margin: '42px 0 12px' });
 globalStyle(`${bd} h4`, { font: `650 17px/1.5 ${vars.font.serif}`, margin: '28px 0 8px' });
 globalStyle(`${bd} p`, { margin: '16px 0', lineHeight: 1.9 });

@@ -3,9 +3,7 @@ import { HOVER_MEDIA, MOBILE_MEDIA, TOUCH_MEDIA } from '@/styles/conditions';
 import { textStyles } from '@/styles/text-styles';
 import { vars } from '@/styles/theme.css';
 
-// 피드 (구 #pl·.yg·.pi·.fe) — 헤어라인 인덱스 행, hover 시 나머지가 물러난다.
-
-export const feedList = style({});
+// 피드 (구 #pl·.yg·.pi·.fe) — 헤어라인 인덱스 행.
 
 /* ── 연도 그룹 (구 .yg) ─────────────────────────────────────────────────── */
 export const yearGroup = style({
@@ -75,18 +73,16 @@ export const featured = style({
   display: 'flex',
   flexDirection: 'column',
   gap: '13px',
-  transition: `background ${vars.duration.slow}`,
   marginBottom: '10px',
   '@media': {
     [HOVER_MEDIA]: {
       selectors: {
         '&:hover': { background: vars.color.tint },
-        [`${feedList}:hover &:not(:hover)`]: { opacity: 0.45 },
       },
     },
     [TOUCH_MEDIA]: {
       selectors: {
-        '&:active': { background: vars.color.tint, transitionDuration: '0s' },
+        '&:active': { background: vars.color.tint },
       },
     },
     [MOBILE_MEDIA]: { padding: '20px 2px 22px' },
@@ -127,37 +123,25 @@ export const featuredExcerpt = style({
   maxWidth: '64ch',
 });
 
-/* ── 피드 행 (구 .fe) — hover 시 발췌·메타가 펼쳐진다 ───────────────────── */
+/* ── 피드 행 (구 .fe) ───────────────────────────────────────────────────── */
 export const entry = style({
   position: 'relative',
-  display: 'grid',
-  gridTemplateColumns: '48px minmax(0, 1fr) auto',
-  gap: '16px',
-  alignItems: 'baseline',
   padding: '18px 2px',
   borderBottom: `1px solid ${vars.color.border}`,
   cursor: 'pointer',
-  transition: `background ${vars.duration.base}`,
   '@media': {
     [HOVER_MEDIA]: {
       selectors: {
         '&:hover': { background: vars.color.tint },
-        [`${feedList}:hover &:not(:hover)`]: { opacity: 0.45 },
       },
     },
     [TOUCH_MEDIA]: {
       selectors: {
-        '&:active': { background: vars.color.tint, transitionDuration: '0s' },
+        '&:active': { background: vars.color.tint },
       },
     },
-    [MOBILE_MEDIA]: { gridTemplateColumns: '1fr', gap: '2px', padding: '15px 2px' },
+    [MOBILE_MEDIA]: { padding: '15px 2px' },
   },
-});
-
-export const entryDate = style({
-  font: `500 11.5px/2 ${vars.font.mono}`,
-  color: vars.color.inkMuted,
-  '@media': { [MOBILE_MEDIA]: { lineHeight: 1.4 } },
 });
 
 export const entryBody = style({ minWidth: 0 });
@@ -166,13 +150,12 @@ export const entryTitle = style({
   ...textStyles.serifTitle,
   fontSize: '17.5px',
   lineHeight: 1.5,
-  transition: `color ${vars.duration.base}`,
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { [`${entry}:hover &`]: { color: vars.color.teal } },
     },
     [TOUCH_MEDIA]: {
-      selectors: { [`${entry}:active &`]: { color: vars.color.teal, transitionDuration: '0s' } },
+      selectors: { [`${entry}:active &`]: { color: vars.color.teal } },
     },
   },
 });
@@ -186,17 +169,7 @@ export const entryExcerpt = style({
   WebkitBoxOrient: 'vertical',
   overflow: 'hidden',
   maxWidth: '62ch',
-  maxHeight: 0,
-  opacity: 0,
-  marginTop: 0,
-  transition: `max-height 0.35s ${vars.easing.out}, opacity ${vars.duration.slower}, margin ${vars.duration.slower}`,
-  '@media': {
-    [HOVER_MEDIA]: {
-      selectors: {
-        [`${entry}:hover &`]: { maxHeight: '72px', opacity: 1, marginTop: '6px' },
-      },
-    },
-  },
+  marginTop: '6px',
 });
 
 export const entryMeta = style({
@@ -205,49 +178,19 @@ export const entryMeta = style({
   font: `500 11px/1.5 ${vars.font.mono}`,
   color: vars.color.inkMuted,
   flexWrap: 'wrap',
-  maxHeight: 0,
-  opacity: 0,
-  marginTop: 0,
-  overflow: 'hidden',
-  transition: `max-height 0.35s ${vars.easing.out}, opacity ${vars.duration.slower}, margin ${vars.duration.slower}`,
-  '@media': {
-    [HOVER_MEDIA]: {
-      selectors: {
-        [`${entry}:hover &`]: { maxHeight: '40px', opacity: 1, marginTop: '9px' },
-      },
-    },
-  },
+  marginTop: '9px',
 });
 
 export const tagLink = style({
   color: vars.color.inkSecondary,
   cursor: 'pointer',
-  transition: `color ${vars.duration.fast}`,
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { '&:hover': { color: vars.color.teal } },
     },
     [TOUCH_MEDIA]: {
-      selectors: { '&:active': { color: vars.color.teal, transitionDuration: '0s' } },
+      selectors: { '&:active': { color: vars.color.teal } },
     },
-  },
-});
-
-export const entryArrow = style({
-  fontStyle: 'normal',
-  alignSelf: 'center',
-  fontSize: '15px',
-  color: vars.color.inkMuted,
-  opacity: 0,
-  transform: 'translateX(-6px)',
-  transition: `all ${vars.duration.base}`,
-  '@media': {
-    [HOVER_MEDIA]: {
-      selectors: {
-        [`${entry}:hover &`]: { opacity: 1, transform: 'none', color: vars.color.ink },
-      },
-    },
-    [MOBILE_MEDIA]: { display: 'none' },
   },
 });
 
@@ -284,13 +227,12 @@ export const filterClear = style({
   color: vars.color.inkMuted,
   fontStyle: 'normal',
   padding: '0 2px',
-  transition: `color ${vars.duration.fast}`,
   '@media': {
     [HOVER_MEDIA]: {
       selectors: { '&:hover': { color: vars.color.ink } },
     },
     [TOUCH_MEDIA]: {
-      selectors: { '&:active': { color: vars.color.ink, transitionDuration: '0s' } },
+      selectors: { '&:active': { color: vars.color.ink } },
     },
   },
 });

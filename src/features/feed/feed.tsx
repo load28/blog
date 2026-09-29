@@ -1,5 +1,5 @@
 import type { PostMeta } from '@/server/posts';
-import { fmtDate, fmtMonthDay, plz } from '@/shared/site';
+import { plz } from '@/shared/site';
 import { Flag } from '@/shared/ui';
 import * as css from '@/features/feed/feed.css';
 
@@ -15,8 +15,6 @@ function FeaturedCard({ post }: { post: PostMeta }) {
     <article className={css.featured} data-hf={href} onClick={(e) => goCard(e, href)}>
       <Flag>Latest</Flag>
       <div className={css.metaRow}>
-        <span>{fmtDate(post.date)}</span>
-        <span>·</span>
         <span>{post.minutes} min read</span>
       </div>
       <h2 className={css.featuredTitle}>{post.title}</h2>
@@ -30,7 +28,6 @@ function FeedEntry({ post }: { post: PostMeta }) {
   const tags = post.tags.filter((t) => t !== 'ai-content');
   return (
     <article className={css.entry} data-hf={href} onClick={(e) => goCard(e, href)}>
-      <span className={css.entryDate}>{fmtMonthDay(post.date)}</span>
       <div className={css.entryBody}>
         <h2 className={css.entryTitle}>{post.title}</h2>
         {post.excerpt && <p className={css.entryExcerpt}>{post.excerpt}</p>}
@@ -43,7 +40,6 @@ function FeedEntry({ post }: { post: PostMeta }) {
           <span>{post.minutes} min</span>
         </div>
       </div>
-      <i className={css.entryArrow}>→</i>
     </article>
   );
 }
@@ -60,7 +56,7 @@ export function Feed({ posts }: { posts: PostMeta[] }) {
 
   return (
     <>
-      <div className={css.feedList}>
+      <div>
         {groups.map((g) => (
           <section key={g.year} className={css.yearGroup}>
             <div className={css.yearRail}>
@@ -90,7 +86,7 @@ export function TagFilterHead({ tag, count }: { tag: string; count: number }) {
       <span className={css.filterPill}>
         <b>{tag}</b>
         <span className={css.filterCount}>{plz(count)}</span>
-        <a href="/tags" className={css.filterClear}>
+        <a href="/all" className={css.filterClear}>
           ✕
         </a>
       </span>

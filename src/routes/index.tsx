@@ -13,7 +13,7 @@ export const Route = createFileRoute('/')({
 function HomeRoute() {
   const { posts } = Route.useLoaderData();
   return (
-    <PageShell active="home" footer={false}>
+    <PageShell active="home">
       <Home posts={posts} />
     </PageShell>
   );

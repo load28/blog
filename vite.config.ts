@@ -10,7 +10,7 @@ import { defineConfig } from 'vite';
 // 태그 경로(/t/next.js 등)가 파일로 오인되어 누락될 수 있다.
 function contentPages(): string[] {
   const dir = join(process.cwd(), 'content', 'posts');
-  const pages = ['/', '/all', '/tags', '/about'];
+  const pages = ['/', '/all', '/about'];
   const tags = new Set<string>();
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.mdx')) continue;

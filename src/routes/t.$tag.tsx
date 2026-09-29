@@ -22,7 +22,7 @@ function TagRoute() {
   const topics = Object.keys(tags).sort();
   return (
     <SplitShell
-      active="tags"
+      active="all"
       counts={{ posts: posts.length, topics: topics.length }}
       chips={<ChipRow tags={topics} active={tag} />}
     >

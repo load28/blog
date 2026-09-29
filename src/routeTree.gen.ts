@@ -9,18 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TagsRouteImport } from './routes/tags'
 import { Route as AllRouteImport } from './routes/all'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TTagRouteImport } from './routes/t.$tag'
 import { Route as PostsSlugRouteImport } from './routes/posts.$slug'
 
-const TagsRoute = TagsRouteImport.update({
-  id: '/tags',
-  path: '/tags',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AllRoute = AllRouteImport.update({
   id: '/all',
   path: '/all',
@@ -51,7 +45,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/all': typeof AllRoute
-  '/tags': typeof TagsRoute
   '/posts/$slug': typeof PostsSlugRoute
   '/t/$tag': typeof TTagRoute
 }
@@ -59,7 +52,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/all': typeof AllRoute
-  '/tags': typeof TagsRoute
   '/posts/$slug': typeof PostsSlugRoute
   '/t/$tag': typeof TTagRoute
 }
@@ -68,37 +60,27 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/all': typeof AllRoute
-  '/tags': typeof TagsRoute
   '/posts/$slug': typeof PostsSlugRoute
   '/t/$tag': typeof TTagRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/all' | '/tags' | '/posts/$slug' | '/t/$tag'
+  fullPaths: '/' | '/about' | '/all' | '/posts/$slug' | '/t/$tag'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/all' | '/tags' | '/posts/$slug' | '/t/$tag'
-  id:
-    '__root__' | '/' | '/about' | '/all' | '/tags' | '/posts/$slug' | '/t/$tag'
+  to: '/' | '/about' | '/all' | '/posts/$slug' | '/t/$tag'
+  id: '__root__' | '/' | '/about' | '/all' | '/posts/$slug' | '/t/$tag'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AllRoute: typeof AllRoute
-  TagsRoute: typeof TagsRoute
   PostsSlugRoute: typeof PostsSlugRoute
   TTagRoute: typeof TTagRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/tags': {
-      id: '/tags'
-      path: '/tags'
-      fullPath: '/tags'
-      preLoaderRoute: typeof TagsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/all': {
       id: '/all'
       path: '/all'
@@ -141,7 +123,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AllRoute: AllRoute,
-  TagsRoute: TagsRoute,
   PostsSlugRoute: PostsSlugRoute,
   TTagRoute: TTagRoute,
 }
